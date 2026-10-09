@@ -77,3 +77,6 @@ clawagents_py/
 .vscode/
 *.swp
 *.swo
+
+# Slide decks stay local
+*.pptx
