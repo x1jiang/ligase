@@ -1,5 +1,5 @@
 """
-04_alzheimers_ad1.py: Alzheimer's Disease & Multi-Omics Analysis (Biomni-AD Parity)
+04_alzheimers_ad1.py: Alzheimer's Disease & Multi-Omics Analysis
 """
 
 import os

@@ -83,7 +83,7 @@ class BiomniKnowHowLayer:
 
 
 class BiomniADLayer:
-    """Injects Alzheimer's Disease (AD) data priorities and NIAGADS/ADRD catalogs (Biomni-AD parity)."""
+    """Injects Alzheimer's Disease (AD) data priorities and NIAGADS/ADRD catalogs."""
 
     name = "biomni_ad_catalog"
 

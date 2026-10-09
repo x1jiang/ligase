@@ -1,6 +1,6 @@
 # Ligase Architecture
 
-Ligase re-architects biomedical agent execution by pairing Stanford Biomni’s domain toolkits and Biomni-AD’s disease catalogs with the **ClawAgents (`clawagents_py`)** full-stack engine.
+Ligase re-architects biomedical agent execution by pairing Stanford Biomni’s open-source domain toolkits with the **ClawAgents (`clawagents_py`)** full-stack engine.
 
 ---
 

@@ -125,7 +125,7 @@ def create_agent(
         data_path: Path to local and S3 biological data lake
         modules: List of specific biomedical domain modules to load
         commercial_mode: Filter non-commercial datasets
-        is_ad_specialized: Include Alzheimer's disease priority layers & catalogs (Biomni-AD parity)
+        is_ad_specialized: Include Alzheimer's disease priority rules and catalog sources
         api_key: Optional API key
         base_url: Custom base URL
         streaming: Stream responses
