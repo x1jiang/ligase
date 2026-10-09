@@ -120,8 +120,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python bench
 
 ---
 
-## Credits
-
-Built on open-source work: domain tools from [Biomni](https://github.com/snap-stanford/biomni) (Stanford SNAP, Apache-2.0), installed by `install.sh`; agent runtime from [ClawAgents](https://github.com/x1jiang/clawagents_py). Ligase is an independent project.
-
 MIT License · Xiaoqian Jiang
