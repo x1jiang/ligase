@@ -122,6 +122,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python bench
 
 ## Credits
 
-Ligase's domain tools come from the open-source **[Biomni](https://github.com/snap-stanford/biomni)** tool library (Stanford SNAP), fetched by `install.sh`; Alzheimer's catalogs follow **[Biomni-AD](https://github.com/Kaimen-Inc/Biomni-AD)**. The agent layer runs on **[ClawAgents](https://github.com/x1jiang/clawagents_py)**. Ligase is a separate project and is not affiliated with those groups.
+Built on open-source work: domain tools from [Biomni](https://github.com/snap-stanford/biomni) (Stanford SNAP, Apache-2.0), installed by `install.sh`; agent runtime from [ClawAgents](https://github.com/x1jiang/clawagents_py). Ligase is an independent project.
 
 MIT License · Xiaoqian Jiang
