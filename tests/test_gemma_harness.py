@@ -159,3 +159,21 @@ def test_apply_gemma_surface_hides_pubchem_and_write_file():
     assert "write_file" not in active
     denied = agent.before_tool("query_pubchem", {})
     assert denied is False or getattr(denied, "allowed", True) is False
+
+
+def test_transcribe_translate_strips_fasta_header():
+    fasta = ">gene_1_human_atg_control\nATGGGCAAGTAA\n"
+    out = transcribe_translate(fasta)
+    assert "mRNA: AUGGGCAAGUAA" in out
+    assert "peptide: MGK" in out
+
+
+def test_run_python_allows_safe_imports_and_blocks_unsafe():
+    assert run_python("import math\nprint(round(math.pi, 2))") == "3.14"
+    assert "ImportError" in run_python("import os\nprint(os.getcwd())")
+    assert "SecurityError" in run_python("print(().__class__.__bases__)")
+
+
+def test_run_python_enforces_timeout():
+    out = run_python("while True:\n    pass", timeout=0.15)
+    assert "TimeoutError" in out

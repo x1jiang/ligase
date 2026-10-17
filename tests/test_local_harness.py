@@ -104,3 +104,30 @@ def test_needs_knowledge_fallback():
         SimpleNamespace(status="done", result="Reached maximum of 15 tool rounds.")
     )
     assert not needs_knowledge_fallback(SimpleNamespace(status="done", result="TP53 is a tumor suppressor."))
+
+
+def test_detects_custom_model_on_private_base_url(monkeypatch):
+    monkeypatch.delenv("LIGASE_LOCAL_HARNESS", raising=False)
+    monkeypatch.delenv("BIOMNI_LOCAL_HARNESS", raising=False)
+    assert is_compact_local_model("my-custom-bio-checkpoint", "http://10.0.0.5:8000/v1") is True
+    assert is_compact_local_model("my-custom-bio-checkpoint", "https://api.openai.com/v1") is False
+    assert is_compact_local_model("my-custom-bio-checkpoint", None) is False
+
+
+def test_ligase_local_harness_env_override(monkeypatch):
+    monkeypatch.setenv("LIGASE_LOCAL_HARNESS", "1")
+    assert is_compact_local_model("gpt-5.6-luna", None) is True
+    monkeypatch.setenv("LIGASE_LOCAL_HARNESS", "0")
+    assert is_compact_local_model("Muse-Glimmer-30B", "http://10.0.0.5:8000/v1") is False
+
+
+def test_knowledge_fallback_handles_llm_exception():
+    import asyncio
+    from ligase.local_harness import knowledge_fallback_answer
+
+    class _BrokenLLM:
+        async def chat(self, messages):
+            raise RuntimeError("connection reset")
+
+    out = asyncio.run(knowledge_fallback_answer(SimpleNamespace(llm=_BrokenLLM()), "What is TP53?"))
+    assert out == ""

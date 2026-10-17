@@ -14,15 +14,15 @@ ligase                       # ask your own questions
 
 ## Why Ligase
 
-| | Original Biomni agent | **Ligase + Muse Glimmer 30B** |
-|---|---:|---:|
-| Mean time per task (5-task suite) | 40.5 s | **8.2 s (4.9× faster)** |
-| Keyword accuracy | 95% | **95%** |
-| Alzheimer's APOE4 task | 129.5 s | **6.0 s (21.6× faster)** |
-| Runs on | frontier API | **one private H100**, or any API |
-| Code execution | in-process `exec()` | **OS sandbox** (macOS Seatbelt / Linux bwrap) |
+| | Original Biomni agent | **Ligase + Muse Glimmer 30B** | **Ligase + Muse Spark 816B-A42B** |
+|---|---:|---:|---:|
+| Standard 5-task accuracy | 95% | 95% (8.2 s mean) | **100% (20/20)** |
+| Hard 6-task biomedical rubric (36 items) | — | — | **100% (36/36)** vs 80.6% (`gpt-5.6-luna`) / 75.0% (`gpt-4o-mini`) |
+| Tool loading startup | ~10–140 s (eager import) | 0.3 s (lazy schema) | **0.3 s (lazy schema)** |
+| Runs on | frontier API | one private H100 | **private H100 proxy**, local GGUF, or any API |
+| Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** + AST/timeout-guarded `run_python` |
 
-Same model, different agent layer: on Muse Glimmer 30B, Ligase's compact harness cut mean latency from 71.0 s to 8.2 s and raised accuracy from 48% to 95%. Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
+Same model, different agent layer: on Muse Glimmer 30B, Ligase's compact harness cut mean latency from 71.0 s to 8.2 s and raised accuracy from 48% to 95%; scaling to **Muse Spark 816B-A42B** reaches **100%** on both the standard 5-task suite and the 36-item hard biomedical reasoning suite. Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
 
 ---
 
@@ -41,7 +41,8 @@ The installer fetches the open-source tool library, builds `.venv`, creates `.en
 **2. Pick a model** in `.env` (set one):
 
 ```env
-GLIMMER_30B_BACKEND=http://<host>:<port>/v1   # private OpenAI-compatible model (Muse Glimmer, vLLM, SGLang)
+MUSE_SPARK_BACKEND=http://<host>:<port>/v1    # private Muse Spark 816B-A42B endpoint
+GLIMMER_30B_BACKEND=http://<host>:<port>/v1   # private Muse Glimmer 30B / vLLM / SGLang
 OPENAI_API_KEY=sk-...                         # or OpenAI
 ```
 
@@ -65,9 +66,9 @@ ligase example apoe4
 | `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna` |
 | `ligase doctor` | Check install, tools, model endpoint, sandbox |
 
-Useful flags: `--model auto|glimmer|openai|gemma|custom` (default `auto`: private host if set, else OpenAI), `--ad` (Alzheimer's context), `--max-iterations N`, `--out DIR`, `--record session.svg`.
+Useful flags: `--model auto|spark|glimmer|openai|gemma|custom` (default `auto`: private host if set, else OpenAI), `--ad` (Alzheimer's context), `--max-iterations N`, `--out DIR`, `--record session.svg`.
 
-Every run writes `runs/ligase_<time>_<slug>/report.md` with the question, model, timing, tool trace and answer.
+Every run writes `runs/ligase_<time>_<slug>/report.md` and `run.json` with the question, model, timing, tool trace and answer.
 
 ---
 

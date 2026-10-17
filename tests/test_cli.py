@@ -14,6 +14,8 @@ MODEL_ENV = [
     "OPENAI_MODEL",
     "LIGASE_BASE_URL",
     "LIGASE_MODEL",
+    "GEMMA_AGENTIC_BASE_URL",
+    "GEMMA_AGENTIC_MODEL",
 ]
 
 
@@ -37,8 +39,15 @@ def test_auto_falls_back_to_openai(clean_env):
     assert cli.resolve_model("auto")["name"] == "openai"
 
 
+def test_auto_detects_gemma_when_configured(clean_env):
+    clean_env.setenv("GEMMA_AGENTIC_BASE_URL", "http://127.0.0.1:18080/v1")
+    cfg = cli.resolve_model("auto")
+    assert cfg["name"] == "gemma"
+
+
 def test_placeholder_key_counts_as_unset(clean_env):
     clean_env.setenv("OPENAI_API_KEY", "your_openai_api_key_here")
+    clean_env.setenv("GLIMMER_30B_BACKEND", "http://<host>:<port>/v1")
     with pytest.raises(cli.ConfigError, match="No model configured"):
         cli.resolve_model("auto")
 
@@ -69,6 +78,7 @@ def test_parser_commands():
     args = parser.parse_args(["run", "What is TP53?", "--ad", "--max-iterations", "4"])
     assert (args.cmd, args.question, args.ad, args.max_iterations) == ("run", "What is TP53?", True, 4)
     assert parser.parse_args(["example", "apoe4"]).name == "apoe4"
+    assert parser.parse_args(["doctor", "--model", "gemma"]).model == "gemma"
     assert parser.parse_args([]).cmd is None  # bare `ligase` opens the prompt
 
 
@@ -80,3 +90,21 @@ def test_examples_are_complete():
 def test_examples_command_needs_no_model(clean_env, capsys):
     assert cli.main(["examples"]) == 0
     assert "apoe4" in capsys.readouterr().out
+
+
+def test_agent_stream_and_trajectory_history():
+    from types import SimpleNamespace
+    from ligase.agent import LigaseAgent
+
+    class _FakeClaw:
+        on_stream_event = None
+        on_event = None
+
+        async def invoke(self, task: str):
+            return SimpleNamespace(result=f"Answered: {task}", iterations=1, status="done")
+
+    agent = LigaseAgent(claw_agent=_FakeClaw())
+    chunks = list(agent.go_stream("What chromosome is APOE on?"))
+    assert "".join(chunks) == "Answered: What chromosome is APOE on?"
+    assert len(agent.trajectory_history) == 1
+    assert agent.trajectory_history[0]["iterations"] == 1
