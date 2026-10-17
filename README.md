@@ -87,7 +87,7 @@ Every run writes `runs/ligase_<time>_<slug>/report.md` and `run.json` with the q
 
 ![DNA](docs/images/uc3_dna.png)
 
-Recorded October 9, 2026 on Muse Glimmer 30B (private H100).
+Recorded on a private H200.
 
 ---
 
@@ -97,7 +97,7 @@ Recorded October 9, 2026 on Muse Glimmer 30B (private H100).
 from ligase import create_agent
 
 agent = create_agent(
-    model="gpt-5.6-luna",            # or a private model with base_url="http://<host>/v1"
+    model="gpt-6-luna",              # or a private model with base_url="http://<host>/v1"
     modules=["database", "pharmacology", "biochemistry"],
     is_ad_specialized=True,          # Alzheimer's context layer
 )
@@ -114,10 +114,10 @@ question ─▶ Ligase agent layer ─▶ tool calls ─▶ OS sandbox ─▶ an
               │  context layers: data lake, protocols, Alzheimer's priorities
               │  compact harness for private/local models: focused tools, loop caps
               ▼
-           any OpenAI-compatible model: private (Glimmer), local (Gemma GGUF), or frontier
+           any OpenAI-compatible model: private H200 (Muse Spark / Glimmer), local (Gemma GGUF), or frontier
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python benchmarks/model_benchmark.py --models glimmer_30b,luna --phase agent`.
+See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python benchmarks/hard_benchmark.py --models muse_spark,gpt6_luna,luna,gpt4o_mini --phase raw`.
 
 ---
 
