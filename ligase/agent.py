@@ -103,12 +103,11 @@ class LigaseAgent:
             fallback = await knowledge_fallback_answer(self.claw_agent, prompt)
             if fallback:
                 result = fallback
+        result = close_multiple_choice(prompt, normalize_local_answer(str(result or "")))
         if self.compact_local:
-            result = normalize_local_answer(str(result or ""))
-            if self.gemma_local:
-                result = close_multiple_choice(prompt, merge_tool_cards(result))
-            if hasattr(state, "result"):
-                state.result = result
+            result = merge_tool_cards(result)
+        if hasattr(state, "result"):
+            state.result = result
         elapsed = time.time() - t0
         self.last_state = state
         self.last_result = result
