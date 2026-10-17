@@ -30,8 +30,9 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from ligase import __version__ as VERSION
+
 BRAND = "Ligase"
-VERSION = "0.2.0"
 REPO_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODULES = ["database", "literature", "genomics", "pharmacology", "biochemistry"]
 QUIET_LOGGERS = ("httpx", "httpcore", "openai")  # request lines would print the private host
@@ -75,63 +76,112 @@ class ConfigError(Exception):
 
 # ── Model selection ──────────────────────────────────────────────────────────
 
+_PLACEHOLDER_PATTERNS = (
+    "sk-...",
+    "<host>",
+    "xxx.xx.xx.xx",
+    "your-model-name",
+    "changeme",
+)
+
+
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
-    """Read a setting, treating .env.example placeholders ("your_..._here") as unset."""
-    value = os.getenv(name)
-    if not value or (value.startswith("your_") and value.endswith("_here")):
+    """Read a setting, treating .env.example placeholders as unset."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().strip("'\"")
+    if not value:
+        return default
+    lower = value.lower()
+    if (lower.startswith("your_") and lower.endswith("_here")) or any(
+        p in lower for p in _PLACEHOLDER_PATTERNS
+    ):
         return default
     return value
+
+
+def _discover_remote_model(base_url: Optional[str], api_key: Optional[str], timeout: float = 3.0) -> str:
+    """Query GET /models to auto-detect the served model ID when not explicitly set."""
+    if not base_url:
+        return ""
+    _quiet_http_logs()
+    import httpx
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "not-needed" else {}
+    try:
+        resp = httpx.get(base_url.rstrip("/") + "/models", headers=headers, timeout=timeout)
+        if resp.status_code == 200:
+            payload = resp.json()
+            items = payload.get("data") or payload.get("models") or []
+            if items and isinstance(items, list) and isinstance(items[0], dict):
+                return str(items[0].get("id") or items[0].get("name") or items[0].get("model") or "")
+    except Exception:
+        pass
+    return ""
 
 
 def model_presets() -> Dict[str, Dict[str, Any]]:
     """Presets read the environment at call time so .env edits apply."""
     return {
+        "spark": {
+            "model": _env("MUSE_SPARK_MODEL", "meta-models/Muse-Spark-Open-816B-A42B"),
+            "base_url": _env("MUSE_SPARK_BACKEND") or _env("LIGASE_BASE_URL") or _env("GLIMMER_30B_BACKEND"),
+            "base_url_env": "MUSE_SPARK_BACKEND",
+            "api_key": _env("MUSE_SPARK_API_KEY", "not-needed"),
+            "where": "private host · Muse Spark 816B-A42B",
+        },
         "glimmer": {
-            "model": os.getenv("GLIMMER_30B_MODEL", "Muse-Glimmer-30B"),
+            "model": _env("GLIMMER_30B_MODEL", "Muse-Glimmer-30B"),
             "base_url": _env("GLIMMER_30B_BACKEND"),
             "base_url_env": "GLIMMER_30B_BACKEND",
-            "api_key": os.getenv("GLIMMER_API_KEY", "not-needed"),
+            "api_key": _env("GLIMMER_API_KEY", "not-needed"),
             "where": "private host · OpenAI-compatible",
         },
         "openai": {
-            "model": os.getenv("OPENAI_MODEL", "gpt-5.6-luna"),
+            "model": _env("OPENAI_MODEL", "gpt-5.6-luna"),
             "base_url": None,
             "api_key": _env("OPENAI_API_KEY"),
             "api_key_env": "OPENAI_API_KEY",
             "where": "OpenAI API",
         },
         "gemma": {
-            "model": os.getenv("GEMMA_AGENTIC_MODEL", "gemma4-agentic-v2"),
-            "base_url": os.getenv("GEMMA_AGENTIC_BASE_URL", "http://127.0.0.1:18080/v1"),
+            "model": _env("GEMMA_AGENTIC_MODEL", "gemma4-agentic-v2"),
+            "base_url": _env("GEMMA_AGENTIC_BASE_URL", "http://127.0.0.1:18080/v1"),
             "base_url_env": "GEMMA_AGENTIC_BASE_URL",
-            "api_key": os.getenv("GEMMA_AGENTIC_API_KEY", "not-needed"),
+            "api_key": _env("GEMMA_AGENTIC_API_KEY", "not-needed"),
             "where": "local GGUF server",
         },
         "custom": {
-            "model": os.getenv("LIGASE_MODEL", ""),
+            "model": _env("LIGASE_MODEL", ""),
             "base_url": _env("LIGASE_BASE_URL"),
             "base_url_env": "LIGASE_BASE_URL",
-            "api_key": os.getenv("LIGASE_API_KEY", "not-needed"),
+            "api_key": _env("LIGASE_API_KEY", "not-needed"),
             "where": "OpenAI-compatible host",
         },
     }
 
 
-MODEL_CHOICES = ["auto", "glimmer", "openai", "luna", "gemma", "custom"]
+MODEL_CHOICES = ["auto", "spark", "glimmer", "openai", "luna", "gemma", "custom"]
 
 
 def resolve_model(name: str = "auto") -> Dict[str, Any]:
     presets = model_presets()
     if name == "auto":
-        if presets["glimmer"]["base_url"]:
+        if _env("MUSE_SPARK_BACKEND"):
+            name = "spark"
+        elif presets["glimmer"]["base_url"]:
             name = "glimmer"
         elif presets["custom"]["base_url"]:
             name = "custom"
+        elif _env("GEMMA_AGENTIC_BASE_URL") or _env("GEMMA_AGENTIC_MODEL"):
+            name = "gemma"
         elif presets["openai"]["api_key"]:
             name = "openai"
         else:
             raise ConfigError(
                 "No model configured. Put one of these in .env:\n"
+                "  MUSE_SPARK_BACKEND=http://<host>/v1    (private Muse Spark)\n"
                 "  GLIMMER_30B_BACKEND=http://<host>/v1   (private Muse Glimmer)\n"
                 "  OPENAI_API_KEY=sk-...                  (OpenAI)\n"
                 "then run `ligase doctor`."
@@ -145,7 +195,11 @@ def resolve_model(name: str = "auto") -> Dict[str, Any]:
     if cfg.get("api_key_env") and not cfg["api_key"]:
         raise ConfigError(f"Set {cfg['api_key_env']} in .env to use --model {name}.")
     if name == "custom" and not cfg["model"]:
-        raise ConfigError("Set LIGASE_MODEL in .env to the model name served at LIGASE_BASE_URL.")
+        discovered = _discover_remote_model(cfg["base_url"], cfg["api_key"])
+        if discovered:
+            cfg["model"] = discovered
+        else:
+            raise ConfigError("Set LIGASE_MODEL in .env to the model name served at LIGASE_BASE_URL.")
     return cfg
 
 
@@ -228,17 +282,31 @@ def run_question(
 
     def on_event(kind, data):
         if kind == "tool_started":
-            started[data.get("call_id")] = time.time()
-            calls.append({"name": data.get("tool_name"), "args": data.get("args")})
+            cid = data.get("call_id")
+            started[cid] = time.time()
+            calls.append(
+                {
+                    "call_id": cid,
+                    "name": data.get("tool_name"),
+                    "args": data.get("args"),
+                    "ok": None,
+                    "duration_s": None,
+                }
+            )
             console.print(f"  [yellow]▸[/yellow] [bold]{data.get('tool_name')}[/bold] [dim]{_short(data.get('args') or {})}[/dim]")
         elif kind == "tool_result":
-            ok = data.get("success") and '"success": false' not in str(data.get("output") or "")
-            dt = time.time() - started.get(data.get("call_id"), time.time())
+            cid = data.get("call_id")
+            ok = bool(data.get("success")) and '"success": false' not in str(data.get("output") or "")
+            dt = time.time() - started.get(cid, time.time())
             mark = "[green]✓[/green]" if ok else "[red]✗[/red]"
             preview = _short(data.get("output") or data.get("error") or "", 70)
             console.print(f"    {mark} [dim]{dt:.1f}s  {preview}[/dim]")
-            if calls:
-                calls[-1]["ok"] = ok
+            matched = next((c for c in reversed(calls) if cid and c.get("call_id") == cid), None)
+            if matched is None:
+                matched = next((c for c in reversed(calls) if c.get("ok") is None), calls[-1] if calls else None)
+            if matched is not None:
+                matched["ok"] = ok
+                matched["duration_s"] = round(dt, 3)
         elif kind == "warn":
             console.print(f"  [dim yellow]! {data.get('message')}[/dim yellow]")
 
@@ -280,6 +348,33 @@ def run_question(
     ] or ["(answered from model knowledge, no tools)"]
     lines += ["", "## Answer", "", answer or ""]
     (run_dir / "report.md").write_text("\n".join(lines) + "\n")
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "version": VERSION,
+                "question": question,
+                "model": cfg["model"],
+                "where": cfg["where"],
+                "ad": ad,
+                "elapsed_s": round(elapsed, 3),
+                "setup_s": round(setup, 3),
+                "iterations": iterations,
+                "tool_calls": [
+                    {
+                        "name": c.get("name"),
+                        "args": c.get("args"),
+                        "ok": c.get("ok"),
+                        "duration_s": c.get("duration_s"),
+                    }
+                    for c in calls
+                ],
+                "answer": answer or "",
+            },
+            indent=2,
+            default=str,
+        )
+        + "\n"
+    )
 
     console.print(
         f"[green]✓[/green] {len(calls)} tool call{'s' * (len(calls) != 1)} · {iterations} iteration{'s' * (iterations != 1)}"
@@ -293,6 +388,7 @@ def run_question(
 
 def _probe_endpoint(base_url: str, api_key: Optional[str], timeout: float = 6.0) -> str:
     """Return '' when GET /models answers 200, else a short reason. Never echoes the host."""
+    _quiet_http_logs()
     import httpx  # certifi-backed TLS; urllib fails on python.org builds without a cert bundle
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "not-needed" else {}
@@ -305,22 +401,34 @@ def _probe_endpoint(base_url: str, api_key: Optional[str], timeout: float = 6.0)
     return "" if resp.status_code == 200 else f"HTTP {resp.status_code}"
 
 
-def doctor(console: Console) -> int:
+def doctor(console: Console, model_name: str = "auto") -> int:
     rows = []  # (status, check, detail)
 
     def add(ok: Optional[bool], check: str, detail: str) -> None:
         rows.append(("[green]ok[/green]" if ok else "[yellow]warn[/yellow]" if ok is None else "[red]fail[/red]", check, detail))
 
     add(sys.version_info >= (3, 10), "Python", platform.python_version())
-    biomni_dir = REPO_DIR / "biomni" / "biomni"
+    biomni_dir = next(
+        (
+            d
+            for d in [
+                Path(os.environ["LIGASE_BIOMNI_PATH"]) / "biomni" if os.environ.get("LIGASE_BIOMNI_PATH") else None,
+                REPO_DIR / "biomni" / "biomni",
+                Path.cwd() / "biomni" / "biomni",
+            ]
+            if d and d.is_dir()
+        ),
+        REPO_DIR / "biomni" / "biomni",
+    )
     add(biomni_dir.is_dir(), "Biomni tool library", "found" if biomni_dir.is_dir() else "missing: run ./install.sh")
-    add((REPO_DIR / ".env").exists() or (Path.cwd() / ".env").exists(), ".env file", "found" if (REPO_DIR / ".env").exists() else "missing: cp .env.example .env")
+    has_env = (REPO_DIR / ".env").exists() or (Path.cwd() / ".env").exists()
+    add(has_env, ".env file", "found" if has_env else "missing: cp .env.example .env")
 
     if biomni_dir.is_dir():
         try:
             from ligase.tools_adapter import SKIPPED_MODULES, get_biomni_claw_tools
 
-            n = len(get_biomni_claw_tools(modules=DEFAULT_MODULES))
+            n = len(get_biomni_claw_tools(modules=DEFAULT_MODULES, lazy=False))
             add(n > 0, "Domain tools", f"{n} loaded")
             for mod, reason in sorted(SKIPPED_MODULES.items()):
                 add(None, f"  module {mod}", f"skipped ({_short(reason, 40)}); ./install.sh --genomics" if mod == "genomics" else f"skipped ({_short(reason, 50)})")
@@ -331,7 +439,7 @@ def doctor(console: Console) -> int:
     add(bool(shutil.which(sandbox)) or None, "OS sandbox", sandbox if shutil.which(sandbox) else f"{sandbox} not found")
 
     try:
-        cfg = resolve_model("auto")
+        cfg = resolve_model(model_name)
         add(True, "Model", f"{cfg['model']} ({cfg['name']}, {cfg['where']})")
         url = cfg["base_url"] or "https://api.openai.com/v1"
         problem = _probe_endpoint(url, cfg["api_key"])
@@ -409,7 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
     example.add_argument("name", choices=sorted(EXAMPLES))
 
     sub.add_parser("examples", help="list ready-made studies")
-    sub.add_parser("doctor", help="check install, tools, model endpoint and sandbox")
+    sub.add_parser("doctor", parents=[common], help="check install, tools, model endpoint and sandbox")
     sub.add_parser("chat", parents=[common], help="interactive prompt (same as no command)")
     return parser
 
@@ -427,7 +535,10 @@ def main(argv=None) -> int:
             _print_examples(console)
             return 0
         if args.cmd == "doctor":
-            return doctor(console)
+            code = doctor(console, model_name=getattr(args, "model", "auto"))
+            if getattr(args, "record", None):
+                console.save_svg(args.record, title="ligase doctor")
+            return code
         cfg = resolve_model(args.model)
         if args.cmd == "run":
             code = run_question(console, args.question, cfg, ad=args.ad, max_iterations=args.max_iterations, out=args.out)

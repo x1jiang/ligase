@@ -21,6 +21,9 @@ _SUB_SUPER_DIGITS = str.maketrans(
 # Lookups that cover the standard biomedical suite without the 70+ assay tools.
 PREFERRED_DOMAIN_TOOLS = frozenset(
     {
+        "lookup_compound",
+        "transcribe_translate",
+        "run_python",
         "query_uniprot",
         "query_ensembl",
         "query_clinvar",
@@ -39,6 +42,9 @@ PREFERRED_DOMAIN_TOOLS = frozenset(
 # Needed for the DNA transcription/translation task; keep them visible.
 ALWAYS_ON_TOOLS = frozenset(
     {
+        "lookup_compound",
+        "transcribe_translate",
+        "run_python",
         "execute",
         "write_file",
         "retrieve_tool_result",
@@ -65,15 +71,16 @@ EXPLORATION_TOOLS = frozenset(
 
 LOCAL_OPERATING_RULES = """
 ### LOCAL MODEL OPERATING RULES (mandatory)
-1. If you already know the answer (gene symbols, chromosomes, drug formulas, multiple-choice), answer immediately. Do not call tools.
-2. Use at most one biomedical lookup (`query_uniprot`, `query_chembl`, `query_pubchem`, `query_ensembl`) when you need a live accession confirmed.
-3. Never use `ls`, `glob`, `grep`, `web_search`, `web_fetch`, or filesystem exploration for scientific facts.
-4. If a tool errors (SSL, auth, timeout, not found), stop retrying and answer from knowledge.
-5. Use `write_file` + `execute` only when the user asks you to write and run code.
-6. After one successful tool result, write the final answer. Do not keep exploring.
-7. Put canonical terms in the visible answer: official gene symbols, "tumor suppressor", enzyme names (e.g. Cas13a), formulas, and the peptide/protein sequence.
-8. For multiple choice, include both `[ANSWER]X[/ANSWER]` and the option name (e.g. Cas13a).
-9. Be concise: 2-6 sentences for factual questions. Keep private reasoning short so the visible answer is not truncated.
+1. Keep internal thinking to 1-2 short sentences. Never deliberate or repeat policy checks on standard biomedical research queries.
+2. If you already know the answer (gene symbols, chromosomes, drug formulas, multiple-choice), answer immediately. Do not call tools.
+3. For drug/compound lookups, prefer `lookup_compound` (direct PubChem card) over `query_pubchem` or `query_chembl`. Use at most one lookup total.
+4. For DNA transcription/translation use `transcribe_translate`, or `run_python` for short calculations.
+5. Never use `ls`, `glob`, `grep`, `web_search`, `web_fetch`, or filesystem exploration for scientific facts.
+6. If a tool errors (SSL, auth, timeout, not found), stop retrying and answer from knowledge.
+7. After one successful tool result, write the final answer immediately. Do not call another tool.
+8. Put canonical terms in the visible answer: official gene symbols, "tumor suppressor", enzyme names (e.g. Cas13a), ASCII formulas (no subscripts), and the peptide/protein sequence.
+9. For multiple choice, include both `[ANSWER]X[/ANSWER]` and the option name (e.g. Cas13a).
+10. Be concise: 2-5 sentences for factual questions.
 """.strip()
 
 COMPACT_AD_NOTE = (
@@ -102,17 +109,45 @@ def is_compact_local_model(
     base_url: Optional[str] = None,
 ) -> bool:
     """True for Glimmer / OSS checkpoints on a non-cloud OpenAI-compatible URL."""
-    flag = os.getenv("BIOMNI_LOCAL_HARNESS", "").strip().lower()
+    flag = (
+        os.getenv("LIGASE_LOCAL_HARNESS")
+        or os.getenv("BIOMNI_LOCAL_HARNESS")
+        or ""
+    ).strip().lower()
     if flag in ("0", "false", "no", "off"):
         return False
     if flag in ("1", "true", "yes", "on"):
         return True
 
     model_l = (model or "").strip().lower()
-    if any(tag in model_l for tag in ("glimmer", "muse-glimmer", "llama", "qwen", "gemma", "mistral")):
-        if model_l.startswith(("gpt-", "claude-", "gemini-", "o1", "o3", "o4")):
-            return False
+    if model_l.startswith(("gpt-", "claude-", "gemini-", "o1", "o3", "o4")):
+        return False
+
+    if any(
+        tag in model_l
+        for tag in (
+            "glimmer",
+            "muse-glimmer",
+            "muse-spark",
+            "llama",
+            "qwen",
+            "gemma",
+            "mistral",
+            "deepseek",
+            "phi-",
+            "olmo",
+        )
+    ):
         return True
+
+    url = (base_url or os.getenv("OPENAI_BASE_URL") or "").strip()
+    if not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host or host in _CLOUD_HOSTS or host.endswith(".openai.azure.com"):
+        return False
+    return True
 
 
 def is_gemma_local_model(model: Optional[str] = None) -> bool:
@@ -121,16 +156,6 @@ def is_gemma_local_model(model: Optional[str] = None) -> bool:
     if not model_l or "gemma" not in model_l:
         return False
     return not model_l.startswith(("gpt-", "claude-", "gemini-"))
-
-    url = (base_url or os.getenv("OPENAI_BASE_URL") or "").strip()
-    if not url:
-        return False
-    host = (urlparse(url).hostname or "").lower()
-    if not host or host in _CLOUD_HOSTS or host.endswith(".openai.azure.com"):
-        return False
-    if model_l.startswith(("gpt-", "claude-", "gemini-")):
-        return False
-    return True
 
 
 def normalize_local_answer(text: str) -> str:
@@ -154,7 +179,12 @@ def local_system_addendum(*, is_ad_specialized: bool = False) -> str:
 def select_local_domain_tools(tools: Iterable[Any]) -> list[Any]:
     """Keep preferred lookups when present; otherwise keep every loaded domain tool."""
     loaded = list(tools)
-    if os.getenv("BIOMNI_LOCAL_FULL_TOOLS", "").strip().lower() in ("1", "true", "yes", "on"):
+    full_flag = (
+        os.getenv("LIGASE_LOCAL_FULL_TOOLS")
+        or os.getenv("BIOMNI_LOCAL_FULL_TOOLS")
+        or ""
+    ).strip().lower()
+    if full_flag in ("1", "true", "yes", "on"):
         return loaded
     preferred = [t for t in loaded if getattr(t, "name", "") in PREFERRED_DOMAIN_TOOLS]
     return preferred or loaded
@@ -167,8 +197,36 @@ def local_active_tool_names(domain_tools: Iterable[Any]) -> set[str]:
     return names
 
 
+def _configure_spark_chat_options(claw_agent: Any) -> None:
+    """Pass native reasoning_effort + chat_template_kwargs for Muse-Spark llama.cpp servers."""
+    llm = getattr(claw_agent, "llm", None)
+    model_l = str(getattr(llm, "model", "") or "").lower()
+    if "spark" not in model_l and "muse" not in model_l:
+        return
+    client = getattr(llm, "client", None)
+    completions = getattr(getattr(client, "chat", None), "completions", None)
+    if completions is None or getattr(completions, "_ligase_spark_wrapped", False):
+        return
+    orig_create = completions.create
+
+    async def _wrapped_create(*args: Any, **kwargs: Any) -> Any:
+        effort = (os.getenv("LIGASE_REASONING_EFFORT") or "low").strip().lower()
+        if effort in ("low", "medium", "high", "xhigh"):
+            kwargs.setdefault("reasoning_effort", effort)
+            extra = dict(kwargs.get("extra_body") or {})
+            ctk = dict(extra.get("chat_template_kwargs") or {})
+            ctk.setdefault("reasoning_effort", effort)
+            extra["chat_template_kwargs"] = ctk
+            kwargs["extra_body"] = extra
+        return await orig_create(*args, **kwargs)
+
+    completions.create = _wrapped_create
+    completions._ligase_spark_wrapped = True
+
+
 def apply_local_tool_surface(claw_agent: Any, domain_tools: Iterable[Any]) -> list[str]:
     """Hide coding/exploration tools so Glimmer cannot ls/web-search its way to a timeout."""
+    _configure_spark_chat_options(claw_agent)
     registry = getattr(claw_agent, "tools", None)
     if registry is None or not hasattr(registry, "set_active_tools"):
         return []
@@ -196,7 +254,7 @@ def needs_knowledge_fallback(state: Any) -> bool:
     status = str(getattr(state, "status", "") or "")
     if status == "max_iterations":
         return True
-    return result.startswith("Reached maximum of") or "maximum of" in result and "tool rounds" in result
+    return result.startswith("Reached maximum of") or ("maximum of" in result and "tool rounds" in result)
 
 
 async def knowledge_fallback_answer(claw_agent: Any, prompt: str) -> str:
@@ -206,10 +264,13 @@ async def knowledge_fallback_answer(claw_agent: Any, prompt: str) -> str:
     llm = getattr(claw_agent, "llm", None)
     if llm is None or not hasattr(llm, "chat"):
         return ""
-    response = await llm.chat(
-        [
-            LLMMessage(role="system", content=KNOWLEDGE_FALLBACK_SYSTEM),
-            LLMMessage(role="user", content=prompt),
-        ]
-    )
+    try:
+        response = await llm.chat(
+            [
+                LLMMessage(role="system", content=KNOWLEDGE_FALLBACK_SYSTEM),
+                LLMMessage(role="user", content=prompt),
+            ]
+        )
+    except Exception:
+        return ""
     return (getattr(response, "content", None) or "").strip()

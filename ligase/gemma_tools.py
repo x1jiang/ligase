@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import ast
+import builtins
 import contextlib
 import io
 import json
+import os
 import ssl
+import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,9 +20,43 @@ from typing import Any
 from ligase.tools_adapter import BiomniTool
 
 _PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
-_UA = "Ligase/0.1 (local biomedical agent)"
+_UA = "Ligase/0.3 (local biomedical agent)"
 _TIMEOUT_S = 12
+_PYTHON_TIMEOUT_S = 5.0
+_MAX_OUTPUT_CHARS = 8000
 LAST_TOOL_CARDS: dict[str, str] = {}
+
+_ALLOWED_IMPORTS = frozenset(
+    {
+        "math",
+        "statistics",
+        "collections",
+        "itertools",
+        "functools",
+        "re",
+        "json",
+        "decimal",
+        "fractions",
+        "string",
+    }
+)
+
+_FORBIDDEN_ATTRS = frozenset(
+    {
+        "__subclasses__",
+        "__globals__",
+        "__builtins__",
+        "__code__",
+        "__closure__",
+        "__mro__",
+        "__bases__",
+        "__base__",
+        "__dict__",
+        "__class__",
+        "__loader__",
+        "__spec__",
+    }
+)
 
 
 def clear_tool_cards() -> None:
@@ -37,7 +77,14 @@ def _ssl_contexts() -> list[ssl.SSLContext | None]:
         contexts.append(ssl.create_default_context(cafile=certifi.where()))
     except Exception:
         pass
-    contexts.append(ssl._create_unverified_context())
+    allow_insecure = os.getenv("LIGASE_INSECURE_SSL", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    if allow_insecure:
+        contexts.append(ssl._create_unverified_context())
     return contexts
 
 
@@ -98,28 +145,59 @@ def lookup_compound(name: str) -> str:
     )
 
 
+def _safe_import(
+    name: str,
+    globals: Any = None,
+    locals: Any = None,
+    fromlist: Any = (),
+    level: int = 0,
+) -> Any:
+    root_mod = (name or "").split(".")[0]
+    if level != 0 or root_mod not in _ALLOWED_IMPORTS:
+        raise ImportError(f"Import of '{name}' is not permitted in run_python")
+    return builtins.__import__(name, globals, locals, fromlist, level)
+
+
 _SAFE_BUILTINS = {
+    "__import__": _safe_import,
     "print": print,
     "range": range,
     "len": len,
     "str": str,
     "int": int,
     "float": float,
+    "bool": bool,
     "dict": dict,
     "list": list,
     "tuple": tuple,
     "set": set,
+    "frozenset": frozenset,
     "enumerate": enumerate,
     "zip": zip,
+    "map": map,
+    "filter": filter,
     "min": min,
     "max": max,
     "sum": sum,
     "abs": abs,
+    "pow": pow,
+    "divmod": divmod,
     "sorted": sorted,
     "reversed": reversed,
     "any": any,
     "all": all,
     "round": round,
+    "chr": chr,
+    "ord": ord,
+    "hex": hex,
+    "bin": bin,
+    "isinstance": isinstance,
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "TypeError": TypeError,
+    "ZeroDivisionError": ZeroDivisionError,
     "True": True,
     "False": False,
     "None": None,
@@ -148,7 +226,13 @@ _CODON_TABLE = {
 
 def transcribe_translate(dna: str) -> str:
     """Transcribe DNA to mRNA and translate with the standard genetic code."""
-    seq = "".join(ch for ch in (dna or "").upper() if ch in "ACGTU")
+    raw_lines = [
+        line.strip()
+        for line in (dna or "").splitlines()
+        if line.strip() and not line.lstrip().startswith((">", ";", "#"))
+    ]
+    cleaned = "".join(raw_lines).upper()
+    seq = "".join(ch for ch in cleaned if ch in "ACGTU")
     if not seq:
         return "error: dna sequence is required"
     mrna = seq.replace("T", "U")
@@ -165,23 +249,71 @@ def transcribe_translate(dna: str) -> str:
     )
 
 
-def run_python(code: str) -> str:
-    """Execute a short Python snippet and return stdout."""
+def _validate_ast(source: str) -> str | None:
+    """Reject forbidden attribute introspection before running user/model snippet."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return f"error: SyntaxError: {exc}"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_ATTRS:
+            return f"error: SecurityError: access to '{node.attr}' is not allowed"
+        if isinstance(node, ast.Name) and node.id in _FORBIDDEN_ATTRS:
+            return f"error: SecurityError: access to '{node.id}' is not allowed"
+    return None
+
+
+def _exec_snippet(source: str, deadline: float | None = None) -> str:
+    buf = io.StringIO()
+    namespace: dict[str, Any] = {"__builtins__": _SAFE_BUILTINS}
+
+    def _tracer(frame: Any, event: str, arg: Any) -> Any:
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError("execution timed out")
+        return _tracer
+
+    prev_trace = sys.gettrace()
+    try:
+        if deadline is not None:
+            sys.settrace(_tracer)
+        with contextlib.redirect_stdout(buf):
+            exec(source, namespace, namespace)  # noqa: S102
+    finally:
+        sys.settrace(prev_trace)
+    out = buf.getvalue().strip()
+    if out:
+        return out[:_MAX_OUTPUT_CHARS]
+    result = namespace.get("result")
+    return "" if result is None else str(result)[:_MAX_OUTPUT_CHARS]
+
+
+def run_python(code: str, timeout: float = _PYTHON_TIMEOUT_S) -> str:
+    """Execute a short Python snippet with AST checks and timeout and return stdout."""
     source = (code or "").strip()
     if not source:
         return "error: code is required"
-    buf = io.StringIO()
-    namespace: dict[str, Any] = {"__builtins__": _SAFE_BUILTINS}
-    try:
-        with contextlib.redirect_stdout(buf):
-            exec(source, namespace, namespace)
-    except Exception as exc:
-        return f"error: {type(exc).__name__}: {exc}"
-    out = buf.getvalue().strip()
-    if out:
-        return out
-    result = namespace.get("result")
-    return "" if result is None else str(result)
+    ast_err = _validate_ast(source)
+    if ast_err:
+        return ast_err
+    deadline = time.monotonic() + timeout if timeout and timeout > 0 else None
+    box: dict[str, Any] = {}
+
+    def _target() -> None:
+        try:
+            box["out"] = _exec_snippet(source, deadline=deadline)
+        except TimeoutError:
+            box["err"] = f"error: TimeoutError: code execution exceeded {timeout:.1f}s"
+        except Exception as exc:
+            box["err"] = f"error: {type(exc).__name__}: {exc}"
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout=max(timeout + 0.2, 0.5) if timeout else None)
+    if worker.is_alive():
+        return f"error: TimeoutError: code execution exceeded {timeout:.1f}s"
+    if "err" in box:
+        return str(box["err"])
+    return str(box.get("out", ""))
 
 
 def gemma_extra_tools() -> list[BiomniTool]:

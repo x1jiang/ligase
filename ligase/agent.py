@@ -4,19 +4,26 @@ Ligase Agent: High-performance Biomedical AI Agent powered by ClawAgents backbon
 
 import asyncio
 import os
+import queue
 import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, List, Optional
 
 # Ensure paths are set
 pkg_dir = Path(__file__).resolve().parent
 repo_dir = pkg_dir.parent
-for p in [repo_dir / "biomni", repo_dir / "clawagents_py" / "src"]:
-    if str(p) not in sys.path:
+for p in [
+    Path(os.environ["LIGASE_BIOMNI_PATH"]) if os.environ.get("LIGASE_BIOMNI_PATH") else None,
+    repo_dir / "biomni",
+    repo_dir / "clawagents_py" / "src",
+    Path.cwd() / "biomni",
+]:
+    if p and p.exists() and str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
 from clawagents.agent import ClawAgent, create_claw_agent
-from clawagents.providers.llm import LLMProvider
 from ligase.tools_adapter import get_biomni_claw_tools
 from ligase.context_layers import BiomniDataLakeLayer, BiomniKnowHowLayer, BiomniADLayer
 from ligase.gemma_harness import (
@@ -55,11 +62,13 @@ class LigaseAgent:
         data_path: str = "./data",
         commercial_mode: bool = False,
         is_ad_specialized: bool = False,
+        sandbox_enabled: bool = True,
     ):
         self.claw_agent = claw_agent
         self.data_path = data_path
         self.commercial_mode = commercial_mode
         self.is_ad_specialized = is_ad_specialized
+        self.sandbox_enabled = sandbox_enabled
         self.compact_local = False
         self.gemma_local = False
         self.last_result: Optional[str] = None
@@ -75,6 +84,7 @@ class LigaseAgent:
 
         if loop and loop.is_running():
             import nest_asyncio
+
             nest_asyncio.apply()
             return loop.run_until_complete(self.go_async(prompt))
         else:
@@ -82,6 +92,9 @@ class LigaseAgent:
 
     async def go_async(self, prompt: str) -> str:
         """Run a biomedical research task asynchronously."""
+        if not prompt or not str(prompt).strip():
+            raise ValueError("Task prompt must be a non-empty string.")
+        t0 = time.time()
         if self.gemma_local:
             clear_tool_cards()
         state = await self.claw_agent.invoke(task=prompt)
@@ -96,13 +109,75 @@ class LigaseAgent:
                 result = close_multiple_choice(prompt, merge_tool_cards(result))
             if hasattr(state, "result"):
                 state.result = result
+        elapsed = time.time() - t0
         self.last_state = state
         self.last_result = result
+        self.trajectory_history.append(
+            {
+                "prompt": prompt,
+                "result": self.last_result,
+                "iterations": getattr(state, "iterations", None),
+                "status": getattr(state, "status", "done"),
+                "elapsed_s": round(elapsed, 3),
+            }
+        )
         return self.last_result
 
     def go_stream(self, prompt: str) -> Generator[str, None, None]:
-        """Stream execution events and tokens."""
-        pass
+        """Stream execution events and assistant output tokens."""
+        q: "queue.Queue[Optional[str]]" = queue.Queue()
+        emitted_deltas: List[str] = []
+        errors: List[BaseException] = []
+
+        prev_stream = getattr(self.claw_agent, "on_stream_event", None)
+        prev_event = getattr(self.claw_agent, "on_event", None)
+
+        def _handle_event(kind: str, data: Dict[str, Any]) -> None:
+            if kind == "assistant_delta":
+                piece = data.get("content") or data.get("delta") or ""
+                if piece:
+                    emitted_deltas.append(str(piece))
+                    q.put(str(piece))
+            elif kind == "tool_started":
+                tname = data.get("tool_name") or "tool"
+                q.put(f"\n[tool: {tname}]\n")
+
+        def _stream_hook(ev: Any) -> None:
+            if prev_stream is not None:
+                prev_stream(ev)
+            _handle_event(getattr(ev, "kind", ""), getattr(ev, "data", {}) or {})
+
+        def _event_hook(kind: str, data: Dict[str, Any]) -> None:
+            if prev_event is not None:
+                prev_event(kind, data)
+            if prev_stream is None:
+                _handle_event(kind, data or {})
+
+        self.claw_agent.on_stream_event = _stream_hook
+        self.claw_agent.on_event = _event_hook
+
+        def _worker() -> None:
+            try:
+                final = self.go(prompt)
+                if not emitted_deltas and final:
+                    q.put(final)
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                self.claw_agent.on_stream_event = prev_stream
+                self.claw_agent.on_event = prev_event
+                q.put(None)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
+        thread.join(timeout=1.0)
+        if errors:
+            raise errors[0]
 
 
 def create_agent(
@@ -121,7 +196,7 @@ def create_agent(
     Factory to create a Ligase Agent.
 
     Args:
-        model: Frontier model name ("gpt-5.6-luna", "gpt-4o", etc.)
+        model: Frontier or local model name ("gpt-5.6-luna", "Muse-Glimmer-30B", etc.)
         data_path: Path to local and S3 biological data lake
         modules: List of specific biomedical domain modules to load
         commercial_mode: Filter non-commercial datasets
@@ -135,19 +210,27 @@ def create_agent(
     if modules is None:
         modules = ["database", "literature", "genomics", "pharmacology", "biochemistry", "molecular_biology"]
 
+    max_iterations = max(1, int(max_iterations))
+    workspace_path = Path(data_path).expanduser().resolve()
+    try:
+        workspace_path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
     resolved_base_url = base_url or os.getenv("OPENAI_BASE_URL")
     compact_local = is_compact_local_model(model, resolved_base_url)
     gemma_local = compact_local and is_gemma_local_model(model)
-    if gemma_local:
+    if compact_local:
         bind_gemma_harness_profile(model)
+    if gemma_local:
         max_iterations = cap_gemma_iterations(max_iterations)
 
     # Bridge domain tools into ClawAgents
     domain_tools = get_biomni_claw_tools(modules=modules)
     if compact_local:
-        domain_tools = select_local_domain_tools(domain_tools)
+        domain_tools = select_local_domain_tools(attach_gemma_tools(domain_tools))
     if gemma_local:
-        domain_tools = select_gemma_domain_tools(attach_gemma_tools(domain_tools))
+        domain_tools = select_gemma_domain_tools(domain_tools)
 
     # Build system instructions
     if compact_local:
@@ -165,7 +248,7 @@ def create_agent(
             "You have access to specialized biomedical database and analysis tools, as well as a sandboxed terminal for code execution.",
             "Solve problems rigorously, retrieve ground-truth data, and provide precise, evidence-backed scientific conclusions.",
         ]
-        dl_layer = BiomniDataLakeLayer(data_path=data_path, commercial_mode=commercial_mode)
+        dl_layer = BiomniDataLakeLayer(data_path=str(workspace_path), commercial_mode=commercial_mode)
         dl_text = dl_layer.inject(None)
         if dl_text:
             instruction_parts.append(dl_text)
@@ -191,7 +274,8 @@ def create_agent(
         "tools": domain_tools,
         "streaming": streaming,
         "max_iterations": max_iterations,
-        "workspace": data_path,
+        "workspace": str(workspace_path),
+        "allow_full_access": not bool(sandbox_enabled),
     }
     if compact_local:
         create_kwargs.update(
@@ -215,10 +299,16 @@ def create_agent(
 
     agent = LigaseAgent(
         claw_agent=claw_agent,
-        data_path=data_path,
+        data_path=str(workspace_path),
         commercial_mode=commercial_mode,
         is_ad_specialized=is_ad_specialized,
+        sandbox_enabled=sandbox_enabled,
     )
     agent.compact_local = compact_local
     agent.gemma_local = gemma_local
     return agent
+
+
+# Backwards-compatible aliases for Biomni-Plus callers
+BiomniPlusAgent = LigaseAgent
+create_biomni_plus_agent = create_agent
