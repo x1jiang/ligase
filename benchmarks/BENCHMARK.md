@@ -116,7 +116,7 @@ python benchmarks/model_benchmark.py --models glimmer_30b,luna --phase agent
 
 ## 6. Scaling to `Muse-Spark-Open-816B-A42B` & Hard Biomedical Reasoning Suite (v0.3.0)
 
-Because the original 5-task suite was near ceiling (90–95%) on smaller checkpoints (`Gemma4-12B-v2`, `Muse-Glimmer-30B`, `gpt-5.6-luna`), we evaluated **`meta-models/Muse-Spark-Open-816B-A42B`** (816B total / 42B active MoE, GGUF IQ2_S 2.5 bpw on private H100 `llama-server`) on:
+Because the original 5-task suite was near ceiling (90–95%) on smaller checkpoints (`Gemma4-12B-v2`, `Muse-Glimmer-30B`, `gpt-5.6-luna`), we evaluated **`meta-models/Muse-Spark-Open-816B-A42B`** (816B total / 42B active MoE, GGUF IQ2_S 2.5 bpw on private H200 `llama-server`) on:
 1. **Standard 5-Task Suite** (Raw + Ligase Agent)
 2. **6-Task Hard Biomedical Reasoning Suite** ([`benchmarks/hard_benchmark.py`](hard_benchmark.py), 36 strict clinical/molecular rubric items across 6 tasks)
 
@@ -124,7 +124,8 @@ Because the original 5-task suite was near ceiling (90–95%) on smaller checkpo
 
 | Model | Params (Total / Active) | Raw Accuracy | Ligase Agent Accuracy | Missed Items on Standard Suite |
 | :--- | :--- | ---: | ---: | :--- |
-| **Muse-Spark-Open-816B-A42B** | 816B / 42B MoE | **100.0%** | **100.0%** | **None (20/20 keywords in both Raw & Agent)** |
+| **Muse-Spark-Open-816B-A42B** | 816B / 42B MoE (private H200) | **100.0%** | **100.0%** | **None (20/20 keywords in both Raw & Agent)** |
+| `gpt-6-luna` | Frontier API | 90.0% | 95.0% | Missed `peptide`/`protein` distinction on DNA task (75%) |
 | `Muse-Glimmer-30B` | 30B / 3B MoE | 88.3% | 95.0% | Missed `peptide`/`protein` distinction on DNA task (75%) |
 | `gpt-5.6-luna` | Frontier API | 90.0% | 90.0% | Missed Imatinib formula token (75%) and DNA `peptide`/`protein` (75%) |
 | `Gemma4-12B-v2-Q4_K_M` | 12B dense | 80.0% | 83.3% (95.0% w/ loop cap) | Raw invented peptide `MAS` and wrong formula `C29H30N7O`; Agent missed `O` (`C29H31N7`) and `Cas13` |
@@ -133,24 +134,25 @@ Because the original 5-task suite was near ceiling (90–95%) on smaller checkpo
 
 To separate deep biomedical reasoning from surface keyword recall, [`benchmarks/hard_benchmark.py`](hard_benchmark.py) tests six multi-part graduate/clinical problems (6 mandatory verification items per task = 36 total items):
 
-| Hard Task | Strict Verification Rubric (6 items/task) | **Muse-Spark-816B-A42B** | `gpt-5.6-luna` | `gpt-4o-mini` (Small Baseline) |
-| :--- | :--- | :---: | :---: | :---: |
-| **1. Pharmacogenomics**: `CYP2C19*2/*3` & Clopidogrel PCI | Poor metabolizer, LoF/no-function alleles, prodrug, active thiol metabolite (`R-130964`), prasugrel, ticagrelor | **6/6 (100%)** | 6/6 (100%) | 5/6 (83%) |
-| **2. Structural Oncology**: `BCR-ABL1 T315I` Gatekeeper & STAMP | Lost Thr315 H-bond, Ile315 steric clash, ATP pocket, ponatinib (3rd-gen), asciminib (STAMP), myristoyl pocket | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) |
-| **3. AD Protective Epistasis**: `APOE3 Christchurch` & `RELN-COLBOS` | `R136S` (`Arg136Ser`), `H3447R` (`His3447Arg`), HSPG / heparan sulfate, Dab1 adaptor, GSK3β, tau phosphorylation | **6/6 (100%)** | 0/6 (0%)* | 4/6 (67%)** |
-| **4. Coding Frameshift Math**: `c.10delC` in `ATGGCCCTGCTGAACCGCTAA` | WT 6-aa `MALLNR`, new 4th DNA codon `TGA`, mRNA `UGA`, premature stop, codon 4 position, truncated 3-aa `MAL` | **6/6 (100%)** | 6/6 (100%) | 5/6 (83%)*** |
-| **5. CRISPR Prime Editing**: Sickle-Cell `HBB E6V` (`A:T→T:A`) | Transversion, CBE/ABE transition limit, Prime Editing, pegRNA PBS, pegRNA RTT, engineered M-MLV reverse transcriptase | **6/6 (100%)** | 5/6 (83%) | 4/6 (67%) |
-| **6. Quantitative Clinical Genetics**: HWE ($q^2=10^{-4}$) & Bayesian Carrier Risk | $q=0.01$, $p=0.99$, $2pq=0.0198$ ($1.98\%$), unaffected sibling prior $2/3$, posterior fraction $1/6$, posterior $16.67\%$ | **6/6 (100%)** | 6/6 (100%) | 3/6 (50%)**** |
-| **Aggregate Strict Rubric Score** | **36 / 36 items across 6 tasks** | **36/36 (100.0%)** | **29/36 (80.6%)** | **27/36 (75.0%)** |
+| Hard Task | Strict Verification Rubric (6 items/task) | **Muse-Spark-816B-A42B** | `gpt-6-luna` | `gpt-5.6-luna` | `gpt-4o-mini` (Small Baseline) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **1. Pharmacogenomics**: `CYP2C19*2/*3` & Clopidogrel PCI | Poor metabolizer, LoF/no-function alleles, prodrug, active thiol metabolite (`R-130964`), prasugrel, ticagrelor | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%) |
+| **2. Structural Oncology**: `BCR-ABL1 T315I` Gatekeeper & STAMP | Lost Thr315 H-bond, Ile315 steric clash, ATP pocket, ponatinib (3rd-gen), asciminib (STAMP), myristoyl pocket | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 6/6 (100%) |
+| **3. AD Protective Epistasis**: `APOE3 Christchurch` & `RELN-COLBOS` | `R136S` (`Arg136Ser`), `H3447R` (`His3447Arg`), HSPG / heparan sulfate, Dab1 adaptor, GSK3β, tau phosphorylation | **6/6 (100%)** | 6/6 (100%) | 0/6 (0%)* | 4/6 (67%)** |
+| **4. Coding Frameshift Math**: `c.10delC` in `ATGGCCCTGCTGAACCGCTAA` | WT 6-aa `MALLNR`, new 4th DNA codon `TGA`, mRNA `UGA`, premature stop, codon 4 position, truncated 3-aa `MAL` | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%)*** |
+| **5. CRISPR Prime Editing**: Sickle-Cell `HBB E6V` (`A:T→T:A`) | Transversion, CBE/ABE transition limit, Prime Editing, pegRNA PBS, pegRNA RTT, engineered M-MLV reverse transcriptase | **6/6 (100%)** | 5/6 (83%) | 5/6 (83%) | 4/6 (67%) |
+| **6. Quantitative Clinical Genetics**: HWE ($q^2=10^{-4}$) & Bayesian Carrier Risk | $q=0.01$, $p=0.99$, $2pq=0.0198$ ($1.98\%$), unaffected sibling prior $2/3$, posterior fraction $1/6$, posterior $16.67\%$ | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 3/6 (50%)**** |
+| **Aggregate Strict Rubric Score** | **36 / 36 items across 6 tasks** | **36/36 (100.0%)** | **35/36 (97.2%)** | **29/36 (80.6%)** | **27/36 (75.0%)** |
 
 #### Why `Muse-Spark-Open-816B-A42B` Outperforms Smaller & Frontier Models on Hard Tasks:
 - **`*` & `**` AD Protective Genetics (`APOE3 Christchurch` + `RELN-COLBOS`)**: Small models (`gpt-4o-mini`) hallucinated both protective variants as `R136C` and `P12L`, while `gpt-5.6-luna` exhausted its reasoning budget trying to recall the `RELN-COLBOS` substitution. `Muse-Spark-816B-A42B` recalled both exact substitutions (`APOE3 p.Arg136Ser / R136S` [and mature vs signal-peptide `p.Arg154Ser`] plus `RELN-COLBOS p.His3447Arg / H3447R, c.10340A>G`), reduced HSPG binding, and the full `ApoER2/VLDLR → Dab1 → PI3K/Akt → GSK3β Ser9` cascade.
 - **`***` Exact Reading-Frame & Frameshift Arithmetic (`c.10delC`)**: Whereas `Gemma4-12B-v2` hallucinated peptide `MAS` on a 12-nt sequence in raw mode and `gpt-4o-mini` mis-segmented wild-type codon 4 as `UGA` (missing `MALLNR`), `Muse-Spark-816B-A42B` tracked all 21 nucleotide indices, verified wild-type `MALLNR`, deleted nucleotide 10 (`C`), identified the new 4th codon `TGA`/`UGA` (premature stop), and returned the truncated 3-aa peptide `MAL`.
 - **`****` Conditional Mendelian & Bayesian Carrier Risk**: `gpt-4o-mini` fell into the classic clinical genetics trap of using an unconditioned prior $P(\text{carrier}) = 1/2$ instead of conditioning on the sibling being unaffected ($P(\text{carrier} \mid \text{unaffected}) = \frac{1/2}{3/4} = 2/3$), yielding an erroneous posterior of $1/11$ ($9.09\%$). `Muse-Spark-816B-A42B` conditioned on `AA` or `Aa` ($3/4$), derived prior $2/3$, and computed the exact Bayesian posterior $\frac{0.10 \times 2/3}{0.10 \times 2/3 + 1.00 \times 1/3} = \mathbf{1/6 \approx 16.67\%}$.
+- **CRISPR Prime Editing Mechanistic Completeness**: Both `gpt-6-luna` and `gpt-5.6-luna` omitted the explicit transition vs. transversion biochemical distinction when explaining why CBEs (`C:G→T:A` transition) and ABEs (`A:T→G:C` transition) cannot revert `HBB E6V` (`T:A→A:T` transversion), whereas `Muse-Spark-816B-A42B` explicitly contrasted deaminase-catalyzed transitions against transversions and identified the engineered pentamutant `M-MLV` reverse transcriptase.
 
 Reproduce the Hard Biomedical Benchmark:
 ```bash
 export MUSE_SPARK_BACKEND=http://xxx.xx.xx.xx/v1
-python benchmarks/hard_benchmark.py --models muse_spark,luna,gpt4o_mini --phase raw
+python benchmarks/hard_benchmark.py --models muse_spark,gpt6_luna,luna,gpt4o_mini --phase raw
 ```
 

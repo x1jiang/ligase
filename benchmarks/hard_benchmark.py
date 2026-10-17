@@ -71,7 +71,7 @@ HARD_BENCHMARK_TASKS: List[Dict[str, Any]] = [
         ),
         "rubric": [
             ["poor metabolizer"],
-            ["loss-of-function", "non-functional", "no function", "null"],
+            ["loss-of-function", "non-functional", "no-function", "no function", "null"],
             ["prodrug"],
             ["active metabolite", "active thiol", "thiol metabolite"],
             ["prasugrel"],
@@ -212,6 +212,17 @@ def get_model_specs() -> List[Dict[str, Any]]:
             "temperature": 0,
             "extra_body": {"chat_template_kwargs": {"reasoning_effort": "low"}},
             "reasoning_effort": "low",
+        },
+        {
+            "id": "gpt6_luna",
+            "label": "gpt-6-luna",
+            "model": "gpt-6-luna",
+            "base_url": None,
+            "api_key": os.environ.get("OPENAI_API_KEY"),
+            "omit_temperature": True,
+            "temperature": None,
+            "extra_body": None,
+            "reasoning_effort": None,
         },
         {
             "id": "luna",

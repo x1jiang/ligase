@@ -14,15 +14,15 @@ ligase                       # ask your own questions
 
 ## Why Ligase
 
-| | Original Biomni agent | **Ligase + Muse Glimmer 30B** | **Ligase + Muse Spark 816B-A42B** |
-|---|---:|---:|---:|
-| Standard 5-task accuracy | 95% | 95% (8.2 s mean) | **100% (20/20)** |
-| Hard 6-task biomedical rubric (36 items) | — | — | **100% (36/36)** vs 80.6% (`gpt-5.6-luna`) / 75.0% (`gpt-4o-mini`) |
-| Tool loading startup | ~10–140 s (eager import) | 0.3 s (lazy schema) | **0.3 s (lazy schema)** |
-| Runs on | frontier API | one private H100 | **private H100 proxy**, local GGUF, or any API |
-| Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** + AST/timeout-guarded `run_python` |
+| | Original Biomni (`gpt-5.6-luna`) | Ligase + Compact (`Glimmer 30B` / `gpt-4o-mini`) | Ligase + Frontier (`gpt-6-luna`) | **Ligase + Muse Spark 816B-A42B** |
+|---|---:|---:|---:|---:|
+| Standard 5-task accuracy | 95.0% (40.5 s mean) | 95.0% (**8.2 s** on Glimmer 30B) | 95.0% (14.4 s mean) | **100.0% (20/20)** |
+| Hard 6-task biomedical rubric (36 items) | 80.6% (29/36) | 75.0% (27/36) | 97.2% (35/36) | **100.0% (36/36)** |
+| Tool loading startup | ~10–140 s (eager import) | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** |
+| Runs on | frontier API | private GPU / compact API | frontier API | **private H200**, local GGUF, or any API |
+| Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** | **OS sandbox** + AST/timeout-guarded `run_python` |
 
-Same model, different agent layer: on Muse Glimmer 30B, Ligase's compact harness cut mean latency from 71.0 s to 8.2 s and raised accuracy from 48% to 95%; scaling to **Muse Spark 816B-A42B** reaches **100%** on both the standard 5-task suite and the 36-item hard biomedical reasoning suite. Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
+Same model, different agent layer: on Muse Glimmer 30B, Ligase's compact harness cut mean latency from 71.0 s to 8.2 s and raised accuracy from 48% to 95%; scaling to **Muse Spark 816B-A42B** on a **private H200** reaches **100%** on both the standard 5-task suite (20/20) and the 36-item hard biomedical reasoning suite (36/36, edging out `gpt-6-luna` at 35/36 and `gpt-5.6-luna` at 29/36). Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
 
 ---
 
