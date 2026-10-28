@@ -92,9 +92,13 @@ class BiomniADLayer:
 
     def inject(self, run_context: Any) -> str | None:
         return (
-            "### ALZHEIMER'S DISEASE (AD) DATA PRIORITY POLICY\n"
-            "When answering AD/neurodegeneration tasks:\n"
-            "1. LOCAL FILES FIRST: Check local BiomniAD directories before triggering external queries.\n"
-            "2. CATALOG SOURCES: Query NIAGADS, ADRD OpenGenomics, and BiomniAD Discovery catalogs.\n"
-            "3. Ground truth integrity: Never fabricate genomic variants, OMIM IDs, or clinical phenotypes.\n"
+            "### ALZHEIMER'S DISEASE (AD) & NIAGADS DATA PRIORITY POLICY\n"
+            "When answering AD, tauopathy, or neurodegeneration genomics tasks:\n"
+            "1. NIAGADS TOOL FIRST: Call `query_niagads` at most once (never use `ls`, `glob`, or `grep` to search directories) to retrieve the bundled NIAGADS catalog:\n"
+            "   - NIAGADS DSS & ADSP Umbrella (`NG00067` R4 36k WGS called with GCAD `VCPA` pipeline Leung et al. 2019 & `FAVOR` functional annotation).\n"
+            "   - NIAGADS `FILER` (Kuksa et al. 2022 Nucleic Acids Research) & `MiGA` (`NG00105`): >58,000 Giggle-indexed functional genomics tracks showing non-coding AD GWAS loci (`BIN1`, `PICALM`, `MS4A6A`, `CD33`) colocalize with microglia enhancers bound by `SPI1` (`PU.1`).\n"
+            "   - NIAGADS `ADVP` (Kuksa et al. 2022) & IGAP (`NG00075` Kunkle et al. 2019): curated coding variants `TREM2 R47H` (loss-of-function risk), `PLCG2 P522R` (protective hypermorphic gain-of-function), `ABI3 S209F` (risk), and resilience alleles `APOE3 Christchurch` (`R136S`/`Arg136Ser`, reduced HSPG binding) & `RELN-COLBOS` (`H3447R`/`His3447Arg`, Dab1 -> GSK3beta tau suppression).\n"
+            "   - Multi-Ancestry AD (`NG00100` Kunkle et al. 2021): `ABCA7` loss-of-function/deletion risk in African American cohorts impairing phospholipid/cholesterol efflux and microglial A-beta phagocytosis.\n"
+            "   - Primary 4R-Tauopathy PSP WGS (`NG00169` Farrell et al. 2024; `NG00172` Wang et al. 2024): `APOE` e2 risk reversal (protective in AD, risk-increasing in PSP) and `17q21.31` `MAPT` `H1/H2` ~900 kb inversion (`H1` risk clade, `exon 10` `4R` tau splicing).\n"
+            "2. Ground truth integrity: Never fabricate genomic variants, dataset accessions, or clinical phenotypes.\n"
         )

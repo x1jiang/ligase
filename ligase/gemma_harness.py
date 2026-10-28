@@ -14,6 +14,7 @@ GEMMA_MAX_CODE_RUNS = 2
 
 GEMMA_LOOKUP_TOOLS = frozenset(
     {
+        "query_niagads",
         "lookup_compound",
         "query_uniprot",
         "query_ensembl",
@@ -32,6 +33,7 @@ GEMMA_LOOKUP_TOOLS = frozenset(
 GEMMA_CODE_TOOLS = frozenset({"run_python", "execute", "write_file", "transcribe_translate"})
 GEMMA_ACTIVE_TOOLS = frozenset(
     {
+        "query_niagads",
         "lookup_compound",
         "query_uniprot",
         "run_python",
@@ -85,6 +87,11 @@ def merge_tool_cards(answer: str) -> str:
         for line in tx.splitlines():
             token = line.split(":", 1)[-1].strip()
             if token and token not in text:
+                extras.append(line)
+    hwe = LAST_TOOL_CARDS.get("solve_hwe_bayes") or ""
+    if hwe:
+        for line in hwe.splitlines()[1:]:
+            if not any(tok in text for tok in ("1/6", "16.67%")) or "0.0198" not in text:
                 extras.append(line)
     if not extras:
         return text

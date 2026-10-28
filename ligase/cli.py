@@ -67,6 +67,33 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
         "ad": False,
         "max_iterations": 6,
     },
+    "niagads": {
+        "title": "NIAGADS & FILER: ADSP multi-ancestry loci, microglial enhancers & rare variants",
+        "question": (
+            "Query the NIAGADS catalog to answer: "
+            "(1) Which NIAGADS functional genomics platform (and indexing engine) colocalizes "
+            "non-coding AD GWAS loci such as BIN1 and PICALM with microglia enhancers bound by SPI1 (PU.1), "
+            "and what are the opposing effects of coding variants TREM2 R47H, PLCG2 P522R, and ABI3 S209F "
+            "(NG00075 / ADVP)? "
+            "(2) In NIAGADS ADSP Umbrella (NG00067) and African American AD GWAS (NG00100), why does ABCA7 "
+            "loss-of-function disproportionately increase AD risk in African ancestry cohorts?"
+        ),
+        "ad": True,
+        "max_iterations": 6,
+    },
+    "psp": {
+        "title": "NIAGADS Primary Tauopathy (NG00169/NG00172): PSP vs. AD APOE e2 reversal & MAPT 17q21.31 inversion",
+        "question": (
+            "Query NIAGADS datasets NG00169 and NG00172 (Progressive Supranuclear Palsy whole-genome "
+            "SNVs and structural variants, Wang et al. 2024): "
+            "(1) How does the APOE e2 allele effect reverse between Alzheimer's disease (AD) and primary "
+            "4R-tauopathy PSP? "
+            "(2) Which chromosome 17q21.31 structural variant clade (and ~900 kb inversion) drives PSP risk, "
+            "and how does it alter MAPT exon 10 splicing?"
+        ),
+        "ad": True,
+        "max_iterations": 6,
+    },
 }
 
 
@@ -426,10 +453,11 @@ def doctor(console: Console, model_name: str = "auto") -> int:
 
     if biomni_dir.is_dir():
         try:
+            from ligase.gemma_harness import attach_gemma_tools
             from ligase.tools_adapter import SKIPPED_MODULES, get_biomni_claw_tools
 
-            n = len(get_biomni_claw_tools(modules=DEFAULT_MODULES, lazy=False))
-            add(n > 0, "Domain tools", f"{n} loaded")
+            n = len(attach_gemma_tools(get_biomni_claw_tools(modules=DEFAULT_MODULES, lazy=True)))
+            add(n > 0, "Domain tools", f"{n} loaded (incl. NIAGADS catalog & compact tools)")
             for mod, reason in sorted(SKIPPED_MODULES.items()):
                 add(None, f"  module {mod}", f"skipped ({_short(reason, 40)}); ./install.sh --genomics" if mod == "genomics" else f"skipped ({_short(reason, 50)})")
         except Exception as exc:

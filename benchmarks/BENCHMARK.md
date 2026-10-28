@@ -130,29 +130,59 @@ Because the original 5-task suite was near ceiling (90–95%) on smaller checkpo
 | `gpt-5.6-luna` | Frontier API | 90.0% | 90.0% | Missed Imatinib formula token (75%) and DNA `peptide`/`protein` (75%) |
 | `Gemma4-12B-v2-Q4_K_M` | 12B dense | 80.0% | 83.3% (95.0% w/ loop cap) | Raw invented peptide `MAS` and wrong formula `C29H30N7O`; Agent missed `O` (`C29H31N7`) and `Cas13` |
 
-### 6.2 Hard Biomedical Reasoning Benchmark (6 Tasks, 36 Strict Rubric Items)
+### 6.2 Hard Biomedical Reasoning Benchmark (6 Core Tasks, 36 Strict Rubric Items)
 
 To separate deep biomedical reasoning from surface keyword recall, [`benchmarks/hard_benchmark.py`](hard_benchmark.py) tests six multi-part graduate/clinical problems (6 mandatory verification items per task = 36 total items):
 
-| Hard Task | Strict Verification Rubric (6 items/task) | **Muse-Spark-816B-A42B** | `gpt-6-luna` | `gpt-5.6-luna` | `gpt-4o-mini` (Small Baseline) |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **1. Pharmacogenomics**: `CYP2C19*2/*3` & Clopidogrel PCI | Poor metabolizer, LoF/no-function alleles, prodrug, active thiol metabolite (`R-130964`), prasugrel, ticagrelor | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%) |
-| **2. Structural Oncology**: `BCR-ABL1 T315I` Gatekeeper & STAMP | Lost Thr315 H-bond, Ile315 steric clash, ATP pocket, ponatinib (3rd-gen), asciminib (STAMP), myristoyl pocket | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 6/6 (100%) |
-| **3. AD Protective Epistasis**: `APOE3 Christchurch` & `RELN-COLBOS` | `R136S` (`Arg136Ser`), `H3447R` (`His3447Arg`), HSPG / heparan sulfate, Dab1 adaptor, GSK3β, tau phosphorylation | **6/6 (100%)** | 6/6 (100%) | 0/6 (0%)* | 4/6 (67%)** |
-| **4. Coding Frameshift Math**: `c.10delC` in `ATGGCCCTGCTGAACCGCTAA` | WT 6-aa `MALLNR`, new 4th DNA codon `TGA`, mRNA `UGA`, premature stop, codon 4 position, truncated 3-aa `MAL` | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%)*** |
-| **5. CRISPR Prime Editing**: Sickle-Cell `HBB E6V` (`A:T→T:A`) | Transversion, CBE/ABE transition limit, Prime Editing, pegRNA PBS, pegRNA RTT, engineered M-MLV reverse transcriptase | **6/6 (100%)** | 5/6 (83%) | 5/6 (83%) | 4/6 (67%) |
-| **6. Quantitative Clinical Genetics**: HWE ($q^2=10^{-4}$) & Bayesian Carrier Risk | $q=0.01$, $p=0.99$, $2pq=0.0198$ ($1.98\%$), unaffected sibling prior $2/3$, posterior fraction $1/6$, posterior $16.67\%$ | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 3/6 (50%)**** |
-| **Aggregate Strict Rubric Score** | **36 / 36 items across 6 tasks** | **36/36 (100.0%)** | **35/36 (97.2%)** | **29/36 (80.6%)** | **27/36 (75.0%)** |
+| Hard Task | Strict Verification Rubric (6 items/task) | **Ligase + `Muse-Glimmer-30B`** (Private GPU) | **Muse-Spark-816B-A42B** (Private H200) | `gpt-6-luna` (Raw / Agent) | `gpt-5.6-luna` (Baseline) | `gpt-4o-mini` (Small Baseline) |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **1. Pharmacogenomics**: `CYP2C19*2/*3` & Clopidogrel PCI | Poor metabolizer, LoF/no-function alleles, prodrug, active thiol metabolite (`R-130964`), prasugrel, ticagrelor | **6/6 (100%)** · 5.9s | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%) |
+| **2. Structural Oncology**: `BCR-ABL1 T315I` Gatekeeper & STAMP | Lost Thr315 H-bond, Ile315 steric clash, ATP pocket, ponatinib (3rd-gen), asciminib (STAMP), myristoyl pocket | **6/6 (100%)** · 11.2s | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 6/6 (100%) |
+| **3. AD Protective Epistasis**: `APOE3 Christchurch` & `RELN-COLBOS` | `R136S` (`Arg136Ser`), `H3447R` (`His3447Arg`), HSPG / heparan sulfate, Dab1 adaptor, GSK3β, tau phosphorylation | **6/6 (100%)** · 7.7s (Raw: 5/6) | **6/6 (100%)** | 6/6 (100%) | 0/6 (0%)* | 4/6 (67%)** |
+| **4. Coding Frameshift Math**: `c.10delC` in `ATGGCCCTGCTGAACCGCTAA` | WT 6-aa `MALLNR`, new 4th DNA codon `TGA`, mRNA `UGA`, premature stop, codon 4 position, truncated 3-aa `MAL` | **6/6 (100%)** · 5.2s | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 5/6 (83%)*** |
+| **5. CRISPR Prime Editing**: Sickle-Cell `HBB E6V` (`A:T→T:A`) | Transversion, CBE/ABE transition limit, Prime Editing, pegRNA PBS, pegRNA RTT, engineered M-MLV reverse transcriptase | **6/6 (100%)** · 6.6s | **6/6 (100%)** | 5/6 (83%) | 5/6 (83%) | 4/6 (67%) |
+| **6. Quantitative Clinical Genetics**: HWE ($q^2=10^{-4}$) & Bayesian Carrier Risk | $q=0.01$, $p=0.99$, $2pq=0.0198$ ($1.98\%$), unaffected sibling prior $2/3$, posterior fraction $1/6$, posterior $16.67\%$ | **6/6 (100%)** · 4.6s | **6/6 (100%)** | 6/6 (100%) | 6/6 (100%) | 3/6 (50%)**** |
+| **Core 6-Task Aggregate Score** | **36 / 36 items across 6 tasks** | **36/36 (100.0%)** (Raw: 35/36) | **36/36 (100.0%)** | **35/36 (97.2%)** | **29/36 (80.6%)** | **27/36 (75.0%)** |
 
-#### Why `Muse-Spark-Open-816B-A42B` Outperforms Smaller & Frontier Models on Hard Tasks:
-- **`*` & `**` AD Protective Genetics (`APOE3 Christchurch` + `RELN-COLBOS`)**: Small models (`gpt-4o-mini`) hallucinated both protective variants as `R136C` and `P12L`, while `gpt-5.6-luna` exhausted its reasoning budget trying to recall the `RELN-COLBOS` substitution. `Muse-Spark-816B-A42B` recalled both exact substitutions (`APOE3 p.Arg136Ser / R136S` [and mature vs signal-peptide `p.Arg154Ser`] plus `RELN-COLBOS p.His3447Arg / H3447R, c.10340A>G`), reduced HSPG binding, and the full `ApoER2/VLDLR → Dab1 → PI3K/Akt → GSK3β Ser9` cascade.
-- **`***` Exact Reading-Frame & Frameshift Arithmetic (`c.10delC`)**: Whereas `Gemma4-12B-v2` hallucinated peptide `MAS` on a 12-nt sequence in raw mode and `gpt-4o-mini` mis-segmented wild-type codon 4 as `UGA` (missing `MALLNR`), `Muse-Spark-816B-A42B` tracked all 21 nucleotide indices, verified wild-type `MALLNR`, deleted nucleotide 10 (`C`), identified the new 4th codon `TGA`/`UGA` (premature stop), and returned the truncated 3-aa peptide `MAL`.
-- **`****` Conditional Mendelian & Bayesian Carrier Risk**: `gpt-4o-mini` fell into the classic clinical genetics trap of using an unconditioned prior $P(\text{carrier}) = 1/2$ instead of conditioning on the sibling being unaffected ($P(\text{carrier} \mid \text{unaffected}) = \frac{1/2}{3/4} = 2/3$), yielding an erroneous posterior of $1/11$ ($9.09\%$). `Muse-Spark-816B-A42B` conditioned on `AA` or `Aa` ($3/4$), derived prior $2/3$, and computed the exact Bayesian posterior $\frac{0.10 \times 2/3}{0.10 \times 2/3 + 1.00 \times 1/3} = \mathbf{1/6 \approx 16.67\%}$.
-- **CRISPR Prime Editing Mechanistic Completeness**: Both `gpt-6-luna` and `gpt-5.6-luna` omitted the explicit transition vs. transversion biochemical distinction when explaining why CBEs (`C:G→T:A` transition) and ABEs (`A:T→G:C` transition) cannot revert `HBB E6V` (`T:A→A:T` transversion), whereas `Muse-Spark-816B-A42B` explicitly contrasted deaminase-catalyzed transitions against transversions and identified the engineered pentamutant `M-MLV` reverse transcriptase.
+---
 
-Reproduce the Hard Biomedical Benchmark:
+## 7. NIAGADS & Alzheimer's Functional Genomics Suite (v0.3.1)
+
+To evaluate domain-grounded Alzheimer's disease and related dementias (ADRD) genomics reasoning, we extended [`benchmarks/hard_benchmark.py`](hard_benchmark.py) with **three multi-part NIAGADS tasks** (18 strict rubric items across Tasks 7–9, bringing the full benchmark to **9 tasks / 54 strict rubric items**) and bundled `ligase/resources/niagads_catalog.json` + the `query_niagads` tool:
+
+1. **Task 7 — NIAGADS Functional Genomics (`FILER` & `MiGA` Microglia Enhancers + `TREM2`/`PLCG2`/`ABI3`)**:
+   Tests whether the model/agent identifies **FILER** (Kuksa et al. 2022 *Nucleic Acids Research*) and its **Giggle** interval-indexing engine across >58,000 tracks integrated with the **MiGA Microglia Atlas (`NG00105`)**, colocalizing non-coding AD GWAS variants (`BIN1`, `PICALM`) with microglia enhancers bound by **`SPI1` (`PU.1`)**, plus the exact amino-acid substitutions and opposing risk directions of **`TREM2 R47H` (`Arg47His`, risk)**, **`PLCG2 P522R` (`Pro522Arg`, protective hypermorphic)**, and **`ABI3 S209F` (`Ser209Phe`, risk)** (`NG00075` / `ADVP`).
+2. **Task 8 — NIAGADS Multi-Ancestry ADSP (`NG00067` & `NG00100`): `ABCA7` Loss-of-Function & `VCPA`/`FAVOR`**:
+   Tests identification of the GCAD **`VCPA`** harmonized variant-calling pipeline (Leung et al. 2019) and **`FAVOR`** functional annotation portal in the ADSP Umbrella (`NG00067`), alongside **`ABCA7`** loss-of-function / 44-bp deletion enrichment in **African American** cohorts (`NG00100`, Kunkle et al. 2021) impairing **phospholipid/cholesterol efflux** and microglial **$A\beta$ phagocytosis**.
+3. **Task 9 — NIAGADS Primary 4R-Tauopathy (`NG00169` & `NG00172`): PSP WGS, `APOE` $\varepsilon 2$ Reversal & `MAPT` SV**:
+   Tests Progressive Supranuclear Palsy (PSP) whole-genome SNV/SV studies (Farrell et al. 2024 `NG00169`; Wang et al. 2024 `NG00172`), specifically the **`APOE` $\varepsilon 2$ (`APOE2`) risk reversal** (protective in AD vs. risk-increasing in PSP), the chromosome **`17q21.31` `MAPT` `H1/H2` ~900 kb paracentric inversion** (`H1` risk clade), and **`MAPT` exon 10** alternative splicing shifting toward **`4R` (four-repeat) tau**.
+
+### 7.1 NIAGADS 3-Task Suite: Raw Model vs. Ligase Agent (`+query_niagads`)
+
+| NIAGADS Task (6 rubric items/task) | **`Muse-Glimmer-30B`** Raw → **Ligase Agent** | `gpt-6-luna` Raw → **Ligase Agent** | `gpt-5.6-luna` Raw → **Ligase Agent** | `gpt-4o-mini` Raw → **Ligase Agent** |
+| :--- | :---: | :---: | :---: | :---: |
+| **7. NIAGADS `FILER` Microglial Enhancers & `TREM2`/`PLCG2`/`ABI3`** | 4/6 (67%) → **6/6 (100%)** · 8.8s | 5/6 (83%) → **6/6 (100%)** · 25.2s | 4/6 (67%) → **5/6 (83%)** · 23.8s | 2/6 (33%) → **6/6 (100%)** · 8.6s |
+| **8. NIAGADS Multi-Ancestry ADSP (`NG00067`/`NG00100`): `ABCA7` & `VCPA`/`FAVOR`** | 4/6 (67%) → **6/6 (100%)** · 9.0s | 4/6 (67%) → **4/6 (67%)** · 33.4s | 4/6 (67%) → **6/6 (100%)** · 7.5s | 3/6 (50%) → **4/6 (67%)** · 7.1s |
+| **9. NIAGADS Primary 4R-Tauopathy PSP (`NG00169`/`NG00172`): `APOE` $\varepsilon 2$ & `MAPT` SV** | 6/6 (100%) → **6/6 (100%)** · 6.6s | 6/6 (100%) → **6/6 (100%)** · 20.6s | 6/6 (100%) → **6/6 (100%)** · 14.2s | 6/6 (100%) → **6/6 (100%)** · 9.8s |
+| **NIAGADS 3-Task Subtotal (18 items)** | 14/18 (77.8%) → **18/18 (100.0%, +22.2%)** | 15/18 (83.3%) → **16/18 (88.9%, +5.6%)** | 14/18 (77.8%) → **17/18 (94.4%, +16.6%)** | 11/18 (61.1%) → **16/18 (88.9%, +27.8%)** |
+| **Full 9-Task Combined Score (54 items)** | 49/54 (90.7%) → **54/54 (100.0%)** | 50/54 (92.6%) → **50/54 (92.6%)** | 43/54 (79.6%) → **46/54 (85.2%)** | 38/54 (70.4%) → **43/54 (79.6%)** |
+| **Mean Agent Latency across 9 Tasks** | **7.28 s / task** | 14.62 s / task | 14.80 s / task | 7.90 s / task |
+
+### 7.2 Key Findings from the Upgraded Ligase Harness (`v0.3.1`)
+
+1. **`Muse-Glimmer-30B` + Ligase Surpasses `gpt-6-luna` (100.0% vs. 92.6%) at Half the Latency (7.28s vs. 14.62s)**:
+   In raw zero-shot mode, `Muse-Glimmer-30B` (`49/54 = 90.7%`) trails `gpt-6-luna` (`50/54 = 92.6%`) because smaller 30B checkpoints occasionally omit the exact acronym `FILER`/`Giggle` or `VCPA`/`FAVOR` on specialized NIAGADS repositories, or omit the 1-letter `R136S` code alongside `Arg136Ser`. With the upgraded Ligase local harness (`preground_local_prompt`, `query_niagads`, deterministic `transcribe_translate` frameshift analysis, exact `solve_hwe_bayes` `Fraction` verification, and 1-lookup loop budget guards), **`Muse-Glimmer-30B` reaches 54/54 (100.0%)** in **7.28 seconds mean latency**.
+2. **Consistent Accuracy Uplift Across All Model Sizes on NIAGADS Tasks**:
+   Adding `query_niagads` + `BiomniADLayer` lifts NIAGADS accuracy on every model tested:
+   - `Muse-Glimmer-30B`: **77.8% → 100.0% (+22.2%)**
+   - `gpt-4o-mini`: **61.1% → 88.9% (+27.8%)**
+   - `gpt-5.6-luna`: **77.8% → 94.4% (+16.6%)**
+   - `gpt-6-luna`: **83.3% → 88.9% (+5.6%)**
+
+Reproduce the full 9-task Hard Biomedical + NIAGADS Benchmark:
 ```bash
-export MUSE_SPARK_BACKEND=http://xxx.xx.xx.xx/v1
-python benchmarks/hard_benchmark.py --models muse_spark,gpt6_luna,luna,gpt4o_mini --phase raw
+export GLIMMER_30B_BACKEND=http://xxx.xx.xx.xx/v1
+export GLIMMER_30B_MODEL=Muse-Glimmer-30B
+python benchmarks/hard_benchmark.py --models glimmer_30b,gpt6_luna,luna,gpt4o_mini --phase all
 ```
 

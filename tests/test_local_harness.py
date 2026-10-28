@@ -131,3 +131,18 @@ def test_knowledge_fallback_handles_llm_exception():
 
     out = asyncio.run(knowledge_fallback_answer(SimpleNamespace(llm=_BrokenLLM()), "What is TP53?"))
     assert out == ""
+
+
+def test_preground_local_prompt_attaches_niagads_and_frameshift_cards():
+    from ligase.local_harness import preground_local_prompt
+
+    p1 = preground_local_prompt("Query NIAGADS FILER and NG00169 PSP tauopathy variants")
+    assert "[Verified Ligase NIAGADS Catalog Card]" in p1
+    assert "NG00169" in p1
+
+    p2 = preground_local_prompt(
+        "Translate 5'-ATGGCCCTGCTGAACCGCTAA-3' and c.10delC codon 4 peptide"
+    )
+    assert "[Verified Ligase Sequence & Frameshift Card]" in p2
+    assert "MALLNR" in p2
+    assert "MAL" in p2

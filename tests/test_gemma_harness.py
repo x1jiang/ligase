@@ -17,7 +17,9 @@ from ligase.gemma_tools import (
     LAST_TOOL_CARDS,
     clear_tool_cards,
     lookup_compound,
+    query_niagads,
     run_python,
+    solve_hwe_bayes,
     transcribe_translate,
 )
 from ligase.local_harness import is_gemma_local_model
@@ -177,3 +179,31 @@ def test_run_python_allows_safe_imports_and_blocks_unsafe():
 def test_run_python_enforces_timeout():
     out = run_python("while True:\n    pass", timeout=0.15)
     assert "TimeoutError" in out
+
+
+def test_transcribe_translate_frameshift_c10del():
+    out = transcribe_translate("5'-ATGGCCCTGCTGAACCGCTAA-3' with c.10delC")
+    assert "peptide: MALLNR" in out
+    assert "DNA TGA / mRNA UGA" in out
+    assert "truncated_peptide: MAL" in out
+
+
+def test_solve_hwe_bayes_exact():
+    out = solve_hwe_bayes(
+        "incidence of 1 in 10,000 (q^2 = 0.0001) in a Hardy-Weinberg population, "
+        "90% sensitivity and 100% specificity, posterior carrier probability"
+    )
+    assert "0.0198" in out
+    assert "2/3" in out
+    assert "1/6" in out
+    assert "16.67%" in out
+
+
+def test_query_niagads_catalog_lookup():
+    clear_tool_cards()
+    out = query_niagads("FILER microglia enhancers SPI1 BIN1 NG00105 NG00075 TREM2 PLCG2")
+    assert "FILER" in out
+    assert "NG00105" in out
+    assert "TREM2" in out or "PLCG2" in out
+    assert "query_niagads" in LAST_TOOL_CARDS
+    clear_tool_cards()

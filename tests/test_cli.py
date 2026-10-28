@@ -83,6 +83,7 @@ def test_parser_commands():
 
 
 def test_examples_are_complete():
+    assert {"apoe4", "imatinib", "dna", "niagads", "psp"} <= set(cli.EXAMPLES)
     for ex in cli.EXAMPLES.values():
         assert ex["question"] and ex["title"] and ex["max_iterations"] > 0
 

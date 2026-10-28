@@ -45,6 +45,8 @@ from ligase.local_harness import (
     local_system_addendum,
     needs_knowledge_fallback,
     normalize_local_answer,
+    preground_local_prompt,
+    reset_local_tool_budget,
     select_local_domain_tools,
 )
 
@@ -95,17 +97,22 @@ class LigaseAgent:
         if not prompt or not str(prompt).strip():
             raise ValueError("Task prompt must be a non-empty string.")
         t0 = time.time()
-        if self.gemma_local:
+        if self.compact_local or self.gemma_local:
             clear_tool_cards()
-        state = await self.claw_agent.invoke(task=prompt)
+            reset_local_tool_budget(self.claw_agent)
+        task_input = (
+            preground_local_prompt(prompt, claw_agent=self.claw_agent)
+            if self.compact_local
+            else prompt
+        )
+        state = await self.claw_agent.invoke(task=task_input)
         result = state.result if hasattr(state, "result") else str(state)
-        if self.compact_local and needs_knowledge_fallback(state):
-            fallback = await knowledge_fallback_answer(self.claw_agent, prompt)
+        if needs_knowledge_fallback(state) or not str(result or "").strip():
+            fallback = await knowledge_fallback_answer(self.claw_agent, task_input)
             if fallback:
                 result = fallback
         result = close_multiple_choice(prompt, normalize_local_answer(str(result or "")))
-        if self.compact_local:
-            result = merge_tool_cards(result)
+        result = merge_tool_cards(result)
         if hasattr(state, "result"):
             state.result = result
         elapsed = time.time() - t0
@@ -224,10 +231,9 @@ def create_agent(
     if gemma_local:
         max_iterations = cap_gemma_iterations(max_iterations)
 
-    # Bridge domain tools into ClawAgents
-    domain_tools = get_biomni_claw_tools(modules=modules)
-    if compact_local:
-        domain_tools = select_local_domain_tools(attach_gemma_tools(domain_tools))
+    # Bridge domain tools into ClawAgents (keep focused lookup/code surface unless full tools requested)
+    domain_tools = attach_gemma_tools(get_biomni_claw_tools(modules=modules))
+    domain_tools = select_local_domain_tools(domain_tools)
     if gemma_local:
         domain_tools = select_gemma_domain_tools(domain_tools)
 
@@ -275,12 +281,14 @@ def create_agent(
         "max_iterations": max_iterations,
         "workspace": str(workspace_path),
         "allow_full_access": not bool(sandbox_enabled),
+        "tool_discovery": False,
+        "learn": False,
     }
     if compact_local:
         create_kwargs.update(
             {
                 "wire_api": "chat_completions",
-                "max_tokens": 2048,
+                "max_tokens": 4096,
                 "temperature": 0.0,
                 "learn": False,
                 "trajectory": False,

@@ -7,6 +7,8 @@ DNA ligase joins fragments into one strand. Ligase joins open-source tools, the 
 ```bash
 ./install.sh                 # once
 ligase example apoe4         # a ready-made Alzheimer's genetics study
+ligase example niagads       # NIAGADS & FILER functional genomics study
+ligase example psp           # NIAGADS primary 4R-tauopathy (PSP NG00169/NG00172) study
 ligase                       # ask your own questions
 ```
 
@@ -14,15 +16,17 @@ ligase                       # ask your own questions
 
 ## Why Ligase
 
-| | Original Biomni (`gpt-5.6-luna`) | Ligase + Compact (`Glimmer 30B` / `gpt-4o-mini`) | Ligase + Frontier (`gpt-6-luna`) | **Ligase + Muse Spark 816B-A42B** |
-|---|---:|---:|---:|---:|
-| Standard 5-task accuracy | 95.0% (40.5 s mean) | 95.0% (**8.2 s** on Glimmer 30B) | 95.0% (14.4 s mean) | **100.0% (20/20)** |
-| Hard 6-task biomedical rubric (36 items) | 80.6% (29/36) | 75.0% (27/36) | 97.2% (35/36) | **100.0% (36/36)** |
-| Tool loading startup | ~10–140 s (eager import) | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** |
-| Runs on | frontier API | private GPU / compact API | frontier API | **private H200**, local GGUF, or any API |
-| Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** | **OS sandbox** + AST/timeout-guarded `run_python` |
+| Metric | Original Biomni (`gpt-5.6-luna`) | Ligase + `gpt-4o-mini` (Small Baseline) | Ligase + `gpt-6-luna` (Frontier API) | **Ligase + `Muse-Glimmer-30B`** (Private GPU) | **Ligase + `Muse-Spark-816B-A42B`** (Private H200) |
+|---|---:|---:|---:|---:|---:|
+| Standard 5-task accuracy | 95.0% (40.5 s mean) | 90.0% (6.4 s mean) | 95.0% (14.4 s mean) | **95.0% (8.2 s mean)** | **100.0% (20/20)** |
+| Hard 6-task biomedical rubric (36 items) | 80.6% (29/36) | 75.0% (27/36) | 97.2% (35/36) | **100.0% (36/36, 6.9 s mean)** | **100.0% (36/36)** |
+| NIAGADS 3-task neurodegeneration rubric (18 items) | 77.8% raw → **94.4% agent** (17/18) | 61.1% raw → **88.9% agent** (16/18) | 83.3% raw → **88.9% agent** (16/18) | 77.8% raw → **100.0% agent (18/18)** | — |
+| **Combined 9-task Hard + NIAGADS (54 items)** | 79.6% raw → **85.2% agent** (46/54) | 70.4% raw → **79.6% agent** (43/54) | 92.6% raw → **92.6% agent** (50/54) | 90.7% raw → **100.0% agent (54/54, 7.3 s)** | **36/36 (100% Core Hard)** |
+| Tool loading startup | ~10–140 s (eager import) | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** |
+| Runs on | frontier API | compact API | frontier API | **private H200 / SGLang**, local GGUF | **private H200**, local GGUF, or any API |
+| Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** | **OS sandbox** + deterministic verification cards | **OS sandbox** + AST/timeout-guarded `run_python` |
 
-Same model, different agent layer: on Muse Glimmer 30B, Ligase's compact harness cut mean latency from 71.0 s to 8.2 s and raised accuracy from 48% to 95%; scaling to **Muse Spark 816B-A42B** on a **private H200** reaches **100%** on both the standard 5-task suite (20/20) and the 36-item hard biomedical reasoning suite (36/36, edging out `gpt-6-luna` at 35/36 and `gpt-5.6-luna` at 29/36). Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
+Same model, different agent layer: on **Muse Glimmer 30B**, Ligase's upgraded biomedical harness (deterministic `transcribe_translate` frameshift analyzer, exact Hardy-Weinberg/Bayesian calculator, `query_niagads` catalog grounding, and 1-lookup loop guards) reaches **54/54 (100.0%)** across the full 9-task Hard Biomedical + NIAGADS Neurodegeneration suite in **7.28 s mean latency**—surpassing both raw `Muse-Glimmer-30B` (`49/54 = 90.7%`) and frontier `gpt-6-luna` (`50/54 = 92.6%`, `14.62 s` mean latency). Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
 
 ---
 
@@ -63,7 +67,7 @@ ligase example apoe4
 | `ligase` | Interactive prompt: type questions, `examples`, `exit` |
 | `ligase run "<question>"` | One study; prints tool calls live and the answer |
 | `ligase examples` | List ready-made studies |
-| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna` |
+| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `psp` |
 | `ligase doctor` | Check install, tools, model endpoint, sandbox |
 
 Useful flags: `--model auto|spark|glimmer|openai|gemma|custom` (default `auto`: private host if set, else OpenAI), `--ad` (Alzheimer's context), `--max-iterations N`, `--out DIR`, `--record session.svg`.
@@ -88,6 +92,32 @@ Every run writes `runs/ligase_<time>_<slug>/report.md` and `run.json` with the q
 ![DNA](docs/images/uc3_dna.png)
 
 Recorded on a private H200.
+
+---
+
+## NIAGADS & Alzheimer's Functional Genomics Showcase
+
+Ligase ships a bundled, offline-ready **NIAGADS & Alzheimer's Functional Genomics catalog** (`ligase/resources/niagads_catalog.json`) and a dedicated `query_niagads` tool covering the major NIAGADS platforms and open datasets:
+
+- **NIAGADS Functional Genomics Repository (`FILER`, Kuksa et al. 2022 *Nucleic Acids Research*) & `MiGA` (`NG00105`)**: Giggle-indexed interval search across >58,000 functional tracks colocalizing non-coding AD GWAS loci (`BIN1`, `PICALM`, `MS4A6A`, `CD33`) with microglia-specific active enhancers bound by the lineage transcription factor `SPI1` (`PU.1`).
+- **Alzheimer's Disease Variant Portal (`ADVP`, Kuksa et al. 2022) & `IGAP` (`NG00075` Kunkle et al. 2019)**: >6,900 curated ADRD associations including opposing rare coding variants in the microglial phagocytosis signaling hub (`TREM2 p.Arg47His / R47H` loss-of-function risk, `PLCG2 p.Pro522Arg / P522R` protective hypermorphic gain-of-function, and `ABI3 p.Ser209Phe / S209F` risk).
+- **ADSP Umbrella (`NG00067`), GCAD `VCPA` Pipeline (Leung et al. 2019), `FAVOR` & Multi-Ancestry AD (`NG00100` Kunkle et al. 2021)**: Joint WGS calling and ancestry-specific risk modeling showing enriched `ABCA7` loss-of-function/deletion burden in African American cohorts impairing phospholipid/cholesterol efflux and microglial $A\beta$ phagocytosis.
+- **Primary 4R-Tauopathy Progressive Supranuclear Palsy (PSP) WGS (`NG00169` Farrell et al. 2024; `NG00172` Wang et al. 2024)**: Demonstrates the striking **`APOE` $\varepsilon 2$ risk reversal** (protective in AD vs. risk-increasing in primary 4R-tauopathy PSP) alongside the chromosome `17q21.31` `MAPT` `H1/H2` ~900 kb paracentric inversion (`H1` risk clade shifting `MAPT` `exon 10` alternative splicing toward `4R` tau).
+
+Run the built-in NIAGADS studies from the CLI:
+
+```bash
+ligase example niagads --model glimmer
+ligase example psp --model glimmer
+```
+
+**NIAGADS & FILER functional genomics (`ligase example niagads`).** Queries the bundled NIAGADS catalog (`FILER`, `ADVP`, `NG00105` MiGA, `NG00075` IGAP, `NG00067` ADSP Umbrella, `NG00100` African American AD GWAS) and synthesizes microglial enhancer colocalization (`SPI1`/`PU.1`, `BIN1`, `PICALM`), rare coding variant directions (`TREM2 R47H`, `PLCG2 P522R`, `ABI3 S209F`), and `ABCA7` African-ancestry risk:
+
+![NIAGADS & FILER study](docs/images/uc4_niagads.png)
+
+**NIAGADS Primary 4R-Tauopathy PSP WGS (`ligase example psp`).** Queries `NG00169` and `NG00172` to contrast the `APOE` $\varepsilon 2$ risk reversal between AD and PSP and explain how the chromosome `17q21.31` `MAPT` `H1/H2` ~900 kb inversion drives `exon 10` `4R` tau splicing:
+
+![NIAGADS PSP 4R-tauopathy study](docs/images/uc5_psp.png)
 
 ---
 
@@ -117,7 +147,7 @@ question ─▶ Ligase agent layer ─▶ tool calls ─▶ OS sandbox ─▶ an
            any OpenAI-compatible model: private H200 (Muse Spark / Glimmer), local (Gemma GGUF), or frontier
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python benchmarks/hard_benchmark.py --models muse_spark,gpt6_luna,luna,gpt4o_mini --phase raw`.
+See [ARCHITECTURE.md](ARCHITECTURE.md). Reproduce the numbers with `python benchmarks/hard_benchmark.py --models glimmer_30b,gpt6_luna,luna,gpt4o_mini --phase all`.
 
 ---
 

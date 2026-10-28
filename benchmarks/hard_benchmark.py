@@ -189,6 +189,75 @@ HARD_BENCHMARK_TASKS: List[Dict[str, Any]] = [
             ["16.67%", "16.67\\%", "16.7%", "0.1667"],
         ],
     },
+    {
+        "id": "hard_niagads_filer_microglia",
+        "name": "NIAGADS Functional Genomics: FILER Microglial Enhancers & TREM2/PLCG2/ABI3",
+        "prompt": (
+            "In the NIAGADS functional genomics catalog: (1) Which NIAGADS repository "
+            "(and underlying interval-indexing engine, Kuksa et al. 2022 Nucleic Acids "
+            "Research) integrates >58,000 functional genomics tracks with the MiGA "
+            "Microglia Atlas (NG00105) to show that non-coding AD GWAS variants (such "
+            "as BIN1 and PICALM) colocalize selectively with microglia enhancers bound "
+            "by which lineage-determining transcription factor? (2) In NIAGADS IGAP/ADSP "
+            "rare-variant studies (NG00075 / ADVP), state the exact amino-acid "
+            "substitutions and opposing disease risk directions of the three microglial "
+            "phagocytosis/signaling coding variants in TREM2, PLCG2, and ABI3."
+        ),
+        "rubric": [
+            ["filer"],
+            ["giggle"],
+            ["spi1", "pu.1"],
+            ["r47h", "arg47his"],
+            ["p522r", "pro522arg"],
+            ["s209f", "ser209phe"],
+        ],
+    },
+    {
+        "id": "hard_niagads_adsp_ancestry_abca7",
+        "name": "NIAGADS Multi-Ancestry ADSP: ABCA7 Loss-of-Function & VCPA/FAVOR",
+        "prompt": (
+            "Across the NIAGADS Alzheimer's Disease Sequencing Project (ADSP Umbrella "
+            "NG00067) and African American AD GWAS meta-analysis (NG00100, Kunkle "
+            "et al. 2021): (1) Name the GCAD harmonized variant-calling "
+            "pipeline (Leung et al. 2019) and functional annotation portal "
+            "used for ADSP whole-genome sequencing releases. (2) Which ATP-binding "
+            "cassette transporter gene shows a markedly enriched burden of "
+            "loss-of-function (premature termination / frameshift / 44-bp deletion) "
+            "risk variants in African American cohorts compared with European cohorts, "
+            "and what two cellular mechanisms (lipid transport and microglial clearance) "
+            "are impaired by its deficiency?"
+        ),
+        "rubric": [
+            ["vcpa"],
+            ["favor"],
+            ["abca7"],
+            ["african", "african american", "african-american"],
+            ["lipid", "phospholipid", "cholesterol"],
+            ["phagocytosis", "amyloid", "a-beta", "abeta"],
+        ],
+    },
+    {
+        "id": "hard_niagads_psp_tauopathy_sv",
+        "name": "NIAGADS Primary 4R-Tauopathy: PSP WGS (NG00169/NG00172), APOE e2 & MAPT SV",
+        "prompt": (
+            "In NIAGADS whole-genome sequencing studies of primary 4R-tauopathy "
+            "Progressive Supranuclear Palsy (PSP; NG00169 Farrell et al. 2024 and "
+            "NG00172 Wang et al. 2024): (1) How does the APOE "
+            "epsilon-2 (APOE e2) allele direction of effect differ between Alzheimer's "
+            "disease (AD) and PSP? (2) Which chromosome 17q21.31 haplotype clade and "
+            "structural variant (~900 kb paracentric inversion spanning MAPT) is the "
+            "primary genetic driver of PSP? (3) How does this locus alter alternative "
+            "splicing of MAPT (specifically which exon and tau repeat isoform)?"
+        ),
+        "rubric": [
+            ["apoe e2", "apoe2", "epsilon-2", "ε2"],
+            ["protective", "revers", "opposite", "increases risk in psp"],
+            ["h1", "h1/h2"],
+            ["inversion", "900 kb", "17q21.31"],
+            ["exon 10"],
+            ["4r", "four-repeat", "4-repeat"],
+        ],
+    },
 ]
 
 
@@ -212,6 +281,17 @@ def get_model_specs() -> List[Dict[str, Any]]:
             "temperature": 0,
             "extra_body": {"chat_template_kwargs": {"reasoning_effort": "low"}},
             "reasoning_effort": "low",
+        },
+        {
+            "id": "glimmer_30b",
+            "label": "Muse-Glimmer-30B",
+            "model": os.getenv("GLIMMER_30B_MODEL", "Muse-Glimmer-30B"),
+            "base_url": os.getenv("GLIMMER_30B_BACKEND", PUBLIC_PRIVATE_ENDPOINT),
+            "api_key": os.getenv("GLIMMER_API_KEY", "not-needed"),
+            "omit_temperature": False,
+            "temperature": 0,
+            "extra_body": None,
+            "reasoning_effort": None,
         },
         {
             "id": "gpt6_luna",
@@ -249,7 +329,7 @@ def get_model_specs() -> List[Dict[str, Any]]:
     ]
 
 
-def raw_complete(spec: Dict[str, Any], prompt: str, *, max_tokens: int = 1536) -> Dict[str, Any]:
+def raw_complete(spec: Dict[str, Any], prompt: str, *, max_tokens: int = 3072) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {"api_key": spec["api_key"] or "not-needed"}
     if spec["base_url"]:
         kwargs["base_url"] = spec["base_url"]

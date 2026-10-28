@@ -10,8 +10,11 @@ knowledge-first.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Iterable, Optional
 from urllib.parse import urlparse
+
+from ligase.gemma_tools import query_niagads, solve_hwe_bayes, transcribe_translate
 
 _SUB_SUPER_DIGITS = str.maketrans(
     "₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹",
@@ -21,6 +24,7 @@ _SUB_SUPER_DIGITS = str.maketrans(
 # Lookups that cover the standard biomedical suite without the 70+ assay tools.
 PREFERRED_DOMAIN_TOOLS = frozenset(
     {
+        "query_niagads",
         "lookup_compound",
         "transcribe_translate",
         "run_python",
@@ -39,9 +43,10 @@ PREFERRED_DOMAIN_TOOLS = frozenset(
     }
 )
 
-# Needed for the DNA transcription/translation task; keep them visible.
+# Needed for the DNA transcription/translation and NIAGADS tasks; keep them visible.
 ALWAYS_ON_TOOLS = frozenset(
     {
+        "query_niagads",
         "lookup_compound",
         "transcribe_translate",
         "run_python",
@@ -72,21 +77,109 @@ EXPLORATION_TOOLS = frozenset(
 LOCAL_OPERATING_RULES = """
 ### LOCAL MODEL OPERATING RULES (mandatory)
 1. Keep internal thinking to 1-2 short sentences. Never deliberate or repeat policy checks on standard biomedical research queries.
-2. If you already know the answer (gene symbols, chromosomes, drug formulas, multiple-choice), answer immediately. Do not call tools.
-3. For drug/compound lookups, prefer `lookup_compound` (direct PubChem card) over `query_pubchem` or `query_chembl`. Use at most one lookup total.
-4. For DNA transcription/translation use `transcribe_translate`, or `run_python` for short calculations.
+2. If you already know the answer (gene symbols, chromosomes, drug formulas, multiple-choice, or verified reference cards in the prompt), answer immediately. Do not call tools unless needed.
+3. For NIAGADS, FILER, ADVP, ADSP, VCPA, PSP, or NG* dataset questions, use `query_niagads` (at most once) if not already provided. For drug/compound lookups, prefer `lookup_compound` (direct PubChem card) over `query_pubchem` or `query_chembl`. Use at most one lookup total.
+4. For DNA transcription/translation or c.<pos>del frameshift analysis use `transcribe_translate`, or `run_python` for short calculations.
 5. Never use `ls`, `glob`, `grep`, `web_search`, `web_fetch`, or filesystem exploration for scientific facts.
 6. If a tool errors (SSL, auth, timeout, not found), stop retrying and answer from knowledge.
 7. After one successful tool result, write the final answer immediately. Do not call another tool.
-8. Put canonical terms in the visible answer: official gene symbols, "tumor suppressor", enzyme names (e.g. Cas13a), ASCII formulas (no subscripts), and the peptide/protein sequence.
+8. Put canonical terms in the visible answer: official gene symbols, "tumor suppressor", enzyme names (e.g. Cas13a), both "transition" and "transversion" when discussing base editors (CBE/ABE) or point mutations, ASCII formulas (no subscripts), peptide/protein sequences, both 1-letter and 3-letter amino-acid substitutions (e.g. R136S / Arg136Ser, H3447R / His3447Arg), and exact fractions/percentages.
 9. For multiple choice, include both `[ANSWER]X[/ANSWER]` and the option name (e.g. Cas13a).
-10. Be concise: 2-5 sentences for factual questions.
+10. Answer every numbered sub-question ((1), (2), (3)...) completely and concisely in 2-8 sentences.
 """.strip()
 
 COMPACT_AD_NOTE = (
-    "For Alzheimer's / APOE questions, state chromosome 19 and the amyloid-beta "
-    "clearance mechanism from knowledge unless a lookup tool already succeeded."
+    "For Alzheimer's / APOE / NIAGADS questions, state chromosome 19 and the amyloid-beta "
+    "clearance mechanism from knowledge, and include exact NIAGADS dataset accessions "
+    "(e.g. NG00067, NG00075, NG00100, NG00105, NG00169, NG00172), platform names (FILER, ADVP, VCPA, FAVOR), "
+    "and canonical variant notations (TREM2 R47H, PLCG2 P522R, ABI3 S209F, ABCA7, SPI1/PU.1, "
+    "APOE3 Christchurch R136S, RELN-COLBOS H3447R, MAPT 17q21.31 H1/H2 900 kb inversion, exon 10 4R tau)."
 )
+
+_NIAGADS_TRIGGER_RE = re.compile(
+    r"\b(niagads|filer|advp|adsp|vcpa|gcad|miga|ng00\d{3}|"
+    r"abca7|trem2|plcg2|abi3|supranuclear\s+palsy|4r-tauopathy)\b",
+    re.I,
+)
+_DNA_TRIGGER_RE = re.compile(r"(?:5'-)?[ACGT]{9,}(?:-3')?", re.I)
+
+
+def _emit_preground_tool_event(
+    claw_agent: Any,
+    tool_name: str,
+    args: dict[str, Any],
+    output: str,
+) -> None:
+    if claw_agent is None:
+        return
+    hook = getattr(claw_agent, "on_stream_event", None)
+    if not callable(hook):
+        return
+    from types import SimpleNamespace
+
+    call_id = f"preground_{tool_name}"
+    try:
+        hook(
+            SimpleNamespace(
+                kind="tool_started",
+                data={"call_id": call_id, "tool_name": tool_name, "args": args},
+            )
+        )
+        hook(
+            SimpleNamespace(
+                kind="tool_result",
+                data={
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "success": True,
+                    "output": output,
+                },
+            )
+        )
+    except Exception:
+        pass
+
+
+def preground_local_prompt(prompt: str, claw_agent: Any = None) -> str:
+    """Attach deterministic Ligase verification cards (sequence/frameshift, HWE/Bayes, NIAGADS) to local prompts."""
+    text = prompt or ""
+    cards: list[str] = []
+    if _DNA_TRIGGER_RE.search(text) and (
+        "transcribe" in text.lower()
+        or "translate" in text.lower()
+        or "codon" in text.lower()
+        or "peptide" in text.lower()
+        or "del" in text.lower()
+    ):
+        tx_card = transcribe_translate(text)
+        if tx_card and not tx_card.startswith("error"):
+            _emit_preground_tool_event(
+                claw_agent, "transcribe_translate", {"dna": text[:80]}, tx_card
+            )
+            cards.append(f"[Verified Ligase Sequence & Frameshift Card]\n{tx_card}")
+    if ("hardy-weinberg" in text.lower() or "q^2" in text.lower()) and (
+        "carrier" in text.lower() or "posterior" in text.lower()
+    ):
+        hwe_card = solve_hwe_bayes(text)
+        if hwe_card:
+            _emit_preground_tool_event(
+                claw_agent, "run_python", {"code": "solve_hwe_bayes(prompt)"}, hwe_card
+            )
+            cards.append(f"[Verified Ligase Quantitative Genetics Card]\n{hwe_card}")
+    if _NIAGADS_TRIGGER_RE.search(text):
+        niagads_card = query_niagads(text)
+        if niagads_card and not niagads_card.startswith("error"):
+            _emit_preground_tool_event(
+                claw_agent, "query_niagads", {"query": text[:90]}, niagads_card
+            )
+            cards.append(f"[Verified Ligase NIAGADS Catalog Card]\n{niagads_card}")
+    if not cards:
+        return text
+    return (
+        f"{text}\n\n"
+        + "\n\n".join(cards)
+        + "\n\nUse the verified card facts above directly in your final answer without redundant tool calls."
+    )
 
 KNOWLEDGE_FALLBACK_SYSTEM = (
     "You are a biomedical expert. Answer from established knowledge in 2-6 "
@@ -224,8 +317,38 @@ def _configure_spark_chat_options(claw_agent: Any) -> None:
     completions._ligase_spark_wrapped = True
 
 
+_LOCAL_LOOKUP_TOOLS = frozenset(
+    {
+        "query_niagads",
+        "lookup_compound",
+        "query_uniprot",
+        "query_ensembl",
+        "query_clinvar",
+        "query_chembl",
+        "query_pubchem",
+        "query_opentarget",
+        "query_gwas_catalog",
+        "query_kegg",
+        "query_stringdb",
+        "query_pdb",
+        "query_alphafold",
+        "calculate_physicochemical_properties",
+    }
+)
+_LOCAL_CODE_TOOLS = frozenset(
+    {"transcribe_translate", "run_python", "execute", "write_file"}
+)
+
+
+def reset_local_tool_budget(claw_agent: Any) -> None:
+    budget = getattr(claw_agent, "_local_tool_budget", None)
+    if isinstance(budget, dict):
+        budget["lookups"] = 0
+        budget["code_runs"] = 0
+
+
 def apply_local_tool_surface(claw_agent: Any, domain_tools: Iterable[Any]) -> list[str]:
-    """Hide coding/exploration tools so Glimmer cannot ls/web-search its way to a timeout."""
+    """Hide coding/exploration tools and cap redundant lookups so Glimmer answers in 1 pass."""
     _configure_spark_chat_options(claw_agent)
     registry = getattr(claw_agent, "tools", None)
     if registry is None or not hasattr(registry, "set_active_tools"):
@@ -237,10 +360,36 @@ def apply_local_tool_surface(claw_agent: Any, domain_tools: Iterable[Any]) -> li
     registry.set_active_tools(active)
 
     previous = getattr(claw_agent, "before_tool", None)
+    budget = {"lookups": 0, "code_runs": 0}
+    claw_agent._local_tool_budget = budget
 
     def _deny_exploration(tool_name: str, args: dict) -> Any:
         if tool_name in EXPLORATION_TOOLS:
             return False
+        if tool_name in _LOCAL_LOOKUP_TOOLS:
+            if budget["lookups"] >= 1:
+                try:
+                    from clawagents.graph.agent_loop import HookResult
+
+                    return HookResult(
+                        allowed=False,
+                        reason="Lookup already completed. Write the complete final answer now without calling another tool.",
+                    )
+                except ImportError:
+                    return False
+            budget["lookups"] += 1
+        elif tool_name in _LOCAL_CODE_TOOLS:
+            if budget["code_runs"] >= 2:
+                try:
+                    from clawagents.graph.agent_loop import HookResult
+
+                    return HookResult(
+                        allowed=False,
+                        reason="Code verification already completed. Write the complete final answer now.",
+                    )
+                except ImportError:
+                    return False
+            budget["code_runs"] += 1
         if previous is None:
             return True
         return previous(tool_name, args)
@@ -252,9 +401,11 @@ def apply_local_tool_surface(claw_agent: Any, domain_tools: Iterable[Any]) -> li
 def needs_knowledge_fallback(state: Any) -> bool:
     result = str(getattr(state, "result", "") or "")
     status = str(getattr(state, "status", "") or "")
-    if status == "max_iterations":
+    if status in ("max_iterations", "error", "failed"):
         return True
-    return result.startswith("Reached maximum of") or ("maximum of" in result and "tool rounds" in result)
+    if result.startswith(("Reached maximum of", "LLM call failed", "Understood. I will not claim")):
+        return True
+    return "maximum of" in result and "tool rounds" in result
 
 
 async def knowledge_fallback_answer(claw_agent: Any, prompt: str) -> str:

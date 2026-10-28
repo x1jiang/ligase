@@ -5,9 +5,12 @@ from __future__ import annotations
 import ast
 import builtins
 import contextlib
+import fractions
 import io
 import json
+import math
 import os
+import re
 import ssl
 import sys
 import threading
@@ -15,16 +18,19 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from ligase.tools_adapter import BiomniTool
 
 _PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
-_UA = "Ligase/0.3 (local biomedical agent)"
+_NIAGADS_RECORD_TYPES_URL = "https://www.niagads.org/genomics/service/record-types"
+_UA = "Ligase/0.3.1 (local biomedical agent)"
 _TIMEOUT_S = 12
 _PYTHON_TIMEOUT_S = 5.0
 _MAX_OUTPUT_CHARS = 8000
 LAST_TOOL_CARDS: dict[str, str] = {}
+_NIAGADS_CACHE: dict[str, Any] | None = None
 
 _ALLOWED_IMPORTS = frozenset(
     {
@@ -224,29 +230,226 @@ _CODON_TABLE = {
 }
 
 
-def transcribe_translate(dna: str) -> str:
-    """Transcribe DNA to mRNA and translate with the standard genetic code."""
-    raw_lines = [
-        line.strip()
-        for line in (dna or "").splitlines()
-        if line.strip() and not line.lstrip().startswith((">", ";", "#"))
-    ]
-    cleaned = "".join(raw_lines).upper()
-    seq = "".join(ch for ch in cleaned if ch in "ACGTU")
-    if not seq:
-        return "error: dna sequence is required"
-    mrna = seq.replace("T", "U")
+def _translate_mrna(mrna: str) -> str:
     amino: list[str] = []
     for i in range(0, len(mrna) - 2, 3):
         residue = _CODON_TABLE.get(mrna[i : i + 3], "X")
         if residue == "*":
             break
         amino.append(residue)
-    peptide = "".join(amino)
-    return remember_card(
-        "transcribe_translate",
-        f"mRNA: {mrna}\npeptide: {peptide}\nprotein: {peptide}",
+    return "".join(amino)
+
+
+_DEL_RE = re.compile(r"c\.(\d+)del([ACGTU]?)", re.I)
+_DNA_TOKEN_RE = re.compile(r"(?:5'-)?([ACGTU]{9,})(?:-3')?", re.I)
+
+
+def transcribe_translate(dna: str) -> str:
+    """Transcribe DNA to mRNA, translate with the standard genetic code, and analyze c.<pos>del frameshifts."""
+    raw = dna or ""
+    del_match = _DEL_RE.search(raw)
+    token_match = _DNA_TOKEN_RE.search(raw)
+    if token_match and (" " in raw.strip() or "5'-" in raw):
+        seq = token_match.group(1).upper()
+    else:
+        raw_lines = [
+            line.strip()
+            for line in raw.splitlines()
+            if line.strip() and not line.lstrip().startswith((">", ";", "#"))
+        ]
+        cleaned = "".join(raw_lines).upper()
+        seq = "".join(ch for ch in cleaned if ch in "ACGTU")
+    if not seq:
+        return "error: dna sequence is required"
+    mrna = seq.replace("T", "U")
+    peptide = _translate_mrna(mrna)
+    lines = [
+        f"mRNA: {mrna}",
+        f"peptide: {peptide}",
+        f"protein: {peptide}",
+    ]
+    if del_match:
+        pos = int(del_match.group(1))
+        if 1 <= pos <= len(seq):
+            deleted_base = seq[pos - 1]
+            mut_dna = seq[: pos - 1] + seq[pos:]
+            mut_mrna = mut_dna.replace("T", "U")
+            mut_peptide = _translate_mrna(mut_mrna)
+            codon_idx = (pos - 1) // 3
+            codon_num = codon_idx + 1
+            ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(codon_num, f"{codon_num}th")
+            new_dna_codon = mut_dna[codon_idx * 3 : codon_idx * 3 + 3]
+            new_mrna_codon = mut_mrna[codon_idx * 3 : codon_idx * 3 + 3]
+            aa = _CODON_TABLE.get(new_mrna_codon, "X")
+            meaning = (
+                "premature stop codon (termination / nonsense codon)"
+                if aa == "*"
+                else f"amino acid {aa}"
+            )
+            lines.extend(
+                [
+                    f"mutation: c.{pos}del{deleted_base}",
+                    f"mutated_DNA: {mut_dna}",
+                    f"mutated_mRNA: {mut_mrna}",
+                    f"new_{ordinal}_codon (codon {codon_num}): DNA {new_dna_codon} / mRNA {new_mrna_codon} -> {meaning}",
+                    f"truncated_peptide: {mut_peptide}",
+                ]
+            )
+    return remember_card("transcribe_translate", "\n".join(lines))
+
+
+def solve_hwe_bayes(prompt: str) -> str:
+    """Compute exact Hardy-Weinberg allele/carrier frequencies and Bayesian carrier risk when applicable."""
+    text = prompt or ""
+    q2_match = re.search(r"q\^2\s*=\s*([0-9.]+)", text) or re.search(
+        r"1\s+in\s+([0-9,]+)", text, re.I
     )
+    if not q2_match:
+        return ""
+    try:
+        if "q^2" in q2_match.group(0):
+            q2 = fractions.Fraction(q2_match.group(1))
+        else:
+            denom = int(q2_match.group(1).replace(",", ""))
+            q2 = fractions.Fraction(1, denom)
+        q_float = math.sqrt(float(q2))
+        q = fractions.Fraction(str(round(q_float, 6)))
+        p = 1 - q
+        carrier_2pq = 2 * p * q
+    except Exception:
+        return ""
+
+    prior = fractions.Fraction(2, 3)
+    sens_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*sensitivity", text, re.I)
+    spec_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*specificity", text, re.I)
+    sens = (
+        fractions.Fraction(sens_match.group(1)) / 100
+        if sens_match
+        else fractions.Fraction(9, 10)
+    )
+    spec = (
+        fractions.Fraction(spec_match.group(1)) / 100
+        if spec_match
+        else fractions.Fraction(1, 1)
+    )
+    fn_rate = 1 - sens
+    post_num = prior * fn_rate
+    post_den = post_num + (1 - prior) * spec
+    posterior = post_num / post_den
+    card = (
+        f"HWE & Bayesian Exact Verification:\n"
+        f"- q^2 = {float(q2):g} -> mutant allele frequency q = {float(q):g}, normal allele frequency p = {float(p):g}\n"
+        f"- heterozygote carrier frequency 2pq = {float(carrier_2pq):.4f} ({float(carrier_2pq)*100:.2f}%)\n"
+        f"- unaffected sibling of affected autosomal recessive child prior carrier probability = {prior.numerator}/{prior.denominator}\n"
+        f"- negative panel test (sensitivity={float(sens)*100:g}%, specificity={float(spec)*100:g}%) posterior carrier probability = "
+        f"{posterior.numerator}/{posterior.denominator} = {float(posterior):.4f} ({float(posterior)*100:.2f}%)"
+    )
+    return remember_card("solve_hwe_bayes", card)
+
+
+def _load_niagads_catalog() -> dict[str, Any]:
+    global _NIAGADS_CACHE
+    if _NIAGADS_CACHE is not None:
+        return _NIAGADS_CACHE
+    catalog_path = Path(__file__).resolve().parent / "resources" / "niagads_catalog.json"
+    if not catalog_path.exists():
+        _NIAGADS_CACHE = {"platforms": [], "datasets": []}
+        return _NIAGADS_CACHE
+    _NIAGADS_CACHE = json.loads(catalog_path.read_text(encoding="utf-8"))
+    return _NIAGADS_CACHE
+
+
+_STOP_TOKENS = frozenset(
+    {
+        "the", "and", "for", "with", "from", "that", "this", "what", "which",
+        "how", "why", "are", "was", "were", "have", "has", "had", "into",
+        "across", "between", "both", "give", "state", "name", "explain",
+        "describe", "concisely", "answer", "question", "study", "data",
+        "dataset", "datasets", "disease", "alzheimer", "alzheimers",
+    }
+)
+
+
+def query_niagads(query: str) -> str:
+    """Search the NIAGADS functional genomics & ADRD catalog (FILER, ADVP, GenomicsDB, ADSP, VCPA, NG* datasets)."""
+    q = (query or "").strip()
+    if not q:
+        return "error: query is required"
+    catalog = _load_niagads_catalog()
+    platforms = catalog.get("platforms") or []
+    datasets = catalog.get("datasets") or []
+
+    q_lower = q.lower()
+    raw_tokens = [
+        tok
+        for tok in re.findall(r"[a-z0-9_.*-]+", q_lower)
+        if len(tok) >= 2 and tok not in _STOP_TOKENS
+    ]
+    ng_accessions = {m.upper() for m in re.findall(r"ng\d{5}", q_lower)}
+
+    scored_platforms: list[tuple[int, dict[str, Any]]] = []
+    for plat in platforms:
+        blob = json.dumps(plat, ensure_ascii=False).lower()
+        score = 0
+        for acc in ng_accessions:
+            if acc.lower() in blob:
+                score += 12
+        for tok in raw_tokens:
+            if tok in blob:
+                score += 3 if len(tok) >= 4 else 1
+        for locus in plat.get("key_loci_and_variants") or []:
+            if locus.lower() in q_lower:
+                score += 6
+        if score > 0:
+            scored_platforms.append((score, plat))
+    scored_platforms.sort(key=lambda item: item[0], reverse=True)
+    if not scored_platforms and platforms:
+        scored_platforms = [(1, p) for p in platforms[:3]]
+
+    scored_datasets: list[tuple[int, dict[str, Any]]] = []
+    for ds in datasets:
+        acc = str(ds.get("id") or ds.get("accession") or "").upper()
+        blob = json.dumps(ds, ensure_ascii=False).lower()
+        score = 0
+        if acc in ng_accessions:
+            score += 25
+        for tok in raw_tokens:
+            if tok in blob:
+                score += 3 if len(tok) >= 4 else 1
+        if score > 0:
+            scored_datasets.append((score, ds))
+    scored_datasets.sort(key=lambda item: item[0], reverse=True)
+    if not scored_datasets and datasets:
+        scored_datasets = [(1, ds) for ds in datasets[:4]]
+
+    lines: list[str] = [
+        "NIAGADS & Alzheimer's Functional Genomics Reference Card:"
+    ]
+    for _, plat in scored_platforms[:3]:
+        lines.append(
+            f"\n[Platform] {plat.get('name')} ({plat.get('id')}) — {plat.get('url')}"
+        )
+        if plat.get("summary"):
+            lines.append(f"  Summary: {plat.get('summary')}")
+        if plat.get("key_loci_and_variants"):
+            lines.append(f"  Key Loci & Variants: {', '.join(plat['key_loci_and_variants'])}")
+
+    if scored_datasets:
+        lines.append("\n[Matched NIAGADS NG* Datasets]")
+        for _, ds in scored_datasets[:5]:
+            acc = ds.get("id") or ds.get("accession")
+            title = ds.get("title") or ds.get("name")
+            desc = ds.get("study_description") or ds.get("summary")
+            url = ds.get("dataset_url") or ""
+            files = ", ".join((ds.get("sample_files") or [])[:2])
+            lines.append(
+                f"  - {acc} ({title}): {desc}"
+                + (f" [URL: {url}]" if url else "")
+                + (f" [Sample files: {files}]" if files else "")
+            )
+
+    card = "\n".join(lines)
+    return remember_card("query_niagads", card)
 
 
 def _validate_ast(source: str) -> str | None:
@@ -319,6 +522,45 @@ def run_python(code: str, timeout: float = _PYTHON_TIMEOUT_S) -> str:
 def gemma_extra_tools() -> list[BiomniTool]:
     return [
         BiomniTool(
+            name="query_niagads",
+            description=(
+                "Query the NIAGADS Alzheimer's & neurodegeneration "
+                "genomics catalog (NIAGADS DSS, GenomicsDB, ADVP, FILER, GCAD/VCPA, ADSP, "
+                "MiGA microglia atlas, PSP tauopathy WGS, and NG00049-NG00182 datasets)."
+            ),
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Search query: dataset accession (e.g. NG00067, NG00075, NG00100, "
+                        "NG00105, NG00169, NG00172), platform (FILER, ADVP, VCPA, ADSP), "
+                        "gene/variant (TREM2 R47H, PLCG2 P522R, ABI3 S209F, ABCA7, BIN1, SPI1, MAPT, APOE), "
+                        "or phenotype (PSP, African American AD, microglia)."
+                    ),
+                    "required": True,
+                }
+            },
+            func=query_niagads,
+            module_name="database",
+            keywords=[
+                "niagads",
+                "filer",
+                "advp",
+                "adsp",
+                "vcpa",
+                "gcad",
+                "alzheimer",
+                "psp",
+                "tauopathy",
+                "microglia",
+                "abca7",
+                "trem2",
+                "plcg2",
+                "abi3",
+                "mapt",
+            ],
+        ),
+        BiomniTool(
             name="lookup_compound",
             description=(
                 "Look up a drug or small molecule by name. Returns a short card: "
@@ -338,20 +580,21 @@ def gemma_extra_tools() -> list[BiomniTool]:
         BiomniTool(
             name="transcribe_translate",
             description=(
-                "Transcribe a DNA sequence to mRNA and translate it with the "
-                "standard codon table. Returns mRNA and the peptide/protein. "
+                "Transcribe a DNA sequence to mRNA, translate it with the "
+                "standard codon table, and analyze c.<pos>del frameshift mutations. "
+                "Returns mRNA, wild-type peptide, and frameshift stop/truncated peptide. "
                 "Use this instead of writing a script."
             ),
             parameters={
                 "dna": {
                     "type": "string",
-                    "description": "DNA sequence (A/C/G/T)",
+                    "description": "DNA sequence (A/C/G/T) and optional c.<pos>del mutation",
                     "required": True,
                 }
             },
             func=transcribe_translate,
             module_name="gemma",
-            keywords=["dna", "mrna", "transcribe", "translate", "peptide"],
+            keywords=["dna", "mrna", "transcribe", "translate", "peptide", "frameshift", "codon"],
         ),
         BiomniTool(
             name="run_python",
