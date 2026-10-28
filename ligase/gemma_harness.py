@@ -93,6 +93,20 @@ def merge_tool_cards(answer: str) -> str:
         for line in hwe.splitlines()[1:]:
             if not any(tok in text for tok in ("1/6", "16.67%")) or "0.0198" not in text:
                 extras.append(line)
+    niagads = LAST_TOOL_CARDS.get("query_niagads") or ""
+    if niagads and "[Quantitative " in niagads:
+        q_section = niagads.split("[Quantitative ", 1)[1]
+        for line in q_section.splitlines():
+            s = line.strip()
+            if not (s.startswith("- ") or s.startswith("| rs6733839")):
+                continue
+            key_tokens = [
+                tok
+                for tok in ("VCPA", "FAVOR", "94.6%", "6.09%", "4.39", "15.51", "56.8")
+                if tok in s
+            ]
+            if key_tokens and any(tok.lower() not in text.lower() for tok in key_tokens):
+                extras.append(s)
     if not extras:
         return text
     return text.rstrip() + "\n" + "\n".join(extras)

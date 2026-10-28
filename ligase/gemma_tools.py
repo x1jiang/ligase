@@ -425,7 +425,7 @@ def query_niagads(query: str) -> str:
     lines: list[str] = [
         "NIAGADS & Alzheimer's Functional Genomics Reference Card:"
     ]
-    for _, plat in scored_platforms[:3]:
+    for _, plat in scored_platforms[:5]:
         lines.append(
             f"\n[Platform] {plat.get('name')} ({plat.get('id')}) — {plat.get('url')}"
         )
@@ -446,6 +446,68 @@ def query_niagads(query: str) -> str:
                 f"  - {acc} ({title}): {desc}"
                 + (f" [URL: {url}]" if url else "")
                 + (f" [Sample files: {files}]" if files else "")
+            )
+
+    q_panels = catalog.get("quantitative_panels") or {}
+    if any(k in q_lower for k in ("filer", "bin1", "rs6733839", "trem2", "plcg2", "abi3", "pip", "miga", "ng00105")):
+        p = q_panels.get("bin1_filer_v2f") or {}
+        if p:
+            lines.append("\n[Quantitative V2F Fine-Mapping & Microglial Epistasis Table (FILER + MiGA NG00105 + IGAP NG00075)]")
+            lines.append("  | Variant | HGVS | GWAS Z | OR | FILER SPI1/MEF2C Enhancer | MiGA eQTL Z | Uniform PIP | FILER-Prior PIP |")
+            for row in p.get("credible_set") or []:
+                lines.append(
+                    f"  | {row['rsid']} | {row['hgvs']} | {row['z']} | {row['or']:.2f} | "
+                    f"{'Yes (w=10)' if row['filer_microglia_spi1_mef2c_peak'] else 'No (w=1)'} | "
+                    f"{row['miga_eqtl_z']} | {row['pip_uniform']*100:.1f}% ({row['pip_uniform']:.3f}) | "
+                    f"**{row['pip_filer']*100:.1f}% ({row['pip_filer']:.3f})** |"
+                )
+            lines.append("  Rare Microglial Coding Hub (NG00075 / ADVP):")
+            for r in p.get("rare_coding_hub") or []:
+                lines.append(
+                    f"  - {r['gene']} {r['variant']} ({r['rsid']}): MAF={r['maf']}, OR={r['or']:.2f} -> {r['effect']}"
+                )
+
+    if any(k in q_lower for k in ("abca7", "ng00100", "ng00067", "african", "vcpa", "favor", "paf", "rs115550680")):
+        p = q_panels.get("adsp_multi_ancestry_paf") or {}
+        ab = p.get("abca7_lof") or {}
+        ap = p.get("apoe_e4") or {}
+        if ab and ap:
+            lines.append("\n[Quantitative Multi-Ancestry ADSP (NG00067 / NG00100 vs NG00075) Risk & PAF Table]")
+            lines.append(
+                "  - ADSP WGS Harmonization (NG00067): GCAD harmonized variant-calling pipeline = VCPA "
+                "(Variant Calling Pipeline and data management tool, Leung et al. 2019); "
+                "Functional annotation portal = FAVOR (Functional Annotation of Variants Online Resource)"
+            )
+            lines.append(
+                f"  - ABCA7 LoF / 44-bp del ({ab['rsid']}): "
+                f"African ancestry f_AFR={ab['f_afr']:.3f}, OR_AFR={ab['or_afr']:.2f}, PAF_AFR={ab['paf_afr_pct']:.2f}% vs. "
+                f"European ancestry f_EUR={ab['f_eur']:.3f}, OR_EUR={ab['or_eur']:.2f}, PAF_EUR={ab['paf_eur_pct']:.2f}% "
+                f"({ab['paf_enrichment_afr_vs_eur']:.1f}x higher PAF in African ancestry)"
+            )
+            lines.append(
+                f"  - APOE e4 ({ap['rsid']}): African local ancestry OR_AFR={ap['or_afr']:.2f} (f_AFR={ap['f_afr']:.3f}, attenuated) "
+                f"vs. European local ancestry OR_EUR={ap['or_eur']:.2f} (f_EUR={ap['f_eur']:.3f}); "
+                f"Dual carrier (APOE e4 + ABCA7 LoF) composite OR_AFR = {ap['composite_afr_apoe4_plus_abca7_or']:.2f}"
+            )
+
+    if any(k in q_lower for k in ("psp", "ng00169", "ng00172", "supranuclear", "mapt", "17q21", "4r", "exon 10")):
+        p = q_panels.get("psp_vs_ad_differential") or {}
+        e2 = p.get("apoe_e2_homozygote") or {}
+        h1 = p.get("mapt_h1_homozygote") or {}
+        comp = p.get("composite_e2e2_h1h1") or {}
+        if e2 and h1 and comp:
+            lines.append("\n[Quantitative Cross-Disorder PSP (NG00169/NG00172) vs. AD (NG00049) Differential Risk Table]")
+            lines.append(
+                f"  - APOE e2/e2 ({e2['rsid']}): OR_AD = {e2['or_ad']:.2f} (protective; CSF Abeta42 beta = +{e2['csf_abeta42_beta_ng00049']} in NG00049) "
+                f"vs. OR_PSP = {e2['or_psp']:.2f} (risk-increasing in primary 4R-tauopathy; {e2['single_locus_reversal_ratio']:.1f}x single-locus reversal)"
+            )
+            lines.append(
+                f"  - MAPT H1/H1 ({h1['sv']}): OR_PSP = {h1['or_psp']:.2f} vs. OR_AD = {h1['or_ad']:.2f}; "
+                f"shifts MAPT exon 10 inclusion delta_PSI = +{h1['exon10_delta_psi']:.2f} (4R:3R tau isoform ratio = {h1['tau_4r_to_3r_ratio']:.2f})"
+            )
+            lines.append(
+                f"  - Composite APOE e2/e2 + MAPT H1/H1 Profile: Combined OR_PSP = {comp['combined_or_psp']:.2f} vs. Combined OR_AD = {comp['combined_or_ad']:.2f} "
+                f"-> Relative Odds Ratio ROR_(PSP/AD) = {comp['relative_odds_ratio_psp_vs_ad']:.1f}x (delta_LLR = +{comp['delta_llr_nats']:.2f} nats)"
             )
 
     card = "\n".join(lines)

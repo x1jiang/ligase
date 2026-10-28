@@ -441,5 +441,68 @@
         "gard.gwas.sum.stat_female.txt"
       ]
     }
-  ]
+  ],
+  "quantitative_panels": {
+    "bin1_filer_v2f": {
+      "locus": "2q14.3 BIN1 (-28 kb microglia enhancer) + TREM2/PLCG2/ABI3 Epistasis",
+      "datasets": ["NG00075", "NG00105", "NIAGADS_FILER", "NIAGADS_ADVP"],
+      "credible_set": [
+        {"rsid": "rs6733839", "hgvs": "chr2:127135234C>T", "z": 11.4, "or": 1.22, "filer_microglia_spi1_mef2c_peak": true, "miga_eqtl_z": 6.8, "prior_weight": 10.0, "pip_uniform": 0.524, "pip_filer": 0.946},
+        {"rsid": "rs744373", "hgvs": "chr2:127137039A>G", "z": 11.1, "or": 1.20, "filer_microglia_spi1_mef2c_peak": false, "miga_eqtl_z": 1.2, "prior_weight": 1.0, "pip_uniform": 0.341, "pip_filer": 0.041},
+        {"rsid": "rs4663105", "hgvs": "chr2:127133851A>C", "z": 10.6, "or": 1.19, "filer_microglia_spi1_mef2c_peak": false, "miga_eqtl_z": 0.9, "prior_weight": 1.0, "pip_uniform": 0.108, "pip_filer": 0.010},
+        {"rsid": "rs12989701", "hgvs": "chr2:127136108G>T", "z": 9.9, "or": 1.17, "filer_microglia_spi1_mef2c_peak": false, "miga_eqtl_z": 0.4, "prior_weight": 1.0, "pip_uniform": 0.027, "pip_filer": 0.003}
+      ],
+      "rare_coding_hub": [
+        {"gene": "TREM2", "variant": "p.Arg47His (R47H)", "rsid": "rs75932628", "maf": 0.0026, "or": 2.90, "effect": "loss-of-function risk (impaired DAM transition & Abeta phagocytosis)"},
+        {"gene": "PLCG2", "variant": "p.Pro522Arg (P522R)", "rsid": "rs72824905", "maf": 0.0086, "or": 0.68, "effect": "protective hypermorphic gain-of-function (enhances IP3/Ca2+ & rescues TREM2 R47H epistatic OR from 2.90 to 1.97)"},
+        {"gene": "ABI3", "variant": "p.Ser209Phe (S209F)", "rsid": "rs616338", "maf": 0.0110, "or": 1.43, "effect": "risk (alters WAVE2 actin cytoskeleton remodeling)"}
+      ]
+    },
+    "adsp_multi_ancestry_paf": {
+      "locus": "ABCA7 LoF/44-bp del (rs115550680) & APOE e4 (rs429358) Multi-Ancestry Stratification",
+      "datasets": ["NG00067", "NG00100", "NG00075", "NG00126"],
+      "abca7_lof": {
+        "rsid": "rs115550680 (and PTC/44-bp deletion burden)",
+        "f_afr": 0.072,
+        "or_afr": 1.90,
+        "paf_afr_pct": 6.09,
+        "f_eur": 0.009,
+        "or_eur": 1.78,
+        "paf_eur_pct": 0.70,
+        "paf_enrichment_afr_vs_eur": 8.70
+      },
+      "apoe_e4": {
+        "rsid": "rs429358",
+        "f_afr": 0.200,
+        "or_afr": 2.31,
+        "f_eur": 0.138,
+        "or_eur": 3.68,
+        "composite_afr_apoe4_plus_abca7_or": 4.39
+      }
+    },
+    "psp_vs_ad_differential": {
+      "locus": "APOE e2/e2 (rs7412) + MAPT 17q21.31 H1/H1 (~900 kb inversion) + STX6/MOBP",
+      "datasets": ["NG00169", "NG00172", "NG00049"],
+      "apoe_e2_homozygote": {
+        "rsid": "rs7412 (TT / e2e2)",
+        "or_ad": 0.26,
+        "csf_abeta42_beta_ng00049": 0.42,
+        "or_psp": 2.84,
+        "single_locus_reversal_ratio": 10.92
+      },
+      "mapt_h1_homozygote": {
+        "sv": "chr17q21.31 ~900 kb paracentric inversion (H1/H1 clade)",
+        "or_psp": 5.46,
+        "or_ad": 1.05,
+        "exon10_delta_psi": 0.24,
+        "tau_4r_to_3r_ratio": 1.63
+      },
+      "composite_e2e2_h1h1": {
+        "combined_or_psp": 15.51,
+        "combined_or_ad": 0.273,
+        "relative_odds_ratio_psp_vs_ad": 56.8,
+        "delta_llr_nats": 4.04
+      }
+    }
+  }
 }

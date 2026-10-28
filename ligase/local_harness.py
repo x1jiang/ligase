@@ -98,7 +98,8 @@ COMPACT_AD_NOTE = (
 
 _NIAGADS_TRIGGER_RE = re.compile(
     r"\b(niagads|filer|advp|adsp|vcpa|gcad|miga|ng00\d{3}|"
-    r"abca7|trem2|plcg2|abi3|supranuclear\s+palsy|4r-tauopathy)\b",
+    r"abca7|trem2|plcg2|abi3|supranuclear\s+palsy|4r-tauopathy|"
+    r"christchurch|colbos|r136s|h3447r)\b",
     re.I,
 )
 _DNA_TRIGGER_RE = re.compile(r"(?:5'-)?[ACGT]{9,}(?:-3')?", re.I)
@@ -175,6 +176,10 @@ def preground_local_prompt(prompt: str, claw_agent: Any = None) -> str:
             cards.append(f"[Verified Ligase NIAGADS Catalog Card]\n{niagads_card}")
     if not cards:
         return text
+    if claw_agent is not None:
+        budget = getattr(claw_agent, "_local_tool_budget", None)
+        if isinstance(budget, dict):
+            budget["lookups"] = 1
     return (
         f"{text}\n\n"
         + "\n\n".join(cards)

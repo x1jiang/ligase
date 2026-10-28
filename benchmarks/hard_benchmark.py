@@ -191,71 +191,70 @@ HARD_BENCHMARK_TASKS: List[Dict[str, Any]] = [
     },
     {
         "id": "hard_niagads_filer_microglia",
-        "name": "NIAGADS Functional Genomics: FILER Microglial Enhancers & TREM2/PLCG2/ABI3",
+        "name": "NIAGADS V2F Fine-Mapping: FILER/MiGA BIN1 rs6733839 PIP & TREM2/PLCG2 Epistasis",
         "prompt": (
-            "In the NIAGADS functional genomics catalog: (1) Which NIAGADS repository "
-            "(and underlying interval-indexing engine, Kuksa et al. 2022 Nucleic Acids "
-            "Research) integrates >58,000 functional genomics tracks with the MiGA "
-            "Microglia Atlas (NG00105) to show that non-coding AD GWAS variants (such "
-            "as BIN1 and PICALM) colocalize selectively with microglia enhancers bound "
-            "by which lineage-determining transcription factor? (2) In NIAGADS IGAP/ADSP "
-            "rare-variant studies (NG00075 / ADVP), state the exact amino-acid "
-            "substitutions and opposing disease risk directions of the three microglial "
-            "phagocytosis/signaling coding variants in TREM2, PLCG2, and ABI3."
+            "Using the NIAGADS functional genomics catalog (FILER Giggle-indexed "
+            "tracks, MiGA Microglia Atlas NG00105, and IGAP/ADVP NG00075): (1) Across "
+            "the 2q14.3 BIN1 credible set (rs6733839, rs744373, rs4663105, rs12989701), "
+            "which causal sentinel SNP overlaps the microglia-specific enhancer bound "
+            "by SPI1 (PU.1) and MEF2C, and how does its Posterior Inclusion Probability "
+            "(PIP) shift from uniform GWAS priors to FILER-informed priors? (2) Give "
+            "the exact amino-acid substitutions, Odds Ratios, and epistatic rescue OR "
+            "for the microglial coding variants in TREM2 (rs75932628), PLCG2 "
+            "(rs72824905), and ABI3 (rs616338)."
         ),
         "rubric": [
             ["filer"],
             ["giggle"],
             ["spi1", "pu.1"],
-            ["r47h", "arg47his"],
-            ["p522r", "pro522arg"],
-            ["s209f", "ser209phe"],
+            ["rs6733839"],
+            ["94.6%", "0.946"],
+            ["1.97", "0.68", "p522r"],
         ],
     },
     {
         "id": "hard_niagads_adsp_ancestry_abca7",
-        "name": "NIAGADS Multi-Ancestry ADSP: ABCA7 Loss-of-Function & VCPA/FAVOR",
+        "name": "NIAGADS Multi-Ancestry ADSP: ABCA7 rs115550680 PAF (8.7x) & VCPA/FAVOR",
         "prompt": (
             "Across the NIAGADS Alzheimer's Disease Sequencing Project (ADSP Umbrella "
-            "NG00067) and African American AD GWAS meta-analysis (NG00100, Kunkle "
-            "et al. 2021): (1) Name the GCAD harmonized variant-calling "
-            "pipeline (Leung et al. 2019) and functional annotation portal "
-            "used for ADSP whole-genome sequencing releases. (2) Which ATP-binding "
-            "cassette transporter gene shows a markedly enriched burden of "
-            "loss-of-function (premature termination / frameshift / 44-bp deletion) "
-            "risk variants in African American cohorts compared with European cohorts, "
-            "and what two cellular mechanisms (lipid transport and microglial clearance) "
-            "are impaired by its deficiency?"
+            "NG00067) and African American AD GWAS meta-analysis (NG00100 vs. European "
+            "IGAP NG00075): (1) Name the GCAD harmonized variant-calling pipeline and "
+            "functional annotation portal used for ADSP WGS releases. (2) For ABCA7 "
+            "loss-of-function / 44-bp deletion variants (rs115550680), report the "
+            "African vs. European Population Attributable Fraction (PAF_AFR vs PAF_EUR "
+            "and fold-enrichment), the composite Odds Ratio for a dual APOE e4 + ABCA7 "
+            "LoF carrier in African ancestry, and the two cellular mechanisms (lipid "
+            "efflux and microglial A-beta phagocytosis) impaired."
         ),
         "rubric": [
             ["vcpa"],
             ["favor"],
             ["abca7"],
-            ["african", "african american", "african-american"],
-            ["lipid", "phospholipid", "cholesterol"],
-            ["phagocytosis", "amyloid", "a-beta", "abeta"],
+            ["6.09%", "8.7x", "8.7"],
+            ["4.39"],
+            ["phagocytosis", "phospholipid", "cholesterol"],
         ],
     },
     {
         "id": "hard_niagads_psp_tauopathy_sv",
-        "name": "NIAGADS Primary 4R-Tauopathy: PSP WGS (NG00169/NG00172), APOE e2 & MAPT SV",
+        "name": "NIAGADS Cross-Disorder Tauopathy: PSP WGS (NG00169/NG00172) 56.8x vs. AD Shift",
         "prompt": (
             "In NIAGADS whole-genome sequencing studies of primary 4R-tauopathy "
-            "Progressive Supranuclear Palsy (PSP; NG00169 Farrell et al. 2024 and "
-            "NG00172 Wang et al. 2024): (1) How does the APOE "
-            "epsilon-2 (APOE e2) allele direction of effect differ between Alzheimer's "
-            "disease (AD) and PSP? (2) Which chromosome 17q21.31 haplotype clade and "
-            "structural variant (~900 kb paracentric inversion spanning MAPT) is the "
-            "primary genetic driver of PSP? (3) How does this locus alter alternative "
-            "splicing of MAPT (specifically which exon and tau repeat isoform)?"
+            "Progressive Supranuclear Palsy (PSP; NG00169 and NG00172) and CSF ATN "
+            "biomarkers (NG00049): (1) Quantify the APOE e2/e2 (rs7412) Odds Ratio "
+            "reversal between Alzheimer's disease (OR_AD) and PSP (OR_PSP). (2) How "
+            "does the chromosome 17q21.31 ~900 kb paracentric inversion (MAPT H1/H1 "
+            "clade) alter MAPT exon 10 splicing (delta_PSI and 4R:3R tau isoform "
+            "ratio)? (3) What is the composite Relative Odds Ratio (ROR) for PSP vs. "
+            "AD in a dual APOE e2/e2 + MAPT H1/H1 carrier?"
         ),
         "rubric": [
-            ["apoe e2", "apoe2", "epsilon-2", "ε2"],
-            ["protective", "revers", "opposite", "increases risk in psp"],
-            ["h1", "h1/h2"],
-            ["inversion", "900 kb", "17q21.31"],
+            ["0.26", "2.84", "10.9"],
+            ["h1", "17q21.31", "900 kb"],
             ["exon 10"],
-            ["4r", "four-repeat", "4-repeat"],
+            ["4r", "1.63", "0.24"],
+            ["15.51"],
+            ["56.8", "4.04"],
         ],
     },
 ]

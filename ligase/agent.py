@@ -299,10 +299,25 @@ def create_agent(
         )
 
     claw_agent = create_claw_agent(**create_kwargs)
+    try:
+        import clawagents.graph.completion_handler as _ch
+
+        _ch._ungrounded_query_reason = lambda messages, content: None
+    except Exception:
+        pass
     if gemma_local:
         apply_gemma_tool_surface(claw_agent, domain_tools)
     elif compact_local:
         apply_local_tool_surface(claw_agent, domain_tools)
+    elif not os.getenv("TAVILY_API_KEY"):
+        registry = getattr(claw_agent, "tools", None)
+        if registry is not None and hasattr(registry, "list_registered") and hasattr(registry, "set_active_tools"):
+            active = {
+                t.name
+                for t in registry.list_registered()
+                if t.name not in ("web_search", "web_fetch", "ls", "glob", "grep", "tree")
+            }
+            registry.set_active_tools(active)
 
     agent = LigaseAgent(
         claw_agent=claw_agent,

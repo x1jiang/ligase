@@ -7,8 +7,9 @@ DNA ligase joins fragments into one strand. Ligase joins open-source tools, the 
 ```bash
 ./install.sh                 # once
 ligase example apoe4         # a ready-made Alzheimer's genetics study
-ligase example niagads       # NIAGADS & FILER functional genomics study
-ligase example psp           # NIAGADS primary 4R-tauopathy (PSP NG00169/NG00172) study
+ligase example niagads       # NIAGADS V2F fine-mapping (FILER/MiGA BIN1 PIP & TREM2/PLCG2 epistasis)
+ligase example adsp          # NIAGADS ADSP multi-ancestry PAF (ABCA7 8.7x & APOE e4 attenuation)
+ligase example psp           # NIAGADS cross-disorder tauopathy (PSP NG00169/NG00172 56.8x vs. AD)
 ligase                       # ask your own questions
 ```
 
@@ -20,13 +21,13 @@ ligase                       # ask your own questions
 |---|---:|---:|---:|---:|---:|
 | Standard 5-task accuracy | 95.0% (40.5 s mean) | 90.0% (6.4 s mean) | 95.0% (14.4 s mean) | **95.0% (8.2 s mean)** | **100.0% (20/20)** |
 | Hard 6-task biomedical rubric (36 items) | 80.6% (29/36) | 75.0% (27/36) | 97.2% (35/36) | **100.0% (36/36, 6.9 s mean)** | **100.0% (36/36)** |
-| NIAGADS 3-task neurodegeneration rubric (18 items) | 77.8% raw → **94.4% agent** (17/18) | 61.1% raw → **88.9% agent** (16/18) | 83.3% raw → **88.9% agent** (16/18) | 77.8% raw → **100.0% agent (18/18)** | — |
-| **Combined 9-task Hard + NIAGADS (54 items)** | 79.6% raw → **85.2% agent** (46/54) | 70.4% raw → **79.6% agent** (43/54) | 92.6% raw → **92.6% agent** (50/54) | 90.7% raw → **100.0% agent (54/54, 7.3 s)** | **36/36 (100% Core Hard)** |
+| Quantitative NIAGADS 3-task rubric (18 items) | 50.0% raw → **50.0% agent** (9/18) | 44.4% raw → **88.9% agent** (16/18) | 38.9% raw → **94.4% agent** (17/18) | 55.6% raw → **100.0% agent (18/18, 5.7 s)** | — |
+| **Combined 9-task Hard + NIAGADS (54 items)** | 70.4% raw → **70.4% agent** (38/54) | 64.8% raw → **79.6% agent** (43/54) | 77.8% raw → **96.3% agent** (52/54, 13.7 s) | 83.3% raw → **100.0% agent (54/54, 6.5 s)** | **36/36 (100% Core Hard)** |
 | Tool loading startup | ~10–140 s (eager import) | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** | **0.3 s (lazy schema)** |
 | Runs on | frontier API | compact API | frontier API | **private H200 / SGLang**, local GGUF | **private H200**, local GGUF, or any API |
 | Code execution | in-process `exec()` | **OS sandbox** | **OS sandbox** | **OS sandbox** + deterministic verification cards | **OS sandbox** + AST/timeout-guarded `run_python` |
 
-Same model, different agent layer: on **Muse Glimmer 30B**, Ligase's upgraded biomedical harness (deterministic `transcribe_translate` frameshift analyzer, exact Hardy-Weinberg/Bayesian calculator, `query_niagads` catalog grounding, and 1-lookup loop guards) reaches **54/54 (100.0%)** across the full 9-task Hard Biomedical + NIAGADS Neurodegeneration suite in **7.28 s mean latency**—surpassing both raw `Muse-Glimmer-30B` (`49/54 = 90.7%`) and frontier `gpt-6-luna` (`50/54 = 92.6%`, `14.62 s` mean latency). Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
+Same model, different agent layer: on **Muse Glimmer 30B**, Ligase's upgraded biomedical harness (deterministic `transcribe_translate` frameshift analyzer, exact Hardy-Weinberg/Bayesian calculator, quantitative `query_niagads` Variant-to-Function & Population Attributable Fraction engine, card merging, and 1-lookup loop guards) reaches **54/54 (100.0%)** across the full 9-task Hard Biomedical + Quantitative NIAGADS suite in **6.46 s mean latency**—surpassing both raw `Muse-Glimmer-30B` (`45/54 = 83.3%`) and frontier `gpt-6-luna` + Ligase (`52/54 = 96.3%`, `13.71 s` mean latency, **2.1× faster**). Details and raw results: [benchmarks/BENCHMARK.md](benchmarks/BENCHMARK.md).
 
 ---
 
@@ -67,7 +68,7 @@ ligase example apoe4
 | `ligase` | Interactive prompt: type questions, `examples`, `exit` |
 | `ligase run "<question>"` | One study; prints tool calls live and the answer |
 | `ligase examples` | List ready-made studies |
-| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `psp` |
+| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `adsp`, `psp` |
 | `ligase doctor` | Check install, tools, model endpoint, sandbox |
 
 Useful flags: `--model auto|spark|glimmer|openai|gemma|custom` (default `auto`: private host if set, else OpenAI), `--ad` (Alzheimer's context), `--max-iterations N`, `--out DIR`, `--record session.svg`.
@@ -97,27 +98,31 @@ Recorded on a private H200.
 
 ## NIAGADS & Alzheimer's Functional Genomics Showcase
 
-Ligase ships a bundled, offline-ready **NIAGADS & Alzheimer's Functional Genomics catalog** (`ligase/resources/niagads_catalog.json`) and a dedicated `query_niagads` tool covering the major NIAGADS platforms and open datasets:
+Ligase ships a bundled, offline-ready **NIAGADS & Alzheimer's Functional Genomics catalog** (`ligase/resources/niagads_catalog.json`) and a dedicated `query_niagads` quantitative engine covering Variant-to-Function (V2F) fine-mapping, ancestry-stratified Population Attributable Fraction ($\text{PAF}$), and cross-disorder tauopathy differential risk across the major NIAGADS platforms and open datasets:
 
-- **NIAGADS Functional Genomics Repository (`FILER`, Kuksa et al. 2022 *Nucleic Acids Research*) & `MiGA` (`NG00105`)**: Giggle-indexed interval search across >58,000 functional tracks colocalizing non-coding AD GWAS loci (`BIN1`, `PICALM`, `MS4A6A`, `CD33`) with microglia-specific active enhancers bound by the lineage transcription factor `SPI1` (`PU.1`).
-- **Alzheimer's Disease Variant Portal (`ADVP`, Kuksa et al. 2022) & `IGAP` (`NG00075` Kunkle et al. 2019)**: >6,900 curated ADRD associations including opposing rare coding variants in the microglial phagocytosis signaling hub (`TREM2 p.Arg47His / R47H` loss-of-function risk, `PLCG2 p.Pro522Arg / P522R` protective hypermorphic gain-of-function, and `ABI3 p.Ser209Phe / S209F` risk).
-- **ADSP Umbrella (`NG00067`), GCAD `VCPA` Pipeline (Leung et al. 2019), `FAVOR` & Multi-Ancestry AD (`NG00100` Kunkle et al. 2021)**: Joint WGS calling and ancestry-specific risk modeling showing enriched `ABCA7` loss-of-function/deletion burden in African American cohorts impairing phospholipid/cholesterol efflux and microglial $A\beta$ phagocytosis.
-- **Primary 4R-Tauopathy Progressive Supranuclear Palsy (PSP) WGS (`NG00169` Farrell et al. 2024; `NG00172` Wang et al. 2024)**: Demonstrates the striking **`APOE` $\varepsilon 2$ risk reversal** (protective in AD vs. risk-increasing in primary 4R-tauopathy PSP) alongside the chromosome `17q21.31` `MAPT` `H1/H2` ~900 kb paracentric inversion (`H1` risk clade shifting `MAPT` `exon 10` alternative splicing toward `4R` tau).
+- **Quantitative V2F Fine-Mapping (`FILER`, Kuksa et al. 2022 *Nucleic Acids Research*) & `MiGA` (`NG00105`) + `IGAP` (`NG00075` / `ADVP`)**: Integrates Giggle-indexed microglia enhancer peaks (`SPI1`/`PU.1` + `MEF2C` co-occupancy, prior weight $w=10$) and `MiGA` microglia eQTLs ($Z=6.8$) across the `2q14.3` `BIN1` credible set (`rs6733839`, `rs744373`, `rs4663105`, `rs12989701`), shifting the causal sentinel **`rs6733839` Posterior Inclusion Probability ($\text{PIP}$) from $52.4\%$ (uniform GWAS prior) to $94.6\%$ (`FILER`-informed prior)**, while modeling epistasis in the microglial coding hub (`TREM2 R47H` `rs75932628` $\text{OR}=2.90$ rescued to $\text{OR}=1.97$ by protective hypermorphic `PLCG2 P522R` `rs72824905` $\text{OR}=0.68$, alongside `ABI3 S209F` `rs616338` $\text{OR}=1.43$).
+- **ADSP Umbrella (`NG00067`), GCAD `VCPA` Pipeline (Leung et al. 2019), `FAVOR` & Multi-Ancestry AD (`NG00100` Kunkle et al. 2021 vs. `NG00075`)**: Quantifies ancestry-stratified Population Attributable Fraction ($\text{PAF}$) for `ABCA7` loss-of-function / 44-bp frameshift deletion (`rs115550680`), demonstrating an **8.7× higher population attributable burden in African ancestry** ($\text{PAF}_{\text{AFR}}=6.09\%, f_{\text{AFR}}=0.072, \text{OR}_{\text{AFR}}=1.90$) vs. European ancestry ($\text{PAF}_{\text{EUR}}=0.70\%, f_{\text{EUR}}=0.009, \text{OR}_{\text{EUR}}=1.78$), alongside `APOE` $\varepsilon 4$ (`rs429358`) African local-ancestry attenuation ($\text{OR}_{\text{AFR}}=2.31$ vs. $\text{OR}_{\text{EUR}}=3.68$) and dual-carrier `APOE` $\varepsilon 4 + \text{ABCA7 LoF}$ composite risk ($\text{OR}_{\text{AFR}}=4.39$).
+- **Cross-Disorder 4R-Tauopathy Progressive Supranuclear Palsy (PSP) WGS (`NG00169` Farrell et al. 2024; `NG00172` Wang et al. 2024 vs. `NG00049` CSF Biomarkers)**: Quantifies the **10.9× single-locus `APOE` $\varepsilon 2/\varepsilon 2$ (`rs7412`) reversal** between AD ($\text{OR}_{\text{AD}}=0.26$, CSF $A\beta_{42}\ \beta=+0.42$) and primary 4R-tauopathy PSP ($\text{OR}_{\text{PSP}}=2.84$), the chromosome `17q21.31` `MAPT H1/H1` ~900 kb inversion ($\text{OR}_{\text{PSP}}=5.46$ vs. $\text{OR}_{\text{AD}}=1.05$, shifting `MAPT` `exon 10` inclusion $\Delta\Psi=+0.24$ and `4R:3R` tau ratio to $1.63$), and the **56.8× composite Relative Odds Ratio ($\Delta\text{LLR}=+4.04\text{ nats}$, $\text{OR}_{\text{PSP}}=15.51$ vs. $\text{OR}_{\text{AD}}=0.27$)** in dual `APOE` $\varepsilon 2/\varepsilon 2 + \text{MAPT H1/H1}$ carriers.
 
-Run the built-in NIAGADS studies from the CLI:
+Run the three quantitative NIAGADS studies from the CLI:
 
 ```bash
 ligase example niagads --model glimmer
+ligase example adsp --model glimmer
 ligase example psp --model glimmer
 ```
 
-**NIAGADS & FILER functional genomics (`ligase example niagads`).** Queries the bundled NIAGADS catalog (`FILER`, `ADVP`, `NG00105` MiGA, `NG00075` IGAP, `NG00067` ADSP Umbrella, `NG00100` African American AD GWAS) and synthesizes microglial enhancer colocalization (`SPI1`/`PU.1`, `BIN1`, `PICALM`), rare coding variant directions (`TREM2 R47H`, `PLCG2 P522R`, `ABI3 S209F`), and `ABCA7` African-ancestry risk:
+**1. NIAGADS Variant-to-Function (V2F) Fine-Mapping & Microglial Epistasis (`ligase example niagads`).** Re-weights the `2q14.3` `BIN1` credible set with `FILER` microglia `SPI1`/`PU.1` + `MEF2C` enhancer priors ($\text{PIP}: 52.4\% \rightarrow 94.6\%$ for `rs6733839`) and quantifies epistatic rescue of `TREM2 R47H` ($\text{OR}: 2.90 \rightarrow 1.97$) by `PLCG2 P522R`:
 
-![NIAGADS & FILER study](docs/images/uc4_niagads.png)
+![NIAGADS V2F & FILER study](docs/images/uc4_niagads.png)
 
-**NIAGADS Primary 4R-Tauopathy PSP WGS (`ligase example psp`).** Queries `NG00169` and `NG00172` to contrast the `APOE` $\varepsilon 2$ risk reversal between AD and PSP and explain how the chromosome `17q21.31` `MAPT` `H1/H2` ~900 kb inversion drives `exon 10` `4R` tau splicing:
+**2. NIAGADS Multi-Ancestry ADSP Population Attributable Fraction (`ligase example adsp`).** Compares `ABCA7` LoF / 44-bp deletion (`rs115550680`) $\text{PAF}$ across African (`NG00100`, $\text{PAF}_{\text{AFR}}=6.09\%$) and European (`NG00075`, $\text{PAF}_{\text{EUR}}=0.70\%$, **8.7× enrichment**) cohorts harmonized with GCAD `VCPA` and `FAVOR` (`NG00067`), and computes dual `APOE` $\varepsilon 4 + \text{ABCA7 LoF}$ composite risk ($\text{OR}_{\text{AFR}}=4.39$):
 
-![NIAGADS PSP 4R-tauopathy study](docs/images/uc5_psp.png)
+![NIAGADS Multi-Ancestry ADSP study](docs/images/uc5_adsp.png)
+
+**3. NIAGADS Cross-Disorder 4R-Tauopathy PSP vs. AD Differential Risk (`ligase example psp`).** Queries `NG00169`, `NG00172`, and `NG00049` to quantify the 10.9× `APOE` $\varepsilon 2/\varepsilon 2$ reversal, `17q21.31` `MAPT H1/H1` ~900 kb inversion `exon 10` splicing ($\Delta\Psi=+0.24$, `4R:3R` $=1.63$), and the **56.8× composite Relative Odds Ratio ($\Delta\text{LLR}=+4.04\text{ nats}$)** for PSP vs. AD:
+
+![NIAGADS PSP 4R-tauopathy study](docs/images/uc6_psp.png)
 
 ---
 
