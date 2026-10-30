@@ -111,6 +111,7 @@ echo "5/6 Building & deploying ${SERVICE} to Cloud Run (${REGION})..."
   --service-account="${SA_EMAIL}" \
   --cpu=2 \
   --cpu-boost \
+  --no-cpu-throttling \
   --memory=2Gi \
   --timeout=300 \
   --concurrency=16 \
