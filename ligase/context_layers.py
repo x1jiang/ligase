@@ -16,6 +16,10 @@ for _candidate in [_pkg_root / "biomni", _pkg_root.parent / "biomni"]:
         sys.path.insert(0, str(_candidate))
 
 
+_DATALAKE_CATALOG_CACHE: dict[bool, str] = {}
+_KNOWHOW_DOC_LIST_CACHE: dict[bool, str] = {}
+
+
 class BiomniDataLakeLayer:
     """Injects Biomni curated datalake dataset index and lazy S3 paths."""
 
@@ -26,22 +30,25 @@ class BiomniDataLakeLayer:
         self.commercial_mode = commercial_mode
 
     def inject(self, run_context: Any) -> str | None:
-        try:
-            if self.commercial_mode:
-                from biomni.env_desc_cm import data_lake_dict
-            else:
-                from biomni.env_desc import data_lake_dict
+        catalog_text = _DATALAKE_CATALOG_CACHE.get(self.commercial_mode)
+        if catalog_text is None:
+            try:
+                if self.commercial_mode:
+                    from biomni.env_desc_cm import data_lake_dict
+                else:
+                    from biomni.env_desc import data_lake_dict
 
-            items = [f"- {k}: {desc}" for k, desc in list(data_lake_dict.items())[:25]]
-            catalog_text = "\n".join(items)
-        except Exception:
-            catalog_text = (
-                "- BindingDB: Drug-target binding affinities\n"
-                "- STRING: Protein-protein interaction network\n"
-                "- GWAS_Catalog: Genome-wide association study variants\n"
-                "- ClinVar: Clinical genomic variant classifications\n"
-                "- AlphaFoldDB: Predicted 3D protein structures"
-            )
+                items = [f"- {k}: {desc}" for k, desc in list(data_lake_dict.items())[:25]]
+                catalog_text = "\n".join(items)
+            except Exception:
+                catalog_text = (
+                    "- BindingDB: Drug-target binding affinities\n"
+                    "- STRING: Protein-protein interaction network\n"
+                    "- GWAS_Catalog: Genome-wide association study variants\n"
+                    "- ClinVar: Clinical genomic variant classifications\n"
+                    "- AlphaFoldDB: Predicted 3D protein structures"
+                )
+            _DATALAKE_CATALOG_CACHE[self.commercial_mode] = catalog_text
 
         return (
             "### BIOMEDICAL DATA LAKE RESOURCES\n"
@@ -61,25 +68,35 @@ class BiomniKnowHowLayer:
         self.commercial_mode = commercial_mode
 
     def inject(self, run_context: Any) -> str | None:
-        try:
-            from biomni.know_how import KnowHowLoader
-            loader = KnowHowLoader()
-            docs = loader.documents
-            doc_titles = [d.get("title", d.get("id", "Protocol")) for d in docs[:10]]
-            doc_list = "\n".join(f"- {title}" for title in doc_titles)
-        except Exception:
-            doc_list = (
-                "- CRISPR guide RNA (sgRNA) design and off-target screening\n"
-                "- Single-cell RNA-seq clustering and cell type annotation\n"
-                "- GWAS causal variant mapping and fine-mapping\n"
-                "- Molecular docking and pharmacokinetics screening"
-            )
+        doc_list = _KNOWHOW_DOC_LIST_CACHE.get(self.commercial_mode)
+        if doc_list is None:
+            try:
+                from biomni.know_how import KnowHowLoader
+
+                loader = KnowHowLoader()
+                docs = loader.documents
+                doc_titles = [d.get("title", d.get("id", "Protocol")) for d in docs[:10]]
+                doc_list = "\n".join(f"- {title}" for title in doc_titles)
+            except Exception:
+                doc_list = (
+                    "- CRISPR guide RNA (sgRNA) design and off-target screening\n"
+                    "- Single-cell RNA-seq clustering and cell type annotation\n"
+                    "- GWAS causal variant mapping and fine-mapping\n"
+                    "- Molecular docking and pharmacokinetics screening"
+                )
+            _KNOWHOW_DOC_LIST_CACHE[self.commercial_mode] = doc_list
 
         return (
             "### BIOMEDICAL PROTOCOL & KNOW-HOW GUIDELINES\n"
             "Available Standard Operating Protocols:\n"
             f"{doc_list}\n"
         )
+
+
+def warmup_context_layers() -> None:
+    """Pre-populate DataLake and KnowHow caches so the first agent run skips disk I/O."""
+    BiomniDataLakeLayer().inject(None)
+    BiomniKnowHowLayer().inject(None)
 
 
 class BiomniADLayer:

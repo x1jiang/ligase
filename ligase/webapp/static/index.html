@@ -10,8 +10,25 @@
     } catch {}
   </script>
   <title>Research Studio | Ligase · Biomedical &amp; NIAGADS Co-Scientist</title>
+  <link rel="preconnect" href="https://api.niagads.org">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%230f766e'/%3E%3Cpath d='M11 9c0 6 14 6 14 12s-14 6-14 12M25 9c0 6-14 6-14 12s14 6 14 12' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='18' cy='15' r='2.1' fill='%2399f6e4'/%3E%3Ccircle cx='18' cy='21' r='2.1' fill='%2399f6e4'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/styles.css">
+  <style id="critical-css">
+    :root {
+      color-scheme: light dark;
+      --bg-app: light-dark(#f6f8fa, #0b1117);
+      --bg-sidebar: light-dark(#eef2f6, #0f1720);
+      --bg-surface: light-dark(#ffffff, #141e29);
+      --border-subtle: light-dark(#dce3eb, #243242);
+      --text-primary: light-dark(#0f172a, #e6edf5);
+      --brand-primary: light-dark(#0f766e, #2dd4bf);
+    }
+    html, body { margin: 0; background: var(--bg-app); color: var(--text-primary); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .app-shell { display: grid; grid-template-columns: 276px minmax(0, 1fr); block-size: 100dvh; overflow: hidden; }
+    .sidebar { background: var(--bg-sidebar); border-inline-end: 1px solid var(--border-subtle); }
+    [hidden] { display: none !important; }
+    @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
+  </style>
+  <link rel="stylesheet" href="/static/styles.css?v=0.3.3">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -28,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.2</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.3</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -179,7 +196,7 @@
               <span>Ready-Made Quantitative &amp; Live API Studies</span>
               <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 24 NIAGADS Cohorts &amp; 9 Tool Suites →</button>
             </div>
-            <div class="starter-grid" id="starter-grid"></div>
+            <div class="starter-grid" id="starter-grid"><!-- LIGASE_STARTERS_SSR --></div>
           </div>
 
           <div class="transcript" id="transcript" hidden></div>
@@ -527,6 +544,7 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js" defer></script>
+  <!-- LIGASE_BOOTSTRAP_JSON -->
+  <script src="/static/app.js?v=0.3.3" defer fetchpriority="high"></script>
 </body>
 </html>

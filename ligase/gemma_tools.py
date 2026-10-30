@@ -19,14 +19,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ligase.niagads_api import fetch_live_niagads_supplement, niagads_open_access_api
-from ligase.tools_adapter import BiomniTool
+
+if TYPE_CHECKING:
+    from ligase.tools_adapter import BiomniTool
 
 _PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 _NIAGADS_RECORD_TYPES_URL = "https://www.niagads.org/genomics/service/record-types"
-_UA = "Ligase/0.3.2 (local biomedical agent)"
+_UA = "Ligase/0.3.3 (local biomedical agent)"
 _TIMEOUT_S = 12
 _PYTHON_TIMEOUT_S = 5.0
 _MAX_OUTPUT_CHARS = 8000
@@ -590,6 +592,8 @@ def run_python(code: str, timeout: float = _PYTHON_TIMEOUT_S) -> str:
 
 
 def gemma_extra_tools() -> list[BiomniTool]:
+    from ligase.tools_adapter import BiomniTool
+
     return [
         BiomniTool(
             name="niagads_open_access_api",

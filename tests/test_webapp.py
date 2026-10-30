@@ -18,6 +18,7 @@ from ligase.webapp.server import STATIC_DIR, create_webapp
 def webapp_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LIGASE_WEB_MODEL", "gpt-6-luna")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-unit-key")
+    monkeypatch.setenv("LIGASE_SKIP_WARMUP", "1")
     app = create_webapp(state_dir=tmp_path / "state", runs_root=tmp_path / "runs")
     return TestClient(app)
 
@@ -85,17 +86,26 @@ def test_mindmap_and_niagads_live_endpoints(webapp_client: TestClient, monkeypat
     assert live.json()["request_id"] == "req-test-123"
 
 
-def test_index_serves_modern_web_markup(webapp_client: TestClient):
-    res = webapp_client.get("/")
+def test_index_serves_modern_web_markup_and_ssr_bootstrap(webapp_client: TestClient):
+    res = webapp_client.get("/", headers={"Accept-Encoding": "gzip"})
     assert res.status_code == 200
+    assert res.headers.get("cache-control") == "no-cache"
     html = res.text
     assert '<meta name="color-scheme" content="light dark">' in html
+    assert '<link rel="preconnect" href="https://api.niagads.org">' in html
+    assert 'fetchpriority="high"' in html
     assert 'closedby="any"' in html
     assert 'id="chat-input"' in html
     assert 'role="tablist"' in html
     assert 'id="panel-mindmap"' in html
     assert 'id="panel-niagads-api"' in html
+    assert 'id="ligase-bootstrap"' in html
+    assert 'data-starter-id="niagads_live"' in html
     assert html.count("<h1") == 1
+
+    static_js = webapp_client.get("/static/app.js", headers={"Accept-Encoding": "gzip"})
+    assert static_js.status_code == 200
+    assert "max-age=86400" in (static_js.headers.get("cache-control") or "")
 
 
 def test_thread_lifecycle_and_client_isolation(webapp_client: TestClient):

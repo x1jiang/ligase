@@ -11,6 +11,7 @@ PROJECT="${LIGASE_DEPLOY_PROJECT:-sbmi-jiang-ai-testing01}"
 REGION="${LIGASE_DEPLOY_REGION:-us-central1}"
 SERVICE="${LIGASE_DEPLOY_SERVICE:-ligase}"
 MODEL="${LIGASE_WEB_MODEL:-gpt-6-luna}"
+MIN_INSTANCES="${LIGASE_MIN_INSTANCES:-1}"
 SECRET_NAME="${LIGASE_OPENAI_SECRET:-ligase-openai-key}"
 SA_NAME="${SERVICE}-sa"
 SA_EMAIL="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
@@ -109,10 +110,11 @@ echo "5/6 Building & deploying ${SERVICE} to Cloud Run (${REGION})..."
   --no-invoker-iam-check \
   --service-account="${SA_EMAIL}" \
   --cpu=2 \
+  --cpu-boost \
   --memory=2Gi \
   --timeout=300 \
   --concurrency=16 \
-  --min-instances=0 \
+  --min-instances="${MIN_INSTANCES}" \
   --max-instances=4 \
   --port=8080 \
   --set-env-vars="LIGASE_CLOUD=1,LIGASE_WEB_MODEL=${MODEL},CLAW_SANDBOX_PROFILE=workspace" \
@@ -125,18 +127,27 @@ echo "6/6 Verifying live health & readiness probes at ${SERVICE_URL}..."
 python3 - "${SERVICE_URL}" "${MODEL}" <<'PY'
 import json
 import sys
+import time
 import urllib.request
 
 base, expected_model = sys.argv[1], sys.argv[2]
-# Note: Cloud Run's Google Front End reserves /healthz at the edge; probe /readyz and /api/meta.
-for path in ("/readyz", "/api/meta"):
-    with urllib.request.urlopen(base + path, timeout=30) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+# Note: Cloud Run's Google Front End reserves /healthz at the edge; probe /readyz, /api/meta, and /.
+for path in ("/readyz", "/api/meta", "/"):
+    t0 = time.monotonic()
+    req = urllib.request.Request(base + path, headers={"Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        raw = resp.read()
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
         assert resp.status == 200, f"{path} returned {resp.status}"
-        if path == "/api/meta":
-            assert data.get("model") == expected_model, f"Unexpected model: {data.get('model')}"
-            assert data.get("ready") is True, "Service reported ready=False"
-print(f"    ✓ Live probes verified ({expected_model}, ready=True)")
+        if path != "/":
+            import gzip
+            text = gzip.decompress(raw).decode("utf-8") if resp.headers.get("Content-Encoding") == "gzip" else raw.decode("utf-8")
+            data = json.loads(text)
+            if path == "/api/meta":
+                assert data.get("model") == expected_model, f"Unexpected model: {data.get('model')}"
+                assert data.get("ready") is True, "Service reported ready=False"
+        print(f"    ✓ {path:10s} -> HTTP 200 ({elapsed_ms} ms, encoding={resp.headers.get('Content-Encoding', 'identity')})")
+print(f"    ✓ Live probes verified ({expected_model}, min_instances>=1 warm)")
 PY
 
 echo ""

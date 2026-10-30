@@ -7,6 +7,7 @@ live FILER hg38 interval overlap counts (https://tf.lisanwanglab.org/FILER/).
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -24,7 +25,7 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.3.2 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_UA = "Ligase/0.3.3 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "12.0"))
 _CACHE_TTL_S = 300.0
 _CACHE_MAX_SIZE = 256
@@ -768,19 +769,27 @@ def execute_niagads_action(
             if _RSID_RE.match(norm_v) or _POS_VARIANT_COLON_RE.match(norm_v):
                 v_url = f"{NIAGADS_API_BASE}/record/variant/{urllib.parse.quote(norm_v, safe=':')}?content=full"
                 a_url = f"{NIAGADS_API_BASE}/record/variant/{urllib.parse.quote(norm_v, safe=':')}/associations?content=full&flank={flank_bp}&page={page_num}"
-                v_payload = _http_get_json(v_url)
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    fut_v = pool.submit(_http_get_json, v_url)
+                    fut_a = pool.submit(_http_get_json, a_url)
+                    v_payload = fut_v.result()
+                    a_payload: Dict[str, Any] = {}
+                    assoc_err: Optional[Exception] = None
+                    try:
+                        a_payload = fut_a.result()
+                    except Exception as assoc_exc:
+                        assoc_err = assoc_exc
+
                 v_md, v_rows = _summarize_variant_record(v_payload)
                 sections = [v_md]
                 combined_rows = list(v_rows)
-                a_payload: Dict[str, Any] = {}
-                try:
-                    a_payload = _http_get_json(a_url)
+                if assoc_err is None:
                     a_md, a_rows = _summarize_associations(a_payload, norm_v)
                     sections.append(a_md)
                     if a_rows:
                         combined_rows = a_rows
-                except Exception as assoc_exc:
-                    sections.append(f"_Association lookup note: {assoc_exc}_")
+                else:
+                    sections.append(f"_Association lookup note: {assoc_err}_")
 
                 # Add live FILER hg38 regulatory track overlap at variant coordinate
                 v_first = (v_payload.get("data") or [{}])[0]
@@ -842,18 +851,22 @@ def execute_niagads_action(
                 g_url = f"{NIAGADS_API_BASE}/record/gene/{urllib.parse.quote(g_sym)}?content=full"
                 ga_url = f"{NIAGADS_API_BASE}/record/gene/{urllib.parse.quote(g_sym)}/associations?content=full&flank={flank_bp}&page={page_num}"
                 try:
-                    g_payload = _http_get_json(g_url)
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        fut_g = pool.submit(_http_get_json, g_url)
+                        fut_ga = pool.submit(_http_get_json, ga_url)
+                        g_payload = fut_g.result()
+                        ga_payload: Dict[str, Any] = {}
+                        try:
+                            ga_payload = fut_ga.result()
+                        except Exception:
+                            ga_payload = {}
                     g_md, g_rows = _summarize_gene_record(g_payload)
                     sections = [g_md]
-                    ga_payload: Dict[str, Any] = {}
-                    try:
-                        ga_payload = _http_get_json(ga_url)
+                    if ga_payload:
                         ga_md, ga_rows = _summarize_associations(ga_payload, g_sym)
                         sections.append(ga_md)
                         if ga_rows:
                             g_rows = ga_rows
-                    except Exception:
-                        pass
                     elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
                     return {
                         "ok": True,

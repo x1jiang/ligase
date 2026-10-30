@@ -57,7 +57,9 @@
     pendingUploads: [], // [{name, token, size_bytes}]
     activeRunId: null,
     abortController: null,
-    // Mindmap UI state
+    // Mindmap & Explorer render flags
+    mmRendered: false,
+    oaRendered: false,
     mmFilterPillar: "all",
     mmSearch: "",
     mmViewMode: "graph", // "graph" | "table"
@@ -173,12 +175,64 @@
       .replace(/"/g, "&quot;");
   }
 
+  const GREEK_MAP = {
+    alpha: "α",
+    beta: "β",
+    gamma: "γ",
+    delta: "δ",
+    Delta: "Δ",
+    epsilon: "ε",
+    varepsilon: "ε",
+    lambda: "λ",
+    mu: "μ",
+    pi: "π",
+    psi: "ψ",
+    Psi: "Ψ",
+    sigma: "σ",
+    Sigma: "Σ",
+    tau: "τ",
+    chi: "χ",
+    omega: "ω",
+    Omega: "Ω",
+    times: "×",
+    cdot: "·",
+    pm: "±",
+    approx: "≈",
+    le: "≤",
+    leq: "≤",
+    ge: "≥",
+    geq: "≥",
+    neq: "≠",
+    to: "→",
+    rightarrow: "→",
+  };
+
+  function formatInlineMath(expr) {
+    let m = escapeHtml(expr.trim());
+    m = m.replace(/\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '<span class="math-rm">$1</span>');
+    m = m.replace(/\\([A-Za-z]+)/g, (full, cmd) => GREEK_MAP[cmd] || cmd);
+    m = m.replace(/\\([%&_# ])/g, (_, ch) => (ch === " " ? "\u00a0" : ch));
+    m = m.replace(/_\{([^{}]+)\}/g, "<sub>$1</sub>");
+    m = m.replace(/\^\{([^{}]+)\}/g, "<sup>$1</sup>");
+    m = m.replace(/_([A-Za-z0-9]+)/g, "<sub>$1</sub>");
+    m = m.replace(/\^([A-Za-z0-9+-]+)/g, "<sup>$1</sup>");
+    return `<span class="math-inline">${m}</span>`;
+  }
+
   function renderInline(line) {
     const codeSpans = [];
+    const mathSpans = [];
     let s = String(line ?? "").replace(/`([^`]+)`/g, (_, code) => {
       const idx = codeSpans.length;
       codeSpans.push(`<code>${escapeHtml(code)}</code>`);
       return `\u0000CODE${idx}\u0000`;
+    });
+    s = s.replace(/\\\((.+?)\\\)|\$(?!\s)([^$\n]+?)(?<!\s)\$/g, (full, p1, p2) => {
+      const expr = p1 ?? p2 ?? "";
+      if (!expr || /^\d+(?:[.,]\d+)?$/.test(expr.trim())) return full;
+      const idx = mathSpans.length;
+      mathSpans.push(formatInlineMath(expr));
+      return `\u0000MATH${idx}\u0000`;
     });
     s = escapeHtml(s);
     s = s.replace(
@@ -187,6 +241,7 @@
     );
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/\u0000MATH(\d+)\u0000/g, (_, idx) => mathSpans[Number(idx)] || "");
     s = s.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => codeSpans[Number(idx)] || "");
     return s;
   }
@@ -408,12 +463,17 @@
 
   // ── Capabilities Mindmap Logic ────────────────────────────────────────────
   async function ensureMindmapLoaded() {
-    if (state.mindmap) return;
-    try {
-      state.mindmap = await apiFetch("/api/mindmap");
+    if (!state.mindmap) {
+      try {
+        state.mindmap = await apiFetch("/api/mindmap");
+      } catch (err) {
+        el.mmColumns.innerHTML = `<p style="color:var(--danger)">Could not load mindmap: ${escapeHtml(err.message)}</p>`;
+        return;
+      }
+    }
+    if (!state.mmRendered) {
+      state.mmRendered = true;
       renderMindmapAll();
-    } catch (err) {
-      el.mmColumns.innerHTML = `<p style="color:var(--danger)">Could not load mindmap: ${escapeHtml(err.message)}</p>`;
     }
   }
 
@@ -855,11 +915,14 @@
   async function ensureOaCatalogLoaded() {
     if (!state.oaCatalog) {
       state.oaCatalog = state.meta?.niagads?.open_access || (await apiFetch("/api/niagads/endpoints"));
+    }
+    if (!state.oaRendered) {
+      state.oaRendered = true;
       renderOaExplorerStatic();
-      // Run default live showcase query once on first visit if not yet queried
-      if (!state.lastOaResult) {
-        runLiveNiagadsQuery();
-      }
+    }
+    if (!state.lastOaResult) {
+      // Fire default showcase query asynchronously without blocking tab render
+      runLiveNiagadsQuery();
     }
   }
 
@@ -1038,24 +1101,35 @@
     el.canvas.scrollTop = el.canvas.scrollHeight;
   }
 
+  el.starterGrid.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".starter-card[data-starter-id]");
+    if (!btn) return;
+    const starterId = btn.dataset.starterId;
+    const s = (state.meta?.starters || []).find((item) => item.id === starterId);
+    if (!s) return;
+    setProfile(s.profile || "ad1");
+    el.chatInput.value = s.question;
+    el.chatInput.focus();
+    handleSubmitPrompt(s.question);
+  });
+
   function renderStarters() {
     const starters = state.meta?.starters || [];
+    // Reuse server-side rendered starter cards when already hydrated in HTML
+    if (el.starterGrid.querySelectorAll(".starter-card[data-starter-id]").length === starters.length && starters.length > 0) {
+      return;
+    }
     el.starterGrid.innerHTML = "";
     for (const s of starters) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "starter-card";
+      btn.dataset.starterId = s.id;
       btn.innerHTML = `
         <span class="starter-badge">${escapeHtml(s.badge)}</span>
         <div class="starter-title">${escapeHtml(s.title)}</div>
         <div class="starter-sub">${escapeHtml(s.subtitle)}</div>
       `;
-      btn.addEventListener("click", () => {
-        setProfile(s.profile || "ad1");
-        el.chatInput.value = s.question;
-        el.chatInput.focus();
-        handleSubmitPrompt(s.question);
-      });
       el.starterGrid.appendChild(btn);
     }
   }
@@ -1144,7 +1218,7 @@
 
   async function refreshThreads() {
     try {
-      const data = await apiFetch("/api/threads");
+      const data = await apiFetch("/api/threads", { priority: "low" });
       state.threads = data.threads || [];
       renderThreads();
     } catch {}
@@ -1799,30 +1873,56 @@
     state.maxIterations = Number(el.maxIterSelect.value) || 10;
   });
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
+  // ── Boot (Zero-Waterfall SSR Hydration + Low-Priority Background Sync) ────
+  function readServerBootstrap() {
+    const node = document.getElementById("ligase-bootstrap");
+    if (!node || !node.textContent) return null;
+    try {
+      return JSON.parse(node.textContent);
+    } catch {
+      return null;
+    }
+  }
+
+  function applyMetaState(meta) {
+    state.meta = meta;
+    if (meta.niagads?.open_access) {
+      state.oaCatalog = meta.niagads.open_access;
+    }
+    el.appVersion.textContent = `v${meta.version}`;
+    el.modelBadgeText.textContent = meta.model;
+    el.statusDot.classList.toggle("offline", !meta.ready);
+    el.diagnosticsSummary.textContent = `Model: ${meta.model} · Engine: Ligase v${meta.version} · Sandbox: ${meta.sandbox_mode} · Ready: ${meta.ready ? "Yes" : "Missing API Key"}`;
+    renderStarters();
+    renderCatalogDialog();
+  }
+
   async function boot() {
     syncThemeButtons();
-    try {
-      const meta = await apiFetch("/api/meta");
-      state.meta = meta;
-      el.appVersion.textContent = `v${meta.version}`;
-      el.modelBadgeText.textContent = meta.model;
-      el.statusDot.classList.toggle("offline", !meta.ready);
-      el.diagnosticsSummary.textContent = `Model: ${meta.model} · Engine: Ligase v${meta.version} · Sandbox: ${meta.sandbox_mode} · Ready: ${meta.ready ? "Yes" : "Missing API Key"}`;
-      renderStarters();
-      renderCatalogDialog();
-    } catch (err) {
-      el.statusDot.classList.add("offline");
-      el.diagnosticsSummary.textContent = `Could not reach backend: ${err.message}`;
+    const bootstrap = readServerBootstrap();
+    if (bootstrap?.mindmap) {
+      state.mindmap = bootstrap.mindmap;
+    }
+    if (bootstrap?.meta) {
+      applyMetaState(bootstrap.meta);
+    } else {
+      try {
+        const meta = await apiFetch("/api/meta");
+        applyMetaState(meta);
+      } catch (err) {
+        el.statusDot.classList.add("offline");
+        el.diagnosticsSummary.textContent = `Could not reach backend: ${err.message}`;
+      }
     }
 
-    await refreshThreads();
-
-    // Honor initial URL hash (#mindmap or #niagads-api)
+    // Honor initial URL hash (#mindmap or #niagads-api) immediately without waiting on /api/threads
     const hashTab = (window.location.hash || "").replace(/^#/, "").trim();
     if (hashTab === "mindmap" || hashTab === "niagads-api") {
-      await switchPortalTab(hashTab, { updateHash: false });
+      switchPortalTab(hashTab, { updateHash: false });
     }
+
+    // Fetch saved study threads in the background at low priority
+    refreshThreads();
   }
 
   boot();

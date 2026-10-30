@@ -1845,6 +1845,7 @@ dialog::backdrop {
 }
 
 .oa-rollout-card {
+  contain: layout style paint;
   border: 1px solid var(--border-subtle);
   border-radius: 11px;
   padding: 0.8rem 0.9rem;
@@ -2034,4 +2035,21 @@ dialog::backdrop {
   overflow: auto;
   font-family: var(--font-mono);
   font-size: 0.76rem;
+}
+
+/* Below-the-fold layout & paint deferral (modern-web-guidance: performance) */
+#mindmap-matrix-container .table-wrapper,
+#panel-niagads-api .table-wrapper {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 18rem;
+}
+
+.math-inline {
+  font-family: "Cambria Math", "STIX Two Math", Georgia, serif;
+  font-style: italic;
+}
+
+.math-inline .math-rm {
+  font-family: var(--font-sans);
+  font-style: normal;
 }

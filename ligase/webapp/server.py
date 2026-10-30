@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+import html
 import json
 import logging
 import os
@@ -13,23 +15,48 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ligase import __version__ as VERSION
-from ligase.agent import create_agent
-from ligase.cli import EXAMPLES
+from ligase.examples_catalog import EXAMPLES
 from ligase.gemma_harness import merge_tool_cards
 from ligase.gemma_tools import clear_tool_cards
 from ligase.niagads_api import OPEN_ACCESS_ROLLOUT_CATALOG, execute_niagads_action
 from ligase.webapp.mindmap import build_capabilities_mindmap
 from ligase.webapp.planner import generate_plan_or_triage
 from ligase.webapp.store import ThreadStore
+
+# Kept as a patchable module attribute for tests while avoiding eager ClawAgents/LangChain imports on boot.
+create_agent: Optional[Any] = None
+
+
+def _get_create_agent() -> Any:
+    if create_agent is not None:
+        return create_agent
+    from ligase.agent import create_agent as _real_create_agent
+
+    return _real_create_agent
+
+
+class _SSESafeGZipMiddleware:
+    """Apply GZip compression to HTML/CSS/JS/JSON while keeping SSE (/api/chat/stream) unbuffered."""
+
+    def __init__(self, app: Any, minimum_size: int = 500) -> None:
+        self.app = app
+        self._gzip = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "http" and scope.get("path") == "/api/chat/stream":
+            await self.app(scope, receive, send)
+            return
+        await self._gzip(scope, receive, send)
 
 logger = logging.getLogger("ligase.webapp")
 
@@ -323,6 +350,111 @@ class ChatStreamRequest(BaseModel):
     approved_plan: Optional[str] = None
 
 
+TOOL_CATALOG: List[Dict[str, str]] = [
+    {
+        "name": "niagads_open_access_api",
+        "category": "NIAGADS Open Access v2.0 (Live)",
+        "description": "Live REST client for https://api.niagads.org/api (OpenAPI v2.0): GRCh38 genes, GVC TopGenes, exon structures, ADSP Release 5 SNVs/INDELs, GA4GH VRS digests, GWAS/WGS associations, <100 kb regions, track slices, and live FILER hg38 overlaps.",
+    },
+    {
+        "name": "query_niagads",
+        "category": "Alzheimer's & NIAGADS",
+        "description": "Quantitative NIAGADS DSS, GenomicsDB, ADVP, FILER (>58k functional tracks), MiGA NG00105 eQTLs, multi-ancestry ADSP (NG00067/NG00100), and PSP 4R-tauopathy WGS (NG00169/NG00172) + hybrid Open Access supplement.",
+    },
+    {
+        "name": "query_uniprot",
+        "category": "Proteomics & Isoforms",
+        "description": "Retrieve curated UniProtKB protein entries, functional domains, isoform sequences, and disease variants.",
+    },
+    {
+        "name": "query_ensembl",
+        "category": "Genomics & Coordinates",
+        "description": "Query Ensembl GRCh38 gene structures, cytogenetic bands, canonical transcripts, and variant consequences.",
+    },
+    {
+        "name": "query_ncbi_gene",
+        "category": "Genomics & Coordinates",
+        "description": "Fetch NCBI Entrez Gene summaries, aliases, chromosomal locations, and RefSeq annotations.",
+    },
+    {
+        "name": "lookup_compound",
+        "category": "Pharmacology & Chemistry",
+        "description": "Ground-truth PubChem PUG-REST lookup for exact molecular formula, molecular weight, IUPAC name, and SMILES.",
+    },
+    {
+        "name": "transcribe_translate",
+        "category": "Molecular Biology",
+        "description": "Deterministic DNA/RNA transcription, 6-frame ORF translation, and frameshift/nonsense mutation analysis.",
+    },
+    {
+        "name": "search_pubmed",
+        "category": "Biomedical Literature",
+        "description": "Query NCBI PubMed / E-utilities for peer-reviewed biomedical studies, clinical trials, and PMIDs.",
+    },
+    {
+        "name": "run_python",
+        "category": "Quantitative Sandbox",
+        "description": "Sandboxed Python execution for Bayesian fine-mapping math, PAF/OR calculations, and sequence verification.",
+    },
+]
+
+PROFILES_CATALOG: List[Dict[str, str]] = [
+    {
+        "id": "ad1",
+        "name": "AD1 · Alzheimer's & NIAGADS",
+        "tagline": "Alzheimer's Disease & Related Dementias Co-Scientist",
+        "description": "Live NIAGADS Open Access API v2.0 (ADSP R5 SNVs/INDELs, GVC TopGenes, GenomicsDB) + FILER, MiGA (NG00105), ADSP (NG00067/NG00100), IGAP (NG00075), and PSP WGS (NG00169/NG00172).",
+    },
+    {
+        "id": "a1",
+        "name": "A1 · General Biomedical",
+        "tagline": "Broad Genomics, Pharmacology & Molecular Biology Agent",
+        "description": "Cross-disciplinary biomedical research across UniProt, Ensembl, NCBI, PubChem, PubMed, NIAGADS Open Access API, and sandboxed Python bioinformatics.",
+    },
+]
+
+
+def _render_starters_ssr(starters: List[Dict[str, Any]]) -> str:
+    cards: List[str] = []
+    for s in starters:
+        sid = html.escape(str(s.get("id") or ""), quote=True)
+        badge = html.escape(str(s.get("badge") or ""))
+        title = html.escape(str(s.get("title") or ""))
+        sub = html.escape(str(s.get("subtitle") or ""))
+        cards.append(
+            f'<button type="button" class="starter-card" data-starter-id="{sid}">'
+            f'<span class="starter-badge">{badge}</span>'
+            f'<div class="starter-title">{title}</div>'
+            f'<div class="starter-sub">{sub}</div>'
+            f"</button>"
+        )
+    return "".join(cards)
+
+
+def _safe_json_for_script_tag(payload: Any) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return raw.replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
+_WARMUP_STARTED = False
+_WARMUP_LOCK = threading.Lock()
+
+
+def _warmup_agent_runtime() -> None:
+    """Warm ClawAgents, Biomni lazy tool descriptors, context layers, and default NIAGADS preset in background."""
+    try:
+        from ligase.context_layers import warmup_context_layers
+        from ligase.tools_adapter import get_biomni_claw_tools
+
+        _get_create_agent()
+        get_biomni_claw_tools(lazy=True)
+        warmup_context_layers()
+        if os.getenv("LIGASE_DISABLE_LIVE_NIAGADS", "").strip().lower() not in ("1", "true", "yes"):
+            execute_niagads_action(action="auto", target="rs6733839")
+    except Exception as exc:
+        logger.debug("Background warmup skipped/partial: %s", exc)
+
+
 def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = None) -> FastAPI:
     resolved_state = Path(state_dir or STATE_DIR).resolve()
     resolved_runs = Path(runs_root or RUNS_ROOT).resolve()
@@ -331,14 +463,60 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
 
     store = ThreadStore(resolved_state / "ligase_webapp.sqlite3")
     niagads_summary = _load_niagads_summary()
+    starters_list = _build_starters()
+    starters_ssr_html = _render_starters_ssr(starters_list)
+    niagads_full = {
+        **niagads_summary,
+        "open_access": OPEN_ACCESS_ROLLOUT_CATALOG,
+    }
+    mindmap_cache: Dict[str, Dict[str, Any]] = {}
+    index_html_cache: Dict[Tuple[str, bool], str] = {}
+    index_template = (
+        (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        if (STATIC_DIR / "index.html").is_file()
+        else ""
+    )
     active_cancels: Dict[str, threading.Event] = {}
+
+    def _get_mindmap(model_name: str) -> Dict[str, Any]:
+        cached = mindmap_cache.get(model_name)
+        if cached is None:
+            cached = build_capabilities_mindmap(model_name=model_name)
+            mindmap_cache[model_name] = cached
+        return cached
+
+    def _build_meta(model_name: str, is_ready: bool) -> Dict[str, Any]:
+        return {
+            "brand": "Ligase",
+            "version": VERSION,
+            "model": model_name,
+            "ready": is_ready,
+            "cloud_mode": IS_CLOUD,
+            "sandbox_mode": "AST + Isolated Workspace" if IS_CLOUD else "OS Sandbox (Seatbelt/Bubblewrap)",
+            "profiles": PROFILES_CATALOG,
+            "starters": starters_list,
+            "tools": TOOL_CATALOG,
+            "niagads": niagads_full,
+        }
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        global _WARMUP_STARTED
+        if os.getenv("LIGASE_SKIP_WARMUP", "").strip() != "1":
+            with _WARMUP_LOCK:
+                if not _WARMUP_STARTED:
+                    _WARMUP_STARTED = True
+                    threading.Thread(target=_warmup_agent_runtime, name="ligase-warmup", daemon=True).start()
+        yield
 
     webapp = FastAPI(
         title="Ligase Biomedical Co-Scientist",
         version=VERSION,
         docs_url="/api/docs",
         redoc_url=None,
+        lifespan=_lifespan,
     )
+    webapp.add_middleware(_SSESafeGZipMiddleware, minimum_size=500)
     webapp.state.store = store
     webapp.state.runs_root = resolved_runs
     webapp.state.active_cancels = active_cancels
@@ -347,11 +525,13 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         webapp.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @webapp.middleware("http")
-    async def _security_headers(request: Request, call_next):
+    async def _security_and_cache_headers(request: Request, call_next):
         resp: Response = await call_next(request)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        if request.url.path.startswith("/static/"):
+            resp.headers.setdefault("Cache-Control", "public, max-age=86400")
         return resp
 
     @webapp.get("/healthz")
@@ -374,94 +554,37 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
 
     @webapp.get("/", response_class=HTMLResponse)
     async def index() -> Response:
-        index_file = STATIC_DIR / "index.html"
-        if not index_file.is_file():
+        if not index_template:
             return HTMLResponse("<h1>Ligase WebApp</h1><p>Static bundle missing.</p>", status_code=500)
-        return HTMLResponse(index_file.read_text(encoding="utf-8"))
+        model, api_key, base_url = _resolve_web_credentials()
+        is_ready = bool(api_key or base_url)
+        cache_key = (model, is_ready)
+        rendered = index_html_cache.get(cache_key)
+        if rendered is None:
+            bootstrap_obj = {
+                "meta": _build_meta(model, is_ready),
+                "mindmap": _get_mindmap(model),
+            }
+            bootstrap_tag = (
+                f'<script id="ligase-bootstrap" type="application/json">'
+                f"{_safe_json_for_script_tag(bootstrap_obj)}</script>"
+            )
+            rendered = (
+                index_template.replace("<!-- LIGASE_STARTERS_SSR -->", starters_ssr_html)
+                .replace("<!-- LIGASE_BOOTSTRAP_JSON -->", bootstrap_tag)
+            )
+            index_html_cache[cache_key] = rendered
+        return HTMLResponse(rendered, headers={"Cache-Control": "no-cache"})
 
     @webapp.get("/api/meta")
     async def api_meta() -> Dict[str, Any]:
         model, api_key, base_url = _resolve_web_credentials()
-        tool_catalog = [
-            {
-                "name": "niagads_open_access_api",
-                "category": "NIAGADS Open Access v2.0 (Live)",
-                "description": "Live REST client for https://api.niagads.org/api (OpenAPI v2.0): GRCh38 genes, GVC TopGenes, exon structures, ADSP Release 5 SNVs/INDELs, GA4GH VRS digests, GWAS/WGS associations, <100 kb regions, track slices, and live FILER hg38 overlaps.",
-            },
-            {
-                "name": "query_niagads",
-                "category": "Alzheimer's & NIAGADS",
-                "description": "Quantitative NIAGADS DSS, GenomicsDB, ADVP, FILER (>58k functional tracks), MiGA NG00105 eQTLs, multi-ancestry ADSP (NG00067/NG00100), and PSP 4R-tauopathy WGS (NG00169/NG00172) + hybrid Open Access supplement.",
-            },
-            {
-                "name": "query_uniprot",
-                "category": "Proteomics & Isoforms",
-                "description": "Retrieve curated UniProtKB protein entries, functional domains, isoform sequences, and disease variants.",
-            },
-            {
-                "name": "query_ensembl",
-                "category": "Genomics & Coordinates",
-                "description": "Query Ensembl GRCh38 gene structures, cytogenetic bands, canonical transcripts, and variant consequences.",
-            },
-            {
-                "name": "query_ncbi_gene",
-                "category": "Genomics & Coordinates",
-                "description": "Fetch NCBI Entrez Gene summaries, aliases, chromosomal locations, and RefSeq annotations.",
-            },
-            {
-                "name": "lookup_compound",
-                "category": "Pharmacology & Chemistry",
-                "description": "Ground-truth PubChem PUG-REST lookup for exact molecular formula, molecular weight, IUPAC name, and SMILES.",
-            },
-            {
-                "name": "transcribe_translate",
-                "category": "Molecular Biology",
-                "description": "Deterministic DNA/RNA transcription, 6-frame ORF translation, and frameshift/nonsense mutation analysis.",
-            },
-            {
-                "name": "search_pubmed",
-                "category": "Biomedical Literature",
-                "description": "Query NCBI PubMed / E-utilities for peer-reviewed biomedical studies, clinical trials, and PMIDs.",
-            },
-            {
-                "name": "run_python",
-                "category": "Quantitative Sandbox",
-                "description": "Sandboxed Python execution for Bayesian fine-mapping math, PAF/OR calculations, and sequence verification.",
-            },
-        ]
-        return {
-            "brand": "Ligase",
-            "version": VERSION,
-            "model": model,
-            "ready": bool(api_key or base_url),
-            "cloud_mode": IS_CLOUD,
-            "sandbox_mode": "AST + Isolated Workspace" if IS_CLOUD else "OS Sandbox (Seatbelt/Bubblewrap)",
-            "profiles": [
-                {
-                    "id": "ad1",
-                    "name": "AD1 · Alzheimer's & NIAGADS",
-                    "tagline": "Alzheimer's Disease & Related Dementias Co-Scientist",
-                    "description": "Live NIAGADS Open Access API v2.0 (ADSP R5 SNVs/INDELs, GVC TopGenes, GenomicsDB) + FILER, MiGA (NG00105), ADSP (NG00067/NG00100), IGAP (NG00075), and PSP WGS (NG00169/NG00172).",
-                },
-                {
-                    "id": "a1",
-                    "name": "A1 · General Biomedical",
-                    "tagline": "Broad Genomics, Pharmacology & Molecular Biology Agent",
-                    "description": "Cross-disciplinary biomedical research across UniProt, Ensembl, NCBI, PubChem, PubMed, NIAGADS Open Access API, and sandboxed Python bioinformatics.",
-                },
-            ],
-            "starters": _build_starters(),
-            "tools": tool_catalog,
-            "niagads": {
-                **niagads_summary,
-                "open_access": OPEN_ACCESS_ROLLOUT_CATALOG,
-            },
-        }
+        return _build_meta(model, bool(api_key or base_url))
 
     @webapp.get("/api/mindmap")
     async def api_mindmap() -> Dict[str, Any]:
         model, _, _ = _resolve_web_credentials()
-        return build_capabilities_mindmap(model_name=model)
+        return _get_mindmap(model)
 
     @webapp.get("/api/niagads/endpoints")
     async def api_niagads_endpoints() -> Dict[str, Any]:
@@ -705,7 +828,8 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             def _worker() -> None:
                 try:
                     clear_tool_cards()
-                    agent = create_agent(
+                    agent_factory = _get_create_agent()
+                    agent = agent_factory(
                         model=model,
                         data_path=str(run_dir),
                         is_ad_specialized=(profile_norm == "ad1"),
