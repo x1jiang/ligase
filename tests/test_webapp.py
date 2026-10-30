@@ -33,10 +33,56 @@ def test_health_ready_and_meta(webapp_client: TestClient):
 
     meta = webapp_client.get("/api/meta").json()
     assert meta["model"] == "gpt-6-luna"
-    assert len(meta["starters"]) == 6
+    assert len(meta["starters"]) == 7
     starter_ids = {s["id"] for s in meta["starters"]}
-    assert {"niagads", "adsp", "psp", "apoe4", "imatinib", "dna"} == starter_ids
+    assert {"niagads_live", "niagads", "adsp", "psp", "apoe4", "imatinib", "dna"} == starter_ids
+    tool_names = {t["name"] for t in meta["tools"]}
+    assert "niagads_open_access_api" in tool_names
     assert len(meta["niagads"]["datasets"]) >= 8
+    assert meta["niagads"]["open_access"]["api_version"] == "2.0.0"
+
+
+def test_mindmap_and_niagads_live_endpoints(webapp_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    mm = webapp_client.get("/api/mindmap")
+    assert mm.status_code == 200
+    mm_data = mm.json()
+    assert mm_data["stats"]["pillars"] == 6
+    assert mm_data["stats"]["components"] >= 30
+    branch_ids = {b["id"] for b in mm_data["branches"]}
+    assert {
+        "niagads_api",
+        "niagads_ecosystem",
+        "engine",
+        "biomni_domains",
+        "quant_compute",
+        "portal_outputs",
+    } == branch_ids
+
+    oa_eps = webapp_client.get("/api/niagads/endpoints")
+    assert oa_eps.status_code == 200
+    assert oa_eps.json()["portal_url"] == "https://api.niagads.org/open-access"
+    assert len(oa_eps.json()["endpoints"]) >= 12
+
+    missing = webapp_client.get("/api/niagads/live")
+    assert missing.status_code == 400
+
+    monkeypatch.setattr(
+        "ligase.webapp.server.execute_niagads_action",
+        lambda **kwargs: {
+            "ok": True,
+            "action": kwargs.get("action"),
+            "endpoint": "/record/gene/APOE",
+            "request_id": "req-test-123",
+            "elapsed_ms": 42,
+            "summary_markdown": "### NIAGADS Open Access Gene Record (GRCh38)\n- **APOE** (`ENSG00000130203`)",
+            "rows": [{"gene_symbol": "APOE", "ensembl_id": "ENSG00000130203"}],
+            "raw": {"data": [{"gene_symbol": "APOE"}]},
+        },
+    )
+    live = webapp_client.get("/api/niagads/live?action=gene&target=APOE")
+    assert live.status_code == 200
+    assert live.json()["ok"] is True
+    assert live.json()["request_id"] == "req-test-123"
 
 
 def test_index_serves_modern_web_markup(webapp_client: TestClient):
@@ -46,6 +92,10 @@ def test_index_serves_modern_web_markup(webapp_client: TestClient):
     assert '<meta name="color-scheme" content="light dark">' in html
     assert 'closedby="any"' in html
     assert 'id="chat-input"' in html
+    assert 'role="tablist"' in html
+    assert 'id="panel-mindmap"' in html
+    assert 'id="panel-niagads-api"' in html
+    assert html.count("<h1") == 1
 
 
 def test_thread_lifecycle_and_client_isolation(webapp_client: TestClient):

@@ -66,10 +66,10 @@ ligase example apoe4
 | Command | What it does |
 |---|---|
 | `ligase` | Interactive prompt: type questions, `examples`, `exit` |
-| `ligase ui` | Launch the interactive Ligase WebApp (`gpt-6-luna` default, live tool trace, Plan & Approve) |
+| `ligase ui` | Launch the 3-tab Ligase Web Portal (`Research Studio`, `Capabilities Mindmap`, and live `NIAGADS Open Access API v2.0` explorer) |
 | `ligase run "<question>"` | One study; prints tool calls live and the answer |
 | `ligase examples` | List ready-made studies |
-| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `adsp`, `psp` |
+| `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `adsp`, `psp`, `niagads_live` |
 | `ligase doctor` | Check install, tools, model endpoint, sandbox |
 
 Useful flags: `--model auto|spark|glimmer|openai|gemma|custom` (default `auto`: private host if set, else OpenAI), `--ad` (Alzheimer's context), `--max-iterations N`, `--out DIR`, `--record session.svg`.
@@ -99,7 +99,7 @@ Recorded on a private H200.
 
 ## NIAGADS & Alzheimer's Functional Genomics Showcase
 
-Ligase ships a bundled, offline-ready **NIAGADS & Alzheimer's Functional Genomics catalog** (`ligase/resources/niagads_catalog.json`) and a dedicated `query_niagads` quantitative engine covering Variant-to-Function (V2F) fine-mapping, ancestry-stratified Population Attributable Fraction (`PAF`), and cross-disorder tauopathy differential risk across the major NIAGADS platforms and open datasets:
+Ligase integrates the live **NIAGADS Open Access API v2.0** (`https://api.niagads.org/open-access` via `niagads_open_access_api` for real-time GRCh38 genes, GVC TopGenes, exon structures, ADSP Release 5 SNVs/INDELs, GA4GH VRS digests, GWAS/WGS associations, `<100 kb` genomic regions, track slices, and live FILER hg38 overlaps) together with a bundled, offline-ready **NIAGADS & Alzheimer's Functional Genomics catalog** (`ligase/resources/niagads_catalog.json`) and `query_niagads` quantitative engine:
 
 - **Quantitative V2F Fine-Mapping (`FILER`, Kuksa et al. 2022 *Nucleic Acids Research*) & `MiGA` (`NG00105`) + `IGAP` (`NG00075` / `ADVP`)**: Integrates Giggle-indexed microglia enhancer peaks (`SPI1`/`PU.1` + `MEF2C` co-occupancy, prior weight `w = 10`) and `MiGA` microglia eQTLs (`Z = 6.8`) across the `2q14.3` `BIN1` credible set (`rs6733839`, `rs744373`, `rs4663105`, `rs12989701`), shifting the causal sentinel **`rs6733839` Posterior Inclusion Probability (`PIP`) from `52.4%` (uniform GWAS prior) to `94.6%` (`FILER`-informed prior)**, while modeling epistasis in the microglial coding hub (`TREM2 R47H` `rs75932628` `OR = 2.90` rescued to `OR = 1.97` by protective hypermorphic `PLCG2 P522R` `rs72824905` `OR = 0.68`, alongside `ABI3 S209F` `rs616338` `OR = 1.43`).
 - **ADSP Umbrella (`NG00067`), GCAD `VCPA` Pipeline (Leung et al. 2019), `FAVOR` & Multi-Ancestry AD (`NG00100` Kunkle et al. 2021 vs. `NG00075`)**: Quantifies ancestry-stratified Population Attributable Fraction (`PAF`) for `ABCA7` loss-of-function / 44-bp frameshift deletion (`rs115550680`), demonstrating an **8.7× higher population attributable burden in African ancestry** (`PAF_AFR = 6.09%`, `f_AFR = 0.072`, `OR_AFR = 1.90`) vs. European ancestry (`PAF_EUR = 0.70%`, `f_EUR = 0.009`, `OR_EUR = 1.78`), alongside `APOE` ε4 (`rs429358`) African local-ancestry attenuation (`OR_AFR = 2.31` vs. `OR_EUR = 3.68`) and dual-carrier `APOE` ε4 + `ABCA7` LoF composite risk (`OR_AFR = 4.39`).

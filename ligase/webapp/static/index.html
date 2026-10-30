@@ -9,26 +9,27 @@
       document.querySelector('meta[name="color-scheme"]').content = localStorage.getItem("color-scheme") ?? "light dark";
     } catch {}
   </script>
-  <title>Ligase · Biomedical &amp; NIAGADS Co-Scientist</title>
+  <title>Research Studio | Ligase · Biomedical &amp; NIAGADS Co-Scientist</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%230f766e'/%3E%3Cpath d='M11 9c0 6 14 6 14 12s-14 6-14 12M25 9c0 6-14 6-14 12s14 6 14 12' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='18' cy='15' r='2.1' fill='%2399f6e4'/%3E%3Ccircle cx='18' cy='21' r='2.1' fill='%2399f6e4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
   <div class="app-shell">
     <!-- Left Thread & Study Sidebar -->
     <aside class="sidebar" id="sidebar" aria-label="Study history">
       <div class="sidebar-header">
         <div class="brand-lockup">
           <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
+            <svg viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
               <path d="M9 6c0 5.5 14 5.5 14 10S9 21.5 9 27M23 6c0 5.5-14 5.5-14 10s14 5.5 14 11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
               <circle cx="16" cy="11" r="2" fill="currentColor"/>
               <circle cx="16" cy="21" r="2" fill="currentColor"/>
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.1</span></div>
-            <div class="brand-sub">Biomedical Co-Scientist</div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.2</span></div>
+            <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
         <button type="button" class="icon-btn mobile-only" id="close-sidebar-btn" aria-label="Close study history">
@@ -39,6 +40,19 @@
       <div class="sidebar-actions">
         <button type="button" class="primary-new-btn" id="new-study-btn">
           <span aria-hidden="true">＋</span> New Biomedical Study
+        </button>
+      </div>
+
+      <div class="sidebar-section-label">Portal Views</div>
+      <div class="sidebar-view-shortcuts">
+        <button type="button" class="ghost-footer-btn active" data-goto-tab="studio">
+          <span aria-hidden="true">🔬</span> Research Studio
+        </button>
+        <button type="button" class="ghost-footer-btn" data-goto-tab="mindmap">
+          <span aria-hidden="true">🧠</span> Capabilities Mindmap
+        </button>
+        <button type="button" class="ghost-footer-btn" data-goto-tab="niagads-api">
+          <span aria-hidden="true">🌐</span> NIAGADS Open Access API
         </button>
       </div>
 
@@ -56,98 +70,394 @@
     </aside>
 
     <!-- Main Research Workspace -->
-    <main class="workspace">
+    <main class="workspace" id="main-workspace" tabindex="-1">
       <header class="topbar">
         <div class="topbar-left">
           <button type="button" class="icon-btn mobile-only" id="open-sidebar-btn" aria-label="Open study history">
             ☰
           </button>
-          <div class="segmented" role="group" aria-label="Agent specialist profile">
-            <button type="button" class="seg-btn active" data-profile="ad1" id="profile-ad1-btn" title="Alzheimer's Disease &amp; NIAGADS Co-Scientist">
-              AD1 · Alzheimer's &amp; NIAGADS
-            </button>
-            <button type="button" class="seg-btn" data-profile="a1" id="profile-a1-btn" title="General-Purpose Biomedical Research Agent">
-              A1 · General Biomedical
-            </button>
-          </div>
+
+          <!-- Primary Accessible Portal Tablist -->
+          <ul class="portal-tablist" id="portal-tablist" role="tablist" aria-label="Ligase portal views">
+            <li role="presentation" class="portal-tab-item active">
+              <button
+                type="button"
+                role="tab"
+                id="tab-studio"
+                class="portal-tab-btn"
+                aria-selected="true"
+                aria-controls="panel-studio"
+                data-tab="studio"
+              >
+                <span aria-hidden="true">🔬</span> Research Studio
+              </button>
+            </li>
+            <li role="presentation" class="portal-tab-item">
+              <button
+                type="button"
+                role="tab"
+                id="tab-mindmap"
+                class="portal-tab-btn"
+                aria-selected="false"
+                aria-controls="panel-mindmap"
+                tabindex="-1"
+                data-tab="mindmap"
+              >
+                <span aria-hidden="true">🧠</span> Capabilities Mindmap
+              </button>
+            </li>
+            <li role="presentation" class="portal-tab-item">
+              <button
+                type="button"
+                role="tab"
+                id="tab-niagads-api"
+                class="portal-tab-btn"
+                aria-selected="false"
+                aria-controls="panel-niagads-api"
+                tabindex="-1"
+                data-tab="niagads-api"
+              >
+                <span aria-hidden="true">🌐</span> NIAGADS Open Access API
+              </button>
+            </li>
+          </ul>
         </div>
 
         <div class="topbar-right">
-          <div class="segmented compact" role="group" aria-label="Execution workflow">
-            <button type="button" class="seg-btn active" data-mode="direct" id="mode-direct-btn" title="Execute tools and synthesize answer immediately">
-              ⚡ Direct Run
+          <div class="segmented" id="studio-profile-group" role="group" aria-label="Agent specialist profile">
+            <button type="button" class="seg-btn active" data-profile="ad1" id="profile-ad1-btn">
+              AD1 · NIAGADS
             </button>
-            <button type="button" class="seg-btn" data-mode="plan" id="mode-plan-btn" title="Biomni-style Plan-then-Approve scientific workflow">
+            <button type="button" class="seg-btn" data-profile="a1" id="profile-a1-btn">
+              A1 · Biomedical
+            </button>
+          </div>
+          <div class="segmented compact" id="studio-mode-group" role="group" aria-label="Execution workflow">
+            <button type="button" class="seg-btn active" data-mode="direct" id="mode-direct-btn">
+              ⚡ Direct
+            </button>
+            <button type="button" class="seg-btn" data-mode="plan" id="mode-plan-btn">
               📋 Plan &amp; Approve
             </button>
           </div>
-          <div class="engine-pill" id="engine-pill" title="Active frontier reasoning model and tool engine">
-            <span class="status-dot" id="status-dot"></span>
+          <div class="engine-pill" id="engine-pill">
+            <span class="status-dot" id="status-dot" aria-hidden="true"></span>
             <span id="model-badge-text">gpt-6-luna</span>
           </div>
         </div>
       </header>
 
-      <!-- Scrollable Conversation + Onboarding Canvas -->
-      <section class="canvas" id="canvas" aria-live="polite">
-        <div class="welcome-view" id="welcome-view">
-          <div class="hero-header">
-            <div class="hero-eyebrow" id="hero-eyebrow">ALZHEIMER'S GENOMICS · NIAGADS · MULTI-OMICS CO-SCIENTIST</div>
-            <h1 class="hero-title" id="hero-title">Grounded Quantitative Discovery with Ligase</h1>
-            <p class="hero-lead" id="hero-lead">
-              Powered by <strong>gpt-6-luna</strong> on the ClawAgents engine with deterministic grounding across
-              NIAGADS DSS, FILER, MiGA (<code>NG00105</code>), ADSP (<code>NG00067</code>/<code>NG00100</code>),
-              PSP WGS (<code>NG00169</code>/<code>NG00172</code>), UniProt, Ensembl, PubChem, and Python bioinformatics.
-            </p>
+      <!-- TAB PANEL 1: Research Studio -->
+      <div
+        class="tab-panel studio-panel"
+        id="panel-studio"
+        role="tabpanel"
+        aria-labelledby="tab-studio"
+      >
+        <div class="canvas" id="canvas" aria-live="polite">
+          <div class="welcome-view" id="welcome-view">
+            <div class="hero-header">
+              <div class="hero-eyebrow" id="hero-eyebrow">ALZHEIMER'S GENOMICS · NIAGADS OPEN ACCESS v2.0 · MULTI-OMICS CO-SCIENTIST</div>
+              <h1 class="hero-title" id="hero-title">Grounded Quantitative Discovery with Ligase</h1>
+              <p class="hero-lead" id="hero-lead">
+                Powered by <strong>gpt-6-luna</strong> on the ClawAgents engine with live
+                <strong>NIAGADS Open Access API v2.0</strong> (<code>api.niagads.org</code>: GenomicsDB, ADSP R5 SNVs/INDELs, GVC TopGenes),
+                live <strong>FILER</strong> hg38 overlaps, MiGA (<code>NG00105</code>), ADSP (<code>NG00067</code>/<code>NG00100</code>),
+                PSP WGS (<code>NG00169</code>/<code>NG00172</code>), 180+ Biomni tools, and sandboxed Python bioinformatics.
+              </p>
+              <div class="hero-quick-pills">
+                <button type="button" class="hero-pill-btn" data-goto-tab="mindmap">
+                  <span aria-hidden="true">🧠</span> View Interactive Capabilities Mindmap (6 Pillars · 32 Components)
+                </button>
+                <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
+                  <span aria-hidden="true">🌐</span> Open Live NIAGADS Open Access API v2.0 Console
+                </button>
+              </div>
+            </div>
+
+            <div class="starter-section-head">
+              <span>Ready-Made Quantitative &amp; Live API Studies</span>
+              <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 24 NIAGADS Cohorts &amp; 9 Tool Suites →</button>
+            </div>
+            <div class="starter-grid" id="starter-grid"></div>
           </div>
 
-          <div class="starter-section-head">
-            <span>Ready-Made Quantitative Studies</span>
-            <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 10 NIAGADS Accessions &amp; 8 Tool Suites →</button>
-          </div>
-          <div class="starter-grid" id="starter-grid"></div>
+          <div class="transcript" id="transcript" hidden></div>
         </div>
 
-        <div class="transcript" id="transcript" hidden></div>
-      </section>
-
-      <!-- Composer Dock -->
-      <footer class="composer-dock">
-        <div class="attachment-strip" id="attachment-strip" hidden></div>
-        <form id="composer-form" class="composer-card">
-          <label for="chat-input" class="visually-hidden">Biomedical research question</label>
-          <textarea
-            id="chat-input"
-            name="prompt"
-            placeholder="Ask a quantitative NIAGADS, genomics, pharmacology, or bioinformatics question… (Enter to run, Shift+Enter for newline)"
-            autocomplete="off"
-            spellcheck="true"
-          ></textarea>
-          <div class="composer-toolbar">
-            <div class="composer-left-tools">
-              <input
-                type="file"
-                id="file-upload-input"
-                accept=".tsv,.csv,.txt,.vcf,.bed,.fasta,.fa,.json,.md,.py,.r,.gff,.gtf"
-                multiple
-                hidden
-              >
-              <button type="button" class="tool-chip-btn" id="attach-file-btn" title="Attach .tsv, .csv, .vcf, .bed, .fasta, or .json dataset">
-                📎 Attach Data
-              </button>
-              <span class="composer-hint" id="workflow-hint">Direct execution · live tool trace &amp; downloadable Markdown report</span>
+        <!-- Composer Dock -->
+        <footer class="composer-dock">
+          <div class="attachment-strip" id="attachment-strip" hidden></div>
+          <form id="composer-form" class="composer-card">
+            <label for="chat-input" class="visually-hidden">Biomedical research question</label>
+            <textarea
+              id="chat-input"
+              name="prompt"
+              placeholder="Ask a live NIAGADS Open Access API, genomics, pharmacology, or bioinformatics question… (Enter to run, Shift+Enter for newline)"
+              spellcheck="true"
+            ></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-left-tools">
+                <input
+                  type="file"
+                  id="file-upload-input"
+                  accept=".tsv,.csv,.txt,.vcf,.bed,.fasta,.fa,.json,.md,.py,.r,.gff,.gtf"
+                  multiple
+                  hidden
+                >
+                <button type="button" class="tool-chip-btn" id="attach-file-btn">
+                  📎 Attach Data
+                </button>
+                <span class="composer-hint" id="workflow-hint">Direct execution · live NIAGADS API + tool trace &amp; downloadable Markdown report</span>
+              </div>
+              <div class="composer-right-tools">
+                <button type="button" class="stop-btn" id="stop-run-btn" hidden>
+                  ⏹ Stop Run
+                </button>
+                <button type="submit" class="send-btn" id="send-btn">
+                  Run Study ↵
+                </button>
+              </div>
             </div>
-            <div class="composer-right-tools">
-              <button type="button" class="stop-btn" id="stop-run-btn" hidden>
-                ⏹ Stop Run
-              </button>
-              <button type="submit" class="send-btn" id="send-btn">
-                Run Study ↵
-              </button>
+          </form>
+        </footer>
+      </div>
+
+      <!-- TAB PANEL 2: Capabilities Mindmap -->
+      <div
+        class="tab-panel mindmap-panel"
+        id="panel-mindmap"
+        role="tabpanel"
+        aria-labelledby="tab-mindmap"
+        hidden
+      >
+        <div class="portal-page-scroll">
+          <div class="page-banner">
+            <div>
+              <div class="hero-eyebrow">SYSTEM ARCHITECTURE &amp; CAPABILITY GRAPH</div>
+              <h2 class="page-heading">Ligase Supported Components Mindmap</h2>
+              <p class="page-lead">
+                Explore every engine layer, live NIAGADS Open Access v2.0 endpoint family, curated ADRD cohort panel,
+                Biomni domain module, and deterministic verification calculator wired into Ligase. Click any node to inspect
+                its backing modules or launch a live query.
+              </p>
+            </div>
+            <div class="mindmap-kpi-row" id="mindmap-kpi-row"></div>
+          </div>
+
+          <div class="mindmap-controls-bar">
+            <div class="mindmap-pillar-filters" id="mindmap-pillar-filters" role="group" aria-label="Filter mindmap by architectural pillar"></div>
+
+            <div class="mindmap-right-controls">
+              <form id="mindmap-filter-form" class="inline-search-form">
+                <label for="mindmap-search-input" class="visually-hidden">Filter components by keyword</label>
+                <input
+                  id="mindmap-search-input"
+                  type="search"
+                  placeholder="Filter nodes (e.g. VRS, FILER, TREM2, UniProt)…"
+                >
+                <button type="submit" class="tool-chip-btn">Filter</button>
+              </form>
+
+              <div class="segmented compact" role="group" aria-label="Mindmap display mode">
+                <button type="button" class="seg-btn active" id="mm-view-graph-btn" aria-pressed="true">
+                  🕸️ Mindmap Graph
+                </button>
+                <button type="button" class="seg-btn" id="mm-view-table-btn" aria-pressed="false">
+                  📋 Accessible Matrix
+                </button>
+              </div>
+
+              <div class="mindmap-zoom-group" role="group" aria-label="Mindmap layout controls">
+                <button type="button" class="tool-chip-btn" id="mm-expand-all-btn">Expand All</button>
+                <button type="button" class="tool-chip-btn" id="mm-collapse-all-btn">Collapse</button>
+                <button type="button" class="tool-chip-btn" id="mm-zoom-out-btn" aria-label="Zoom out mindmap">−</button>
+                <span class="zoom-readout" id="mm-zoom-readout">100%</span>
+                <button type="button" class="tool-chip-btn" id="mm-zoom-in-btn" aria-label="Zoom in mindmap">＋</button>
+              </div>
             </div>
           </div>
-        </form>
-      </footer>
+
+          <!-- Interactive Graph + Inspector Split Workbench -->
+          <div class="mindmap-workbench" id="mindmap-graph-workbench">
+            <div class="mindmap-stage-scroll" id="mindmap-stage-scroll">
+              <div class="mindmap-stage" id="mindmap-stage">
+                <svg class="mm-links-svg" id="mm-links-svg" aria-hidden="true"></svg>
+                <div class="mm-columns" id="mm-columns"></div>
+              </div>
+            </div>
+
+            <aside class="mm-inspector" id="mm-inspector" aria-label="Selected component details">
+              <div class="mm-inspector-empty">Select any mindmap hub or component node to inspect its endpoints, modules, and one-click actions.</div>
+            </aside>
+          </div>
+
+          <!-- Accessible Semantic Data Table Alternative -->
+          <div id="mindmap-matrix-container" hidden>
+            <div tabindex="0" role="region" aria-label="Ligase supported components matrix" class="table-wrapper">
+              <table id="mindmap-matrix-table">
+                <caption>Complete inventory of architectural pillars, components, and backing endpoints supported by Ligase</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Component</th>
+                    <th scope="col">Pillar</th>
+                    <th scope="col">Status / Badge</th>
+                    <th scope="col">Backing Endpoints &amp; Modules</th>
+                    <th scope="col">Capabilities Summary</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="mindmap-matrix-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB PANEL 3: NIAGADS Open Access API v2.0 Live Explorer -->
+      <div
+        class="tab-panel niagads-api-panel"
+        id="panel-niagads-api"
+        role="tabpanel"
+        aria-labelledby="tab-niagads-api"
+        hidden
+      >
+        <div class="portal-page-scroll">
+          <div class="page-banner">
+            <div>
+              <div class="hero-eyebrow">LIVE REST INTEGRATION · HTTPS://API.NIAGADS.ORG/OPEN-ACCESS</div>
+              <h2 class="page-heading">NIAGADS Open Access API v2.0 Explorer</h2>
+              <p class="page-lead">
+                Query NIAGADS Open Access v2.0 endpoints in real time across Alzheimer's GenomicsDB, ADSP Release 5 SNVs &amp; INDELs,
+                GA4GH VRS allele digests, GVC TopGenes, GRCh38 transcript/exon structures, multi-ancestry GWAS tracks, and live FILER hg38 regulatory overlaps —
+                then send any result directly to <strong>gpt-6-luna</strong> in Research Studio.
+              </p>
+            </div>
+            <div class="oa-external-links">
+              <a href="https://api.niagads.org/open-access" target="_blank" rel="noopener noreferrer" class="artifact-btn">
+                ↗ api.niagads.org/open-access
+              </a>
+              <a href="https://api.niagads.org/docs" target="_blank" rel="noopener noreferrer" class="artifact-btn">
+                📖 Interactive OpenAPI v2.0 Docs
+              </a>
+            </div>
+          </div>
+
+          <!-- Resource Rollout Strip -->
+          <h3 class="section-subhead">NIAGADS Open Access Data Rollout &amp; Ligase Coverage</h3>
+          <div class="oa-rollout-grid" id="oa-rollout-grid"></div>
+
+          <!-- 1-Click Preset Bar -->
+          <h3 class="section-subhead">One-Click Live Query Presets</h3>
+          <div class="oa-preset-strip" id="oa-preset-strip"></div>
+
+          <!-- Live Query Console Form -->
+          <form id="niagads-live-form" class="oa-console-card">
+            <div class="oa-form-grid">
+              <div class="oa-field">
+                <label for="oa-action-select">Endpoint Action</label>
+                <select id="oa-action-select" name="action">
+                  <option value="auto">Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
+                  <option value="gene">Gene Record &amp; GVC TopGenes (/record/gene/{gene})</option>
+                  <option value="gene_associations">Gene GWAS Associations (/record/gene/{gene}/associations)</option>
+                  <option value="gene_structure">Gene Transcripts &amp; Exons (/record/gene/{gene}/structure)</option>
+                  <option value="variant">Variant Record · ADSP R5 &amp; VRS (/record/variant/{variant})</option>
+                  <option value="variant_associations">Variant GWAS Associations (/record/variant/{variant}/associations)</option>
+                  <option value="region_associations">Region Associations &lt;100 kb (/record/region/{region}/associations)</option>
+                  <option value="region_variants">Region ADSP R5 Variants &lt;100 kb (/record/region/{region}/variants)</option>
+                  <option value="track">Track Metadata (/record/track/{track})</option>
+                  <option value="track_data">Track Locus Slice (/record/track/{track}/data)</option>
+                  <option value="search">Semantic Search (/query)</option>
+                  <option value="search_tracks">Search GWAS/WGS Tracks (/query/tracks)</option>
+                  <option value="search_genes">Search Genes (/query/genes)</option>
+                  <option value="feature">Coordinate Resolver (/service/feature)</option>
+                  <option value="filer_overlap">Live FILER hg38 Overlap Count</option>
+                </select>
+              </div>
+
+              <div class="oa-field oa-field-wide">
+                <label for="oa-target-input">Target Identifier, Interval, or Search Query</label>
+                <input
+                  id="oa-target-input"
+                  name="target"
+                  type="text"
+                  value="rs6733839"
+                  placeholder="e.g. APOE, rs429358, rs6733839, chr2:127134000-127136000, NG00166_04BE648F_STD_OA"
+                  required
+                >
+              </div>
+
+              <div class="oa-field">
+                <label for="oa-loc-input">Locus Window (Track Data)</label>
+                <input
+                  id="oa-loc-input"
+                  name="loc"
+                  type="text"
+                  placeholder="e.g. chr2:127134000-127136000"
+                >
+              </div>
+
+              <div class="oa-field oa-field-narrow">
+                <label for="oa-flank-input">Flank (bp)</label>
+                <input
+                  id="oa-flank-input"
+                  name="flank"
+                  type="number"
+                  min="0"
+                  max="1000000"
+                  step="500"
+                  value="0"
+                >
+              </div>
+            </div>
+
+            <div class="oa-form-actions">
+              <span class="composer-hint">Queries live <code>https://api.niagads.org/api</code> + <code>FILER</code> endpoints via Ligase backend</span>
+              <button type="submit" class="send-btn" id="oa-submit-btn">
+                ⚡ Execute Live API Query ↵
+              </button>
+            </div>
+          </form>
+
+          <!-- Live Response Output -->
+          <div class="oa-result-card" id="oa-result-card" aria-live="polite" hidden>
+            <div class="oa-result-header">
+              <div class="oa-result-meta" id="oa-result-meta"></div>
+              <div class="oa-result-actions">
+                <button type="button" class="plan-approve-btn" id="oa-send-studio-btn">
+                  🔬 Analyze in Research Studio (gpt-6-luna)
+                </button>
+                <button type="button" class="artifact-btn" id="oa-copy-json-btn">
+                  📋 Copy Raw JSON
+                </button>
+              </div>
+            </div>
+            <div class="md-body" id="oa-result-markdown"></div>
+            <details class="oa-raw-details">
+              <summary>Inspect Raw NIAGADS Open Access v2.0 JSON Payload</summary>
+              <pre><code id="oa-result-json"></code></pre>
+            </details>
+          </div>
+
+          <!-- Supported Endpoints Reference Table -->
+          <h3 class="section-subhead">Integrated NIAGADS Open Access API v2.0 Endpoints</h3>
+          <div tabindex="0" role="region" aria-label="Integrated NIAGADS Open Access endpoints" class="table-wrapper">
+            <table>
+              <caption>All NIAGADS Open Access API v2.0 and FILER endpoints wired into Ligase tool niagads_open_access_api</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Action</th>
+                  <th scope="col">REST Path</th>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Description</th>
+                  <th scope="col">Live Test</th>
+                </tr>
+              </thead>
+              <tbody id="oa-endpoints-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -163,7 +473,7 @@
       </form>
     </div>
     <div class="dialog-body">
-      <h3 class="dialog-section-title">Active Biomedical &amp; Quantitative Tools</h3>
+      <h3 class="dialog-section-title">Active Biomedical &amp; Live NIAGADS Tools</h3>
       <div class="catalog-cards" id="tools-catalog-list"></div>
 
       <h3 class="dialog-section-title">NIAGADS Platforms &amp; Curated Accessions</h3>

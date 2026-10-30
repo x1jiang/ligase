@@ -25,6 +25,7 @@ _SUB_SUPER_DIGITS = str.maketrans(
 PREFERRED_DOMAIN_TOOLS = frozenset(
     {
         "query_niagads",
+        "niagads_open_access_api",
         "lookup_compound",
         "transcribe_translate",
         "run_python",
@@ -47,6 +48,7 @@ PREFERRED_DOMAIN_TOOLS = frozenset(
 ALWAYS_ON_TOOLS = frozenset(
     {
         "query_niagads",
+        "niagads_open_access_api",
         "lookup_compound",
         "transcribe_translate",
         "run_python",
@@ -325,6 +327,7 @@ def _configure_spark_chat_options(claw_agent: Any) -> None:
 _LOCAL_LOOKUP_TOOLS = frozenset(
     {
         "query_niagads",
+        "niagads_open_access_api",
         "lookup_compound",
         "query_uniprot",
         "query_ensembl",

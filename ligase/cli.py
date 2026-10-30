@@ -110,6 +110,18 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
         "ad": True,
         "max_iterations": 6,
     },
+    "niagads_live": {
+        "title": "NIAGADS Open Access API v2.0 Live: ADSP R5 SNVs/VRS, GVC TopGenes & Multi-Ancestry GWAS",
+        "question": (
+            "Use `niagads_open_access_api` to query the live NIAGADS Open Access API v2.0 (`api.niagads.org`): "
+            "(1) Retrieve the live GRCh38 gene record and GVC TopGenes status for `TREM2` and its exon structure, "
+            "(2) Inspect the live ADSP Release 5 variant record, GA4GH VRS allele digest, population frequencies, "
+            "GWAS track associations, and FILER hg38 regulatory track overlap for `rs6733839` and `rs429358`, and "
+            "(3) Summarize the cross-cohort evidence in a structured Markdown table."
+        ),
+        "ad": True,
+        "max_iterations": 8,
+    },
 }
 
 

@@ -28,9 +28,10 @@ AD1_PLAN_SYSTEM_PROMPT = (
     '  "summary": 1-sentence study objective,\n'
     '  "steps": array of 3 to 5 specific numbered scientific steps (strings without leading numbers),\n'
     '  "tools": array of exact Ligase tool names you will invoke (choose from: '
-    "query_niagads, query_uniprot, query_ensembl, query_ncbi_gene, lookup_compound, "
+    "niagads_open_access_api, query_niagads, query_uniprot, query_ensembl, query_ncbi_gene, lookup_compound, "
     "transcribe_translate, search_pubmed, run_python),\n"
-    '  "datasets": array of specific datasets/databases referenced (e.g., "NIAGADS FILER", '
+    '  "datasets": array of specific datasets/databases referenced (e.g., "NIAGADS Open Access API v2.0", '
+    '"ADSP Release 5 SNVs/INDELs", "GVC TopGenes", "NIAGADS FILER", '
     '"MiGA NG00105", "ADSP NG00067", "AA-AD GWAS NG00100", "IGAP NG00075", "PSP WGS NG00169/NG00172", '
     '"CSF Biomarkers NG00049", "UniProtKB", "Ensembl GRCh38", "PubChem").\n'
     "Never include filesystem crawl steps. Focus strictly on the scientific methodology."
@@ -44,9 +45,9 @@ A1_PLAN_SYSTEM_PROMPT = (
     '  "steps": array of 3 to 5 specific scientific steps (strings without leading numbers),\n'
     '  "tools": array of exact Ligase tool names you will invoke (e.g., '
     "lookup_compound, query_uniprot, query_ensembl, query_ncbi_gene, transcribe_translate, "
-    "query_niagads, search_pubmed, run_python),\n"
+    "niagads_open_access_api, query_niagads, search_pubmed, run_python),\n"
     '  "datasets": array of databases/resources referenced (e.g., "PubChem PUG-REST", "UniProtKB", '
-    '"Ensembl REST", "NCBI Entrez", "Python Bioinformatics Sandbox").\n'
+    '"NIAGADS Open Access API v2.0", "Ensembl REST", "NCBI Entrez", "Python Bioinformatics Sandbox").\n'
     "Focus strictly on the scientific methodology."
 )
 

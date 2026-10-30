@@ -1,5 +1,5 @@
-/* Ligase Biomedical Co-Scientist WebApp Client
- * Zero external CDN dependencies · SSE live tool/token streaming · GFM responsive tables.
+/* Ligase Biomedical & NIAGADS Co-Scientist Web Portal Client
+ * Zero external CDN dependencies · Multi-tab accessible workspace · Interactive SVG Mindmap · Live NIAGADS Open Access API v2.0 console.
  */
 
 (() => {
@@ -11,7 +11,11 @@
     try {
       let id = localStorage.getItem(key);
       if (!id || id.length < 12) {
-        id = "cli_" + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "").slice(0, 20) : Math.random().toString(36).slice(2) + Date.now().toString(36));
+        id =
+          "cli_" +
+          (crypto.randomUUID
+            ? crypto.randomUUID().replace(/-/g, "").slice(0, 20)
+            : Math.random().toString(36).slice(2) + Date.now().toString(36));
         localStorage.setItem(key, id);
       }
       return id;
@@ -22,8 +26,29 @@
 
   const CLIENT_ID = getClientId();
 
+  const TAB_TITLES = {
+    studio: "Research Studio | Ligase · Biomedical & NIAGADS Co-Scientist",
+    mindmap: "Capabilities Mindmap | Ligase · Biomedical & NIAGADS Co-Scientist",
+    "niagads-api": "NIAGADS Open Access API | Ligase · Biomedical & NIAGADS Co-Scientist",
+  };
+
+  const OA_PRESETS = [
+    { label: "🧬 APOE Gene + GVC TopGenes", action: "gene", target: "APOE", loc: "", flank: 0 },
+    { label: "⚡ rs6733839 Auto (ADSP R5 + GWAS + FILER)", action: "auto", target: "rs6733839", loc: "", flank: 0 },
+    { label: "🧪 rs429358 ADSP R5 & GA4GH VRS", action: "variant", target: "rs429358", loc: "", flank: 0 },
+    { label: "📐 TREM2 Exon Structure", action: "gene_structure", target: "TREM2", loc: "", flank: 0 },
+    { label: "📊 BIN1 GWAS Associations", action: "gene_associations", target: "BIN1", loc: "", flank: 0 },
+    { label: "🗺️ APOE Locus ADSP R5 Variants", action: "region_variants", target: "chr19:44908500-44909000", loc: "", flank: 0 },
+    { label: "🎯 Track Slice: NG00166 @ BIN1", action: "track_data", target: "NG00166_04BE648F_STD_OA", loc: "chr2:127134000-127136000", flank: 0 },
+    { label: "🔎 Search Tracks: African American", action: "search_tracks", target: "African American", loc: "", flank: 0 },
+  ];
+
   const state = {
+    activeTab: "studio",
     meta: null,
+    mindmap: null,
+    oaCatalog: null,
+    lastOaResult: null,
     threads: [],
     activeThreadId: null,
     profile: "ad1",
@@ -32,6 +57,13 @@
     pendingUploads: [], // [{name, token, size_bytes}]
     activeRunId: null,
     abortController: null,
+    // Mindmap UI state
+    mmFilterPillar: "all",
+    mmSearch: "",
+    mmViewMode: "graph", // "graph" | "table"
+    mmZoom: 1.0,
+    mmCollapsed: new Set(),
+    mmSelectedId: "mm_oa_variants",
   };
 
   // ── DOM Elements ──────────────────────────────────────────────────────────
@@ -42,12 +74,18 @@
     appVersion: document.getElementById("app-version"),
     newStudyBtn: document.getElementById("new-study-btn"),
     threadList: document.getElementById("thread-list"),
+    portalTablist: document.getElementById("portal-tablist"),
+    studioProfileGroup: document.getElementById("studio-profile-group"),
+    studioModeGroup: document.getElementById("studio-mode-group"),
     profileAd1Btn: document.getElementById("profile-ad1-btn"),
     profileA1Btn: document.getElementById("profile-a1-btn"),
     modeDirectBtn: document.getElementById("mode-direct-btn"),
     modePlanBtn: document.getElementById("mode-plan-btn"),
     statusDot: document.getElementById("status-dot"),
     modelBadgeText: document.getElementById("model-badge-text"),
+    panelStudio: document.getElementById("panel-studio"),
+    panelMindmap: document.getElementById("panel-mindmap"),
+    panelNiagadsApi: document.getElementById("panel-niagads-api"),
     canvas: document.getElementById("canvas"),
     welcomeView: document.getElementById("welcome-view"),
     heroEyebrow: document.getElementById("hero-eyebrow"),
@@ -72,6 +110,42 @@
     openSettingsBtn: document.getElementById("open-settings-btn"),
     maxIterSelect: document.getElementById("max-iter-select"),
     diagnosticsSummary: document.getElementById("diagnostics-summary"),
+    // Mindmap elements
+    mmKpiRow: document.getElementById("mindmap-kpi-row"),
+    mmPillarFilters: document.getElementById("mindmap-pillar-filters"),
+    mmFilterForm: document.getElementById("mindmap-filter-form"),
+    mmSearchInput: document.getElementById("mindmap-search-input"),
+    mmViewGraphBtn: document.getElementById("mm-view-graph-btn"),
+    mmViewTableBtn: document.getElementById("mm-view-table-btn"),
+    mmExpandAllBtn: document.getElementById("mm-expand-all-btn"),
+    mmCollapseAllBtn: document.getElementById("mm-collapse-all-btn"),
+    mmZoomOutBtn: document.getElementById("mm-zoom-out-btn"),
+    mmZoomInBtn: document.getElementById("mm-zoom-in-btn"),
+    mmZoomReadout: document.getElementById("mm-zoom-readout"),
+    mmGraphWorkbench: document.getElementById("mindmap-graph-workbench"),
+    mmStageScroll: document.getElementById("mindmap-stage-scroll"),
+    mmStage: document.getElementById("mindmap-stage"),
+    mmLinksSvg: document.getElementById("mm-links-svg"),
+    mmColumns: document.getElementById("mm-columns"),
+    mmInspector: document.getElementById("mm-inspector"),
+    mmMatrixContainer: document.getElementById("mindmap-matrix-container"),
+    mmMatrixTbody: document.getElementById("mindmap-matrix-tbody"),
+    // NIAGADS Open Access API Explorer elements
+    oaRolloutGrid: document.getElementById("oa-rollout-grid"),
+    oaPresetStrip: document.getElementById("oa-preset-strip"),
+    oaForm: document.getElementById("niagads-live-form"),
+    oaActionSelect: document.getElementById("oa-action-select"),
+    oaTargetInput: document.getElementById("oa-target-input"),
+    oaLocInput: document.getElementById("oa-loc-input"),
+    oaFlankInput: document.getElementById("oa-flank-input"),
+    oaSubmitBtn: document.getElementById("oa-submit-btn"),
+    oaResultCard: document.getElementById("oa-result-card"),
+    oaResultMeta: document.getElementById("oa-result-meta"),
+    oaResultMarkdown: document.getElementById("oa-result-markdown"),
+    oaResultJson: document.getElementById("oa-result-json"),
+    oaSendStudioBtn: document.getElementById("oa-send-studio-btn"),
+    oaCopyJsonBtn: document.getElementById("oa-copy-json-btn"),
+    oaEndpointsTbody: document.getElementById("oa-endpoints-tbody"),
   };
 
   // ── API Helper ────────────────────────────────────────────────────────────
@@ -83,7 +157,7 @@
       let detail = `HTTP ${resp.status}`;
       try {
         const err = await resp.json();
-        detail = err.detail || err.message || detail;
+        detail = err.detail || err.message || err.summary_markdown || detail;
       } catch {}
       throw new Error(detail);
     }
@@ -107,7 +181,10 @@
       return `\u0000CODE${idx}\u0000`;
     });
     s = escapeHtml(s);
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    s = s.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
     s = s.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => codeSpans[Number(idx)] || "");
@@ -137,7 +214,6 @@
     while (i < lines.length) {
       const line = lines[i];
 
-      // Code fence
       if (line.trim().startsWith("```")) {
         const lang = line.trim().slice(3).trim();
         const buf = [];
@@ -146,12 +222,11 @@
           buf.push(lines[i]);
           i++;
         }
-        i++; // skip closing fence
+        i++;
         out.push(`<pre><code data-lang="${escapeHtml(lang)}">${escapeHtml(buf.join("\n"))}</code></pre>`);
         continue;
       }
 
-      // GFM Table -> Accessible Responsive Table Wrapper
       if (line.includes("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
         const headers = parseTableCells(line);
         i += 2;
@@ -179,21 +254,19 @@
         out.push(
           `<div tabindex="0" role="region" aria-label="Scientific results table" class="table-wrapper">` +
             `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>` +
-          `</div>`
+            `</div>`
         );
         continue;
       }
 
-      // Headings
       const hMatch = line.match(/^(#{1,4})\s+(.*)$/);
       if (hMatch) {
-        const lvl = hMatch[1].length;
+        const lvl = Math.min(4, Math.max(2, hMatch[1].length));
         out.push(`<h${lvl}>${renderInline(hMatch[2])}</h${lvl}>`);
         i++;
         continue;
       }
 
-      // Blockquote
       if (line.trim().startsWith(">")) {
         const qBuf = [];
         while (i < lines.length && lines[i].trim().startsWith(">")) {
@@ -204,7 +277,6 @@
         continue;
       }
 
-      // Unordered list
       if (/^\s*[-*+]\s+/.test(line)) {
         const items = [];
         while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
@@ -215,7 +287,6 @@
         continue;
       }
 
-      // Ordered list
       if (/^\s*\d+[.)]\s+/.test(line)) {
         const items = [];
         while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
@@ -226,20 +297,17 @@
         continue;
       }
 
-      // Horizontal rule
       if (/^\s*---+\s*$/.test(line)) {
         out.push("<hr>");
         i++;
         continue;
       }
 
-      // Blank line
       if (!line.trim()) {
         i++;
         continue;
       }
 
-      // Paragraph
       const pBuf = [];
       while (
         i < lines.length &&
@@ -260,14 +328,689 @@
     return out.join("\n");
   }
 
-  // ── UI Rendering Helpers ──────────────────────────────────────────────────
+  // ── Accessible Multi-Tab Navigation ───────────────────────────────────────
+  async function switchPortalTab(tabId, { focusTab = false, updateHash = true } = {}) {
+    const valid = tabId === "mindmap" || tabId === "niagads-api" ? tabId : "studio";
+    state.activeTab = valid;
+
+    const tabButtons = Array.from(el.portalTablist.querySelectorAll('[role="tab"]'));
+    for (const btn of tabButtons) {
+      const isMatch = btn.dataset.tab === valid;
+      btn.setAttribute("aria-selected", isMatch ? "true" : "false");
+      if (isMatch) {
+        btn.removeAttribute("tabindex");
+      } else {
+        btn.setAttribute("tabindex", "-1");
+      }
+      const li = btn.closest(".portal-tab-item");
+      if (li) li.classList.toggle("active", isMatch);
+      if (isMatch && focusTab) btn.focus();
+    }
+
+    el.panelStudio.hidden = valid !== "studio";
+    el.panelMindmap.hidden = valid !== "mindmap";
+    el.panelNiagadsApi.hidden = valid !== "niagads-api";
+
+    // Studio-specific topbar segmented switches
+    const isStudio = valid === "studio";
+    el.studioProfileGroup.hidden = !isStudio;
+    el.studioModeGroup.hidden = !isStudio;
+
+    // Sidebar view shortcut active highlight
+    for (const sc of document.querySelectorAll("[data-goto-tab]")) {
+      if (sc.classList.contains("ghost-footer-btn")) {
+        sc.classList.toggle("active", sc.dataset.gotoTab === valid);
+      }
+    }
+
+    document.title = TAB_TITLES[valid] || TAB_TITLES.studio;
+    if (updateHash) {
+      try {
+        history.replaceState(null, "", valid === "studio" ? window.location.pathname : `#${valid}`);
+      } catch {}
+    }
+    el.sidebar.classList.remove("open");
+
+    if (valid === "mindmap") {
+      await ensureMindmapLoaded();
+      requestAnimationFrame(() => drawMindmapConnectors());
+    } else if (valid === "niagads-api") {
+      await ensureOaCatalogLoaded();
+    }
+  }
+
+  el.portalTablist.addEventListener("click", (ev) => {
+    const btn = ev.target.closest('[role="tab"]');
+    if (!btn) return;
+    switchPortalTab(btn.dataset.tab);
+  });
+
+  el.portalTablist.addEventListener("keydown", (ev) => {
+    const tabs = Array.from(el.portalTablist.querySelectorAll('[role="tab"]'));
+    const idx = tabs.indexOf(document.activeElement);
+    if (idx === -1) return;
+    let nextIdx = -1;
+    if (ev.key === "ArrowRight") nextIdx = (idx + 1) % tabs.length;
+    else if (ev.key === "ArrowLeft") nextIdx = (idx - 1 + tabs.length) % tabs.length;
+    else if (ev.key === "Home") nextIdx = 0;
+    else if (ev.key === "End") nextIdx = tabs.length - 1;
+    if (nextIdx !== -1) {
+      ev.preventDefault();
+      switchPortalTab(tabs[nextIdx].dataset.tab, { focusTab: true });
+    }
+  });
+
+  for (const gotoBtn of document.querySelectorAll("[data-goto-tab]")) {
+    gotoBtn.addEventListener("click", () => {
+      switchPortalTab(gotoBtn.dataset.gotoTab);
+    });
+  }
+
+  // ── Capabilities Mindmap Logic ────────────────────────────────────────────
+  async function ensureMindmapLoaded() {
+    if (state.mindmap) return;
+    try {
+      state.mindmap = await apiFetch("/api/mindmap");
+      renderMindmapAll();
+    } catch (err) {
+      el.mmColumns.innerHTML = `<p style="color:var(--danger)">Could not load mindmap: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function findMindmapEntity(entityId) {
+    const mm = state.mindmap;
+    if (!mm) return null;
+    if (entityId === mm.root.id) {
+      return { kind: "root", node: mm.root, branch: null };
+    }
+    for (const branch of mm.branches || []) {
+      if (branch.id === entityId) {
+        return { kind: "branch", node: branch, branch };
+      }
+      for (const comp of branch.components || []) {
+        if (comp.id === entityId) {
+          return { kind: "component", node: comp, branch };
+        }
+      }
+    }
+    return null;
+  }
+
+  function componentMatchesFilter(comp, branch) {
+    if (state.mmFilterPillar !== "all" && branch.id !== state.mmFilterPillar) {
+      return false;
+    }
+    const q = state.mmSearch.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      comp.title,
+      comp.badge,
+      comp.summary,
+      branch.title,
+      ...(comp.backing || []),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderMindmapKpis() {
+    const st = state.mindmap?.stats || {};
+    const items = [
+      { val: st.pillars || 6, lbl: "Core Pillars" },
+      { val: st.components || 32, lbl: "Components" },
+      { val: st.niagads_openapi_paths || 19, lbl: "NIAGADS v2.0 Paths" },
+      { val: st.niagads_dss_cohorts || 24, lbl: "NG* Cohorts" },
+      { val: st.biomni_tools || "180+", lbl: "Biomni Tools" },
+    ];
+    el.mmKpiRow.innerHTML = items
+      .map(
+        (it) => `
+        <div class="mm-kpi-pill">
+          <span class="mm-kpi-val">${escapeHtml(it.val)}</span>
+          <span class="mm-kpi-lbl">${escapeHtml(it.lbl)}</span>
+        </div>
+      `
+      )
+      .join("");
+  }
+
+  function renderMindmapPillarFilters() {
+    const branches = state.mindmap?.branches || [];
+    el.mmPillarFilters.innerHTML = "";
+
+    const allBtn = document.createElement("button");
+    allBtn.type = "button";
+    allBtn.className = "pillar-filter-btn";
+    allBtn.setAttribute("aria-pressed", state.mmFilterPillar === "all" ? "true" : "false");
+    allBtn.textContent = "All 6 Pillars";
+    allBtn.addEventListener("click", () => {
+      state.mmFilterPillar = "all";
+      renderMindmapPillarFilters();
+      renderMindmapGraphAndMatrix();
+    });
+    el.mmPillarFilters.appendChild(allBtn);
+
+    for (const b of branches) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pillar-filter-btn";
+      btn.style.setProperty("--branch-accent", b.accent);
+      btn.setAttribute("aria-pressed", state.mmFilterPillar === b.id ? "true" : "false");
+      btn.innerHTML = `<span aria-hidden="true">${escapeHtml(b.icon)}</span> ${escapeHtml(b.short_title || b.title)}`;
+      btn.addEventListener("click", () => {
+        state.mmFilterPillar = b.id;
+        state.mmCollapsed.delete(b.id);
+        renderMindmapPillarFilters();
+        renderMindmapGraphAndMatrix();
+      });
+      el.mmPillarFilters.appendChild(btn);
+    }
+  }
+
+  function renderMindmapGraphAndMatrix() {
+    const mm = state.mindmap;
+    if (!mm) return;
+
+    // 1. Render Interactive Graph Nodes
+    el.mmColumns.innerHTML = "";
+
+    const rootCol = document.createElement("div");
+    rootCol.className = "mm-root-col";
+    const rootBtn = document.createElement("button");
+    rootBtn.type = "button";
+    rootBtn.id = `mm-dom-${mm.root.id}`;
+    rootBtn.className = "mm-root-node" + (state.mmSelectedId === mm.root.id ? " selected" : "");
+    rootBtn.innerHTML = `
+      <div class="mm-root-title">🧬 ${escapeHtml(mm.root.title)}</div>
+      <div class="mm-root-sub">${escapeHtml(mm.root.subtitle)}</div>
+    `;
+    rootBtn.addEventListener("click", () => {
+      state.mmSelectedId = mm.root.id;
+      renderMindmapGraphAndMatrix();
+    });
+    rootCol.appendChild(rootBtn);
+
+    const branchesCol = document.createElement("div");
+    branchesCol.className = "mm-branches-col";
+
+    const matrixRowsHtml = [];
+
+    for (const branch of mm.branches || []) {
+      const matchingLeaves = (branch.components || []).filter((c) => componentMatchesFilter(c, branch));
+      if (state.mmFilterPillar !== "all" && branch.id !== state.mmFilterPillar) continue;
+      if (state.mmSearch.trim() && matchingLeaves.length === 0) continue;
+
+      const isCollapsed = state.mmCollapsed.has(branch.id);
+
+      const row = document.createElement("div");
+      row.className = "mm-branch-row";
+      row.style.setProperty("--branch-accent", branch.accent);
+
+      const pillarCard = document.createElement("div");
+      pillarCard.id = `mm-dom-${branch.id}`;
+      pillarCard.className = "mm-pillar-card" + (state.mmSelectedId === branch.id ? " selected" : "");
+      pillarCard.dataset.branchId = branch.id;
+
+      const selectBtn = document.createElement("button");
+      selectBtn.type = "button";
+      selectBtn.className = "mm-pillar-select-btn";
+      selectBtn.innerHTML = `
+        <div class="mm-pillar-top">
+          <span class="mm-pillar-title"><span aria-hidden="true">${escapeHtml(branch.icon)}</span> ${escapeHtml(branch.title)}</span>
+        </div>
+        <span class="mm-pillar-badge">${escapeHtml(branch.badge)} · ${matchingLeaves.length} items</span>
+      `;
+      selectBtn.addEventListener("click", () => {
+        state.mmSelectedId = branch.id;
+        renderMindmapGraphAndMatrix();
+      });
+
+      const toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "mm-pillar-toggle-btn";
+      toggleBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      toggleBtn.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${branch.title}`);
+      toggleBtn.textContent = isCollapsed ? "+" : "−";
+      toggleBtn.addEventListener("click", () => {
+        if (state.mmCollapsed.has(branch.id)) state.mmCollapsed.delete(branch.id);
+        else state.mmCollapsed.add(branch.id);
+        renderMindmapGraphAndMatrix();
+      });
+
+      pillarCard.append(selectBtn, toggleBtn);
+      row.appendChild(pillarCard);
+
+      const leavesStack = document.createElement("div");
+      leavesStack.className = "mm-leaves-stack";
+      if (isCollapsed) {
+        leavesStack.hidden = true;
+      } else {
+        for (const comp of matchingLeaves) {
+          const leafBtn = document.createElement("button");
+          leafBtn.type = "button";
+          leafBtn.id = `mm-dom-${comp.id}`;
+          leafBtn.dataset.parentBranch = branch.id;
+          leafBtn.className = "mm-leaf-node" + (state.mmSelectedId === comp.id ? " selected" : "");
+          leafBtn.innerHTML = `
+            <span>${escapeHtml(comp.title)}</span>
+            <span class="mm-leaf-badge">${escapeHtml(comp.badge)}</span>
+          `;
+          leafBtn.addEventListener("click", () => {
+            state.mmSelectedId = comp.id;
+            renderMindmapGraphAndMatrix();
+          });
+          leavesStack.appendChild(leafBtn);
+        }
+      }
+      row.appendChild(leavesStack);
+      branchesCol.appendChild(row);
+
+      // Build semantic table rows in parallel
+      for (const comp of matchingLeaves) {
+        const backingCode = (comp.backing || []).map((b) => `<code>${escapeHtml(b)}</code>`).join(" ");
+        matrixRowsHtml.push(`
+          <tr>
+            <th scope="row">${escapeHtml(comp.title)}</th>
+            <td data-col-label="Pillar">${escapeHtml(branch.title)}</td>
+            <td data-col-label="Status">${escapeHtml(comp.badge)}</td>
+            <td data-col-label="Backing">${backingCode}</td>
+            <td data-col-label="Summary">${escapeHtml(comp.summary)}</td>
+            <td data-col-label="Action">
+              <button type="button" class="tool-chip-btn" data-matrix-run="${escapeHtml(comp.id)}">Run in Studio →</button>
+            </td>
+          </tr>
+        `);
+      }
+    }
+
+    el.mmColumns.append(rootCol, branchesCol);
+    el.mmMatrixTbody.innerHTML =
+      matrixRowsHtml.join("") ||
+      `<tr><th scope="row">No matches</th><td colspan="5">Clear search filter to see all 32 supported Ligase components.</td></tr>`;
+
+    for (const runBtn of el.mmMatrixTbody.querySelectorAll("[data-matrix-run]")) {
+      runBtn.addEventListener("click", () => {
+        const found = findMindmapEntity(runBtn.dataset.matrixRun);
+        if (found?.node?.sample_prompt) {
+          launchPromptInStudio(found.node.sample_prompt, found.branch?.id);
+        }
+      });
+    }
+
+    renderMindmapInspector();
+    requestAnimationFrame(() => drawMindmapConnectors());
+  }
+
+  function drawMindmapConnectors() {
+    if (!state.mindmap || state.activeTab !== "mindmap" || state.mmViewMode !== "graph") return;
+    const svg = el.mmLinksSvg;
+    const stageRect = el.mmStage.getBoundingClientRect();
+    const scale = state.mmZoom || 1;
+    if (stageRect.width === 0) return;
+
+    const relBox = (domEl) => {
+      const r = domEl.getBoundingClientRect();
+      return {
+        left: (r.left - stageRect.left) / scale,
+        right: (r.right - stageRect.left) / scale,
+        midY: (r.top - stageRect.top + r.height / 2) / scale,
+      };
+    };
+
+    const rootEl = document.getElementById(`mm-dom-${state.mindmap.root.id}`);
+    if (!rootEl) {
+      svg.innerHTML = "";
+      return;
+    }
+    const rootBox = relBox(rootEl);
+    const paths = [];
+
+    for (const branch of state.mindmap.branches || []) {
+      const pEl = document.getElementById(`mm-dom-${branch.id}`);
+      if (!pEl) continue;
+      const pBox = relBox(pEl);
+      const dx1 = Math.max(36, (pBox.left - rootBox.right) * 0.52);
+      paths.push(
+        `<path d="M ${rootBox.right.toFixed(1)} ${rootBox.midY.toFixed(1)} ` +
+          `C ${(rootBox.right + dx1).toFixed(1)} ${rootBox.midY.toFixed(1)}, ` +
+          `${(pBox.left - dx1).toFixed(1)} ${pBox.midY.toFixed(1)}, ` +
+          `${pBox.left.toFixed(1)} ${pBox.midY.toFixed(1)}" ` +
+          `fill="none" stroke="${escapeHtml(branch.accent)}" stroke-width="2.2" stroke-opacity="0.65" />`
+      );
+
+      if (!state.mmCollapsed.has(branch.id)) {
+        const leafEls = el.mmColumns.querySelectorAll(`[data-parent-branch="${branch.id}"]`);
+        for (const lEl of leafEls) {
+          const lBox = relBox(lEl);
+          const dx2 = Math.max(30, (lBox.left - pBox.right) * 0.5);
+          paths.push(
+            `<path d="M ${pBox.right.toFixed(1)} ${pBox.midY.toFixed(1)} ` +
+              `C ${(pBox.right + dx2).toFixed(1)} ${pBox.midY.toFixed(1)}, ` +
+              `${(lBox.left - dx2).toFixed(1)} ${lBox.midY.toFixed(1)}, ` +
+              `${lBox.left.toFixed(1)} ${lBox.midY.toFixed(1)}" ` +
+              `fill="none" stroke="${escapeHtml(branch.accent)}" stroke-width="1.6" stroke-opacity="0.45" />`
+          );
+        }
+      }
+    }
+
+    svg.innerHTML = paths.join("");
+  }
+
+  function renderMindmapInspector() {
+    const found = findMindmapEntity(state.mmSelectedId) || findMindmapEntity("mm_oa_variants");
+    if (!found) return;
+    const { kind, node, branch } = found;
+    const accent = branch?.accent || "var(--brand-primary)";
+    el.mmInspector.style.setProperty("--branch-accent", accent);
+
+    if (kind === "root") {
+      el.mmInspector.innerHTML = `
+        <div class="mm-inspector-pillar">Unified Co-Scientist Architecture</div>
+        <h3 class="mm-inspector-title">${escapeHtml(node.title)}</h3>
+        <p class="mm-inspector-summary">${escapeHtml(node.summary)}</p>
+        <div class="mm-inspector-label">Architectural Pillars</div>
+        <div class="mm-backing-chips">
+          ${(state.mindmap.branches || [])
+            .map((b) => `<span class="mm-backing-chip">${escapeHtml(b.icon)} ${escapeHtml(b.short_title)}</span>`)
+            .join("")}
+        </div>
+        <div class="mm-inspector-actions">
+          <button type="button" class="plan-approve-btn" id="mm-insp-open-oa">🌐 Open Live NIAGADS API v2.0 Console</button>
+        </div>
+      `;
+      document.getElementById("mm-insp-open-oa")?.addEventListener("click", () => switchPortalTab("niagads-api"));
+      return;
+    }
+
+    if (kind === "branch") {
+      el.mmInspector.innerHTML = `
+        <div class="mm-inspector-pillar">${escapeHtml(node.badge)}</div>
+        <h3 class="mm-inspector-title">${escapeHtml(node.icon)} ${escapeHtml(node.title)}</h3>
+        <p class="mm-inspector-summary">${escapeHtml(node.summary)}</p>
+        <div class="mm-inspector-label">Supported Components (${(node.components || []).length})</div>
+        <div class="mm-backing-chips">
+          ${(node.components || [])
+            .map((c) => `<span class="mm-backing-chip">${escapeHtml(c.title)}</span>`)
+            .join("")}
+        </div>
+      `;
+      return;
+    }
+
+    const backingHtml = (node.backing || [])
+      .map((b) => `<span class="mm-backing-chip">${escapeHtml(b)}</span>`)
+      .join("");
+    const hasLivePreset = Boolean(node.live_api_preset);
+
+    el.mmInspector.innerHTML = `
+      <div class="mm-inspector-pillar">${escapeHtml(branch.icon)} ${escapeHtml(branch.title)} · ${escapeHtml(node.badge)}</div>
+      <h3 class="mm-inspector-title">${escapeHtml(node.title)}</h3>
+      <p class="mm-inspector-summary">${escapeHtml(node.summary)}</p>
+      <div class="mm-inspector-label">Backing Endpoints &amp; Modules</div>
+      <div class="mm-backing-chips">${backingHtml}</div>
+      ${
+        node.sample_prompt
+          ? `<div class="mm-inspector-label">Ready-to-Run Scientific Prompt</div>
+             <div class="mm-prompt-preview">${escapeHtml(node.sample_prompt)}</div>`
+          : ""
+      }
+      <div class="mm-inspector-actions">
+        ${
+          node.sample_prompt
+            ? `<button type="button" class="plan-approve-btn" id="mm-insp-run-studio">🚀 Launch Study in Research Studio</button>`
+            : ""
+        }
+        ${
+          hasLivePreset
+            ? `<button type="button" class="plan-secondary-btn" id="mm-insp-run-oa">⚡ Test Live NIAGADS API Endpoint</button>`
+            : ""
+        }
+      </div>
+    `;
+
+    document.getElementById("mm-insp-run-studio")?.addEventListener("click", () => {
+      launchPromptInStudio(node.sample_prompt, branch.id);
+    });
+    document.getElementById("mm-insp-run-oa")?.addEventListener("click", async () => {
+      const p = node.live_api_preset;
+      await switchPortalTab("niagads-api");
+      applyAndRunOaPreset(p.action, p.target, p.loc || "", 0);
+    });
+  }
+
+  function renderMindmapAll() {
+    renderMindmapKpis();
+    renderMindmapPillarFilters();
+    renderMindmapGraphAndMatrix();
+  }
+
+  function setMindmapZoom(nextZoom) {
+    state.mmZoom = Math.min(1.25, Math.max(0.75, Math.round(nextZoom * 100) / 100));
+    el.mmStage.style.setProperty("--mm-zoom", String(state.mmZoom));
+    el.mmZoomReadout.textContent = `${Math.round(state.mmZoom * 100)}%`;
+    requestAnimationFrame(() => drawMindmapConnectors());
+  }
+
+  el.mmFilterForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    state.mmSearch = el.mmSearchInput.value;
+    renderMindmapGraphAndMatrix();
+  });
+  el.mmSearchInput.addEventListener("input", () => {
+    state.mmSearch = el.mmSearchInput.value;
+    renderMindmapGraphAndMatrix();
+  });
+
+  el.mmViewGraphBtn.addEventListener("click", () => {
+    state.mmViewMode = "graph";
+    el.mmViewGraphBtn.classList.add("active");
+    el.mmViewGraphBtn.setAttribute("aria-pressed", "true");
+    el.mmViewTableBtn.classList.remove("active");
+    el.mmViewTableBtn.setAttribute("aria-pressed", "false");
+    el.mmGraphWorkbench.hidden = false;
+    el.mmMatrixContainer.hidden = true;
+    requestAnimationFrame(() => drawMindmapConnectors());
+  });
+
+  el.mmViewTableBtn.addEventListener("click", () => {
+    state.mmViewMode = "table";
+    el.mmViewTableBtn.classList.add("active");
+    el.mmViewTableBtn.setAttribute("aria-pressed", "true");
+    el.mmViewGraphBtn.classList.remove("active");
+    el.mmViewGraphBtn.setAttribute("aria-pressed", "false");
+    el.mmGraphWorkbench.hidden = true;
+    el.mmMatrixContainer.hidden = false;
+  });
+
+  el.mmExpandAllBtn.addEventListener("click", () => {
+    state.mmCollapsed.clear();
+    renderMindmapGraphAndMatrix();
+  });
+  el.mmCollapseAllBtn.addEventListener("click", () => {
+    for (const b of state.mindmap?.branches || []) state.mmCollapsed.add(b.id);
+    renderMindmapGraphAndMatrix();
+  });
+  el.mmZoomOutBtn.addEventListener("click", () => setMindmapZoom(state.mmZoom - 0.1));
+  el.mmZoomInBtn.addEventListener("click", () => setMindmapZoom(state.mmZoom + 0.1));
+
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => {
+      if (state.activeTab === "mindmap") drawMindmapConnectors();
+    });
+    ro.observe(el.mmColumns);
+  }
+
+  function launchPromptInStudio(promptText, branchId = "") {
+    const useAd1 = !branchId || branchId.startsWith("niagads") || branchId === "engine" || branchId === "portal_outputs";
+    setProfile(useAd1 ? "ad1" : "a1");
+    switchPortalTab("studio");
+    el.chatInput.value = promptText;
+    el.chatInput.focus();
+    handleSubmitPrompt(promptText);
+  }
+
+  // ── NIAGADS Open Access API v2.0 Live Explorer Logic ──────────────────────
+  async function ensureOaCatalogLoaded() {
+    if (!state.oaCatalog) {
+      state.oaCatalog = state.meta?.niagads?.open_access || (await apiFetch("/api/niagads/endpoints"));
+      renderOaExplorerStatic();
+      // Run default live showcase query once on first visit if not yet queried
+      if (!state.lastOaResult) {
+        runLiveNiagadsQuery();
+      }
+    }
+  }
+
+  function renderOaExplorerStatic() {
+    const cat = state.oaCatalog;
+    if (!cat) return;
+
+    el.oaRolloutGrid.innerHTML = (cat.resources || [])
+      .map((r) => {
+        const isLive = r.status === "available" || r.status === "partner_live";
+        return `
+          <div class="oa-rollout-card">
+            <div class="oa-rollout-head">
+              <span class="oa-rollout-title">${escapeHtml(r.name)}</span>
+              <span class="oa-status-pill ${isLive ? "" : "staged"}">${escapeHtml(r.badge)}</span>
+            </div>
+            <div class="oa-rollout-desc">${escapeHtml(r.description)}</div>
+          </div>
+        `;
+      })
+      .join("");
+
+    el.oaPresetStrip.innerHTML = "";
+    for (const p of OA_PRESETS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "oa-preset-btn";
+      btn.textContent = p.label;
+      btn.addEventListener("click", () => {
+        applyAndRunOaPreset(p.action, p.target, p.loc, p.flank);
+      });
+      el.oaPresetStrip.appendChild(btn);
+    }
+
+    el.oaEndpointsTbody.innerHTML = (cat.endpoints || [])
+      .map(
+        (ep) => `
+        <tr>
+          <th scope="row"><code>${escapeHtml(ep.action)}</code></th>
+          <td data-col-label="REST Path"><code>${escapeHtml(ep.path)}</code></td>
+          <td data-col-label="Capability"><strong>${escapeHtml(ep.summary)}</strong></td>
+          <td data-col-label="Description">${escapeHtml(ep.description)}</td>
+          <td data-col-label="Live Test">
+            <button
+              type="button"
+              class="tool-chip-btn"
+              data-try-action="${escapeHtml(ep.action)}"
+              data-try-target="${escapeHtml(ep.example_target || "")}"
+              data-try-loc="${escapeHtml(ep.example_loc || "")}"
+            >Try <code>${escapeHtml(ep.example_target)}</code> →</button>
+          </td>
+        </tr>
+      `
+      )
+      .join("");
+
+    for (const tryBtn of el.oaEndpointsTbody.querySelectorAll("[data-try-action]")) {
+      tryBtn.addEventListener("click", () => {
+        applyAndRunOaPreset(
+          tryBtn.dataset.tryAction,
+          tryBtn.dataset.tryTarget,
+          tryBtn.dataset.tryLoc || "",
+          0
+        );
+      });
+    }
+  }
+
+  function applyAndRunOaPreset(action, target, loc = "", flank = 0) {
+    el.oaActionSelect.value = action;
+    el.oaTargetInput.value = target;
+    el.oaLocInput.value = loc;
+    el.oaFlankInput.value = String(flank || 0);
+    runLiveNiagadsQuery();
+  }
+
+  async function runLiveNiagadsQuery() {
+    const action = el.oaActionSelect.value;
+    const target = el.oaTargetInput.value.trim();
+    const loc = el.oaLocInput.value.trim();
+    const flank = Number(el.oaFlankInput.value || 0);
+    if (!target && !loc) return;
+
+    el.oaSubmitBtn.disabled = true;
+    el.oaSubmitBtn.textContent = "Querying api.niagads.org…";
+    el.oaResultCard.hidden = false;
+    el.oaResultMeta.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>Fetching live NIAGADS Open Access v2.0 record…</span>`;
+    el.oaResultMarkdown.innerHTML = `<p style="color:var(--text-muted)">Contacting <code>https://api.niagads.org/api</code>…</p>`;
+
+    const qs = new URLSearchParams({
+      action,
+      target,
+      loc,
+      flank: String(flank),
+    });
+
+    try {
+      const res = await apiFetch(`/api/niagads/live?${qs.toString()}`);
+      state.lastOaResult = { action, target, loc, flank, ...res };
+      const reqBadge = res.request_id ? ` · request_id: <code>${escapeHtml(res.request_id)}</code>` : "";
+      el.oaResultMeta.innerHTML = `
+        <span class="oa-status-pill">✓ HTTP 200 OK · ${escapeHtml(res.elapsed_ms)} ms</span>
+        <span>Endpoint: <code>${escapeHtml(res.endpoint)}</code>${reqBadge}</span>
+      `;
+      el.oaResultMarkdown.innerHTML = renderMarkdown(res.summary_markdown || "");
+      el.oaResultJson.textContent = JSON.stringify(res.raw, null, 2);
+    } catch (err) {
+      el.oaResultMeta.innerHTML = `<span class="oa-status-pill staged" style="color:var(--danger)">✗ Query Error</span>`;
+      el.oaResultMarkdown.innerHTML = `<p style="color:var(--danger)">${escapeHtml(err.message)}</p>`;
+      el.oaResultJson.textContent = "";
+    } finally {
+      el.oaSubmitBtn.disabled = false;
+      el.oaSubmitBtn.textContent = "⚡ Execute Live API Query ↵";
+    }
+  }
+
+  el.oaForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    runLiveNiagadsQuery();
+  });
+
+  el.oaCopyJsonBtn.addEventListener("click", async () => {
+    if (!state.lastOaResult?.raw) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(state.lastOaResult.raw, null, 2));
+      el.oaCopyJsonBtn.textContent = "✓ Copied JSON";
+      setTimeout(() => {
+        el.oaCopyJsonBtn.textContent = "📋 Copy Raw JSON";
+      }, 1500);
+    } catch {}
+  });
+
+  el.oaSendStudioBtn.addEventListener("click", () => {
+    const r = state.lastOaResult;
+    if (!r) return;
+    const locNote = r.loc ? ` (locus \`${r.loc}\`)` : "";
+    const synthPrompt =
+      `Analyze the live NIAGADS Open Access API v2.0 result for \`${r.target}\`${locNote} ` +
+      `(action=\`${r.action}\`), cross-reference it with Ligase's curated NIAGADS functional genomics / multi-ancestry ` +
+      `panels (\`query_niagads\`) and UniProt/Ensembl annotations where relevant, and provide a quantitative biomedical interpretation.`;
+    launchPromptInStudio(synthPrompt, "niagads_api");
+  });
+
+  // ── Research Studio Rendering Helpers ─────────────────────────────────────
   function setProfile(profile) {
     state.profile = profile === "a1" ? "a1" : "ad1";
     el.profileAd1Btn.classList.toggle("active", state.profile === "ad1");
     el.profileA1Btn.classList.toggle("active", state.profile === "a1");
 
     if (state.profile === "ad1") {
-      el.heroEyebrow.textContent = "ALZHEIMER'S GENOMICS · NIAGADS · MULTI-OMICS CO-SCIENTIST";
+      el.heroEyebrow.textContent = "ALZHEIMER'S GENOMICS · NIAGADS OPEN ACCESS v2.0 · MULTI-OMICS CO-SCIENTIST";
       el.heroTitle.textContent = "Grounded Quantitative Discovery with Ligase";
     } else {
       el.heroEyebrow.textContent = "GENOMICS · PHARMACOLOGY · STRUCTURAL & MOLECULAR BIOLOGY";
@@ -282,7 +1025,7 @@
     el.workflowHint.textContent =
       state.mode === "plan"
         ? "Plan-then-Approve · review & edit numbered methodology before tools execute"
-        : "Direct execution · live tool trace & downloadable Markdown report";
+        : "Direct execution · live NIAGADS API + tool trace & downloadable Markdown report";
     el.sendBtn.textContent = state.mode === "plan" ? "Propose Plan ↵" : "Run Study ↵";
   }
 
@@ -353,9 +1096,8 @@
     el.threadList.innerHTML = "";
     if (!state.threads.length) {
       const empty = document.createElement("div");
+      empty.className = "setting-desc";
       empty.style.padding = "0.55rem 0.6rem";
-      empty.style.fontSize = "0.8rem";
-      empty.style.color = "var(--text-muted)";
       empty.textContent = "No saved studies yet.";
       el.threadList.appendChild(empty);
       return;
@@ -364,17 +1106,26 @@
     for (const t of state.threads) {
       const row = document.createElement("div");
       row.className = "thread-item" + (t.id === state.activeThreadId ? " active" : "");
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
 
-      const titleSpan = document.createElement("span");
-      titleSpan.className = "thread-item-title";
-      titleSpan.textContent = t.title;
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "thread-item-title";
+      openBtn.style.border = "none";
+      openBtn.style.background = "transparent";
+      openBtn.style.color = "inherit";
+      openBtn.style.font = "inherit";
+      openBtn.style.textAlign = "start";
+      openBtn.style.cursor = "pointer";
+      openBtn.style.padding = "0";
+      openBtn.textContent = t.title;
+      openBtn.addEventListener("click", () => {
+        switchPortalTab("studio");
+        openThread(t.id);
+      });
 
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "thread-del-btn";
-      delBtn.title = "Delete study";
       delBtn.setAttribute("aria-label", `Delete study ${t.title}`);
       delBtn.textContent = "✕";
       delBtn.addEventListener("click", async (ev) => {
@@ -386,15 +1137,7 @@
         await refreshThreads();
       });
 
-      row.addEventListener("click", () => openThread(t.id));
-      row.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") {
-          ev.preventDefault();
-          openThread(t.id);
-        }
-      });
-
-      row.append(titleSpan, delBtn);
+      row.append(openBtn, delBtn);
       el.threadList.appendChild(row);
     }
   }
@@ -408,6 +1151,7 @@
   }
 
   function startFreshStudy() {
+    switchPortalTab("studio");
     state.activeThreadId = null;
     el.transcript.innerHTML = "";
     showWelcomeOrTranscript(false);
@@ -528,7 +1272,8 @@
     const statsParts = [];
     if (meta.elapsed_s) statsParts.push(`${meta.elapsed_s}s`);
     if (meta.iterations) statsParts.push(`${meta.iterations} round${meta.iterations === 1 ? "" : "s"}`);
-    if (meta.tool_trace?.length) statsParts.push(`${meta.tool_trace.length} tool call${meta.tool_trace.length === 1 ? "" : "s"}`);
+    if (meta.tool_trace?.length)
+      statsParts.push(`${meta.tool_trace.length} tool call${meta.tool_trace.length === 1 ? "" : "s"}`);
 
     const head = document.createElement("div");
     head.className = "assistant-head";
@@ -638,7 +1383,7 @@
 
     const planCard = document.createElement("div");
     planCard.className = "plan-card";
-    planCard.innerHTML = `<div class="plan-card-header">📋 Generating Scientific Plan (${escapeHtml(state.meta?.model || "gpt-6-luna")})…</div><div class="md-body"><p>Triaging question and matching NIAGADS / biomedical tools…</p></div>`;
+    planCard.innerHTML = `<div class="plan-card-header">📋 Generating Scientific Plan (${escapeHtml(state.meta?.model || "gpt-6-luna")})…</div><div class="md-body"><p>Triaging question and matching NIAGADS Open Access v2.0 / biomedical tools…</p></div>`;
     el.transcript.appendChild(planCard);
     scrollCanvasToBottom();
 
@@ -681,7 +1426,7 @@
         <button type="button" class="plan-secondary-btn" data-action="cancel">🚫 Cancel</button>
       </div>
       <div class="plan-revise-box" hidden>
-        <input type="text" placeholder="Describe how to revise the plan (e.g., also cross-check NG00075 IGAP)…" aria-label="Plan revision instructions">
+        <input type="text" placeholder="Describe how to revise the plan (e.g., also query live NIAGADS exon structure)…" aria-label="Plan revision instructions">
         <button type="button" class="plan-approve-btn" data-action="submit-revise">Update</button>
       </div>
     `;
@@ -698,7 +1443,7 @@
       planCard.querySelector(".plan-actions").remove();
       reviseBox.remove();
       planCard.querySelector(".plan-card-header").textContent = "✅ Approved Scientific Plan";
-      streamExecution(prompt, attachments, planMarkdown, /* skipUserBubble */ true);
+      streamExecution(prompt, attachments, planMarkdown, true);
     });
 
     reviseBtn.addEventListener("click", () => {
@@ -731,7 +1476,7 @@
     });
 
     cancelBtn.addEventListener("click", () => {
-      planCard.innerHTML = `<div class="plan-card-header">🚫 Execution Cancelled</div><p style="margin:0;font-size:0.86rem;color:var(--text-muted)">Nothing was executed.</p>`;
+      planCard.innerHTML = `<div class="plan-card-header">🚫 Execution Cancelled</div><p class="setting-desc">Nothing was executed.</p>`;
     });
   }
 
@@ -757,7 +1502,7 @@
 
     const mdContainer = document.createElement("div");
     mdContainer.className = "md-body";
-    mdContainer.innerHTML = `<p style="color:var(--text-muted)">Reasoning &amp; grounding with domain tools…</p>`;
+    mdContainer.innerHTML = `<p style="color:var(--text-muted)">Reasoning &amp; grounding with live NIAGADS Open Access v2.0 + biomedical tools…</p>`;
 
     const figureGallery = document.createElement("div");
     figureGallery.className = "figure-gallery";
@@ -957,7 +1702,7 @@
     }
   }
 
-  // ── IME-Safe Enter-to-Submit (modern-web-guidance: ime-safe-enter-submit) ──
+  // ── IME-Safe Enter-to-Submit on <textarea> (ime-safe-enter-submit) ────────
   let lastCompositionEndAt = null;
   el.chatInput.addEventListener("compositionend", (ev) => {
     lastCompositionEndAt = ev.timeStamp;
@@ -981,7 +1726,7 @@
     handleSubmitPrompt(el.chatInput.value);
   });
 
-  // ── Dialog Controls & Light-Dismiss Fallback (modern-web-guidance: dialog) ──
+  // ── Dialog Controls & Light-Dismiss Fallback ──────────────────────────────
   el.openCatalogBtn.addEventListener("click", () => el.catalogDialog.showModal());
   el.inspectCatalogInline.addEventListener("click", () => el.catalogDialog.showModal());
   el.openSettingsBtn.addEventListener("click", () => el.settingsDialog.showModal());
@@ -1008,7 +1753,7 @@
     }
   }
 
-  // ── Theme Override Controls (modern-web-guidance: dark-mode-toggle) ───────
+  // ── Theme Override Controls (dark-mode-toggle) ────────────────────────────
   const metaColorScheme = document.querySelector('meta[name="color-scheme"]');
   const themeButtons = Array.from(document.querySelectorAll("[data-theme-choice]"));
 
@@ -1070,7 +1815,14 @@
       el.statusDot.classList.add("offline");
       el.diagnosticsSummary.textContent = `Could not reach backend: ${err.message}`;
     }
+
     await refreshThreads();
+
+    // Honor initial URL hash (#mindmap or #niagads-api)
+    const hashTab = (window.location.hash || "").replace(/^#/, "").trim();
+    if (hashTab === "mindmap" || hashTab === "niagads-api") {
+      await switchPortalTab(hashTab, { updateHash: false });
+    }
   }
 
   boot();

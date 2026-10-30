@@ -15,6 +15,7 @@ GEMMA_MAX_CODE_RUNS = 2
 GEMMA_LOOKUP_TOOLS = frozenset(
     {
         "query_niagads",
+        "niagads_open_access_api",
         "lookup_compound",
         "query_uniprot",
         "query_ensembl",

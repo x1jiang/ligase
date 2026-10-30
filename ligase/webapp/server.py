@@ -26,6 +26,8 @@ from ligase.agent import create_agent
 from ligase.cli import EXAMPLES
 from ligase.gemma_harness import merge_tool_cards
 from ligase.gemma_tools import clear_tool_cards
+from ligase.niagads_api import OPEN_ACCESS_ROLLOUT_CATALOG, execute_niagads_action
+from ligase.webapp.mindmap import build_capabilities_mindmap
 from ligase.webapp.planner import generate_plan_or_triage
 from ligase.webapp.store import ThreadStore
 
@@ -81,6 +83,12 @@ ALLOWED_UPLOAD_EXTS = {
 IMAGE_EXTS = {".png", ".svg", ".jpg", ".jpeg", ".webp"}
 
 STARTER_META: Dict[str, Dict[str, str]] = {
+    "niagads_live": {
+        "badge": "NIAGADS Open Access v2.0 · Live",
+        "accent": "indigo",
+        "short_title": "Live ADSP R5 SNVs/VRS, GVC TopGenes & Multi-Ancestry GWAS",
+        "subtitle": "Real-time api.niagads.org v2.0 records for TREM2 exons, rs6733839 & rs429358 + FILER overlap",
+    },
     "niagads": {
         "badge": "NIAGADS V2F · Fine-Mapping",
         "accent": "indigo",
@@ -174,7 +182,7 @@ def _resolve_web_credentials() -> tuple[str, Optional[str], Optional[str]]:
 
 
 def _build_starters() -> List[Dict[str, Any]]:
-    ordered_keys = ["niagads", "adsp", "psp", "apoe4", "imatinib", "dna"]
+    ordered_keys = ["niagads_live", "niagads", "adsp", "psp", "apoe4", "imatinib", "dna"]
     out: List[Dict[str, Any]] = []
     for key in ordered_keys:
         ex = EXAMPLES.get(key)
@@ -376,9 +384,14 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         model, api_key, base_url = _resolve_web_credentials()
         tool_catalog = [
             {
+                "name": "niagads_open_access_api",
+                "category": "NIAGADS Open Access v2.0 (Live)",
+                "description": "Live REST client for https://api.niagads.org/api (OpenAPI v2.0): GRCh38 genes, GVC TopGenes, exon structures, ADSP Release 5 SNVs/INDELs, GA4GH VRS digests, GWAS/WGS associations, <100 kb regions, track slices, and live FILER hg38 overlaps.",
+            },
+            {
                 "name": "query_niagads",
                 "category": "Alzheimer's & NIAGADS",
-                "description": "Quantitative NIAGADS DSS, GenomicsDB, ADVP, FILER (>58k functional tracks), MiGA NG00105 eQTLs, multi-ancestry ADSP (NG00067/NG00100), and PSP 4R-tauopathy WGS (NG00169/NG00172).",
+                "description": "Quantitative NIAGADS DSS, GenomicsDB, ADVP, FILER (>58k functional tracks), MiGA NG00105 eQTLs, multi-ancestry ADSP (NG00067/NG00100), and PSP 4R-tauopathy WGS (NG00169/NG00172) + hybrid Open Access supplement.",
             },
             {
                 "name": "query_uniprot",
@@ -428,19 +441,61 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                     "id": "ad1",
                     "name": "AD1 · Alzheimer's & NIAGADS",
                     "tagline": "Alzheimer's Disease & Related Dementias Co-Scientist",
-                    "description": "Pre-loaded with NIAGADS DSS, FILER, MiGA (NG00105), ADSP Umbrella (NG00067/NG00100), IGAP (NG00075), and PSP WGS (NG00169/NG00172) quantitative catalogs.",
+                    "description": "Live NIAGADS Open Access API v2.0 (ADSP R5 SNVs/INDELs, GVC TopGenes, GenomicsDB) + FILER, MiGA (NG00105), ADSP (NG00067/NG00100), IGAP (NG00075), and PSP WGS (NG00169/NG00172).",
                 },
                 {
                     "id": "a1",
                     "name": "A1 · General Biomedical",
                     "tagline": "Broad Genomics, Pharmacology & Molecular Biology Agent",
-                    "description": "Cross-disciplinary biomedical research across UniProt, Ensembl, NCBI, PubChem, PubMed, and sandboxed Python bioinformatics.",
+                    "description": "Cross-disciplinary biomedical research across UniProt, Ensembl, NCBI, PubChem, PubMed, NIAGADS Open Access API, and sandboxed Python bioinformatics.",
                 },
             ],
             "starters": _build_starters(),
             "tools": tool_catalog,
-            "niagads": niagads_summary,
+            "niagads": {
+                **niagads_summary,
+                "open_access": OPEN_ACCESS_ROLLOUT_CATALOG,
+            },
         }
+
+    @webapp.get("/api/mindmap")
+    async def api_mindmap() -> Dict[str, Any]:
+        model, _, _ = _resolve_web_credentials()
+        return build_capabilities_mindmap(model_name=model)
+
+    @webapp.get("/api/niagads/endpoints")
+    async def api_niagads_endpoints() -> Dict[str, Any]:
+        return OPEN_ACCESS_ROLLOUT_CATALOG
+
+    @webapp.get("/api/niagads/live")
+    async def api_niagads_live(
+        action: str = "auto",
+        target: str = "",
+        loc: str = "",
+        flank: int = 0,
+        content: str = "full",
+        limit: int = 10,
+        page: int = 1,
+    ) -> JSONResponse:
+        if not (target or "").strip() and not (loc or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Query parameter 'target' (e.g. APOE, rs6733839, chr2:127134000-127136000) is required.",
+            )
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: execute_niagads_action(
+                action=action,
+                target=target,
+                loc=loc,
+                flank=flank,
+                content=content,
+                limit=limit,
+                page=page,
+            ),
+        )
+        return JSONResponse(status_code=200 if result.get("ok") else 502, content=result)
 
     @webapp.get("/api/threads")
     async def list_threads(request: Request) -> Dict[str, Any]:

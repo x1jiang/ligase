@@ -21,11 +21,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from ligase.niagads_api import fetch_live_niagads_supplement, niagads_open_access_api
 from ligase.tools_adapter import BiomniTool
 
 _PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 _NIAGADS_RECORD_TYPES_URL = "https://www.niagads.org/genomics/service/record-types"
-_UA = "Ligase/0.3.1 (local biomedical agent)"
+_UA = "Ligase/0.3.2 (local biomedical agent)"
 _TIMEOUT_S = 12
 _PYTHON_TIMEOUT_S = 5.0
 _MAX_OUTPUT_CHARS = 8000
@@ -510,6 +511,13 @@ def query_niagads(query: str) -> str:
                 f"-> Relative Odds Ratio ROR_(PSP/AD) = {comp['relative_odds_ratio_psp_vs_ad']:.1f}x (delta_LLR = +{comp['delta_llr_nats']:.2f} nats)"
             )
 
+    try:
+        live_supp = fetch_live_niagads_supplement(q)
+        if live_supp:
+            lines.append(live_supp)
+    except Exception:
+        pass
+
     card = "\n".join(lines)
     return remember_card("query_niagads", card)
 
@@ -584,11 +592,81 @@ def run_python(code: str, timeout: float = _PYTHON_TIMEOUT_S) -> str:
 def gemma_extra_tools() -> list[BiomniTool]:
     return [
         BiomniTool(
+            name="niagads_open_access_api",
+            description=(
+                "Query the live NIAGADS Open Access API v2.0 (https://api.niagads.org/api) and live "
+                "FILER hg38 interval overlap for Alzheimer's GenomicsDB records, ADSP Release 5 SNVs/INDELs, "
+                "GA4GH VRS digests, GVC TopGenes status, GRCh38 transcript/exon structures, live GWAS/WGS "
+                "association p-values, genomic region queries (<100 kb), open-access track slices, and semantic search."
+            ),
+            parameters={
+                "action": {
+                    "type": "string",
+                    "description": (
+                        "Endpoint action: 'auto' (smart dispatch), 'gene', 'gene_associations', 'gene_structure', "
+                        "'variant', 'variant_associations', 'region_associations', 'region_variants', "
+                        "'track', 'track_data', 'search', 'search_tracks', 'search_genes', 'search_variants', "
+                        "'feature', or 'filer_overlap'."
+                    ),
+                    "required": False,
+                },
+                "target": {
+                    "type": "string",
+                    "description": (
+                        "Gene symbol / Ensembl ID (e.g. 'APOE', 'BIN1', 'TREM2'), RefSNP / positional variant "
+                        "(e.g. 'rs429358', 'rs6733839', '2:127135234:C:T'), genomic interval (<100 kb, e.g. "
+                        "'chr2:127134000-127136000'), track ID (e.g. 'NG00166_04BE648F_STD_OA'), or search text."
+                    ),
+                    "required": True,
+                },
+                "loc": {
+                    "type": "string",
+                    "description": "Optional GRCh38 interval or gene symbol for 'track_data' locus slicing.",
+                    "required": False,
+                },
+                "flank": {
+                    "type": "integer",
+                    "description": "Optional flanking window in base pairs (0 to 1000000) for association or coordinate lookups.",
+                    "required": False,
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Response detail mode: 'full' (default), 'summary', or 'ids'.",
+                    "required": False,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max records for search actions (1-50, default 10).",
+                    "required": False,
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Result page number (default 1).",
+                    "required": False,
+                },
+            },
+            func=niagads_open_access_api,
+            module_name="database",
+            keywords=[
+                "niagads",
+                "open-access",
+                "genomicsdb",
+                "adsp",
+                "r5",
+                "topgenes",
+                "vrs",
+                "rsid",
+                "gwas",
+                "filer",
+                "alzheimer",
+            ],
+        ),
+        BiomniTool(
             name="query_niagads",
             description=(
                 "Query the NIAGADS Alzheimer's & neurodegeneration "
-                "genomics catalog (NIAGADS DSS, GenomicsDB, ADVP, FILER, GCAD/VCPA, ADSP, "
-                "MiGA microglia atlas, PSP tauopathy WGS, and NG00049-NG00182 datasets)."
+                "genomics catalog + hybrid Open Access API v2.0 supplement (NIAGADS DSS, GenomicsDB, ADVP, "
+                "FILER, GCAD/VCPA, ADSP, MiGA microglia atlas, PSP tauopathy WGS, and NG00049-NG00182 datasets)."
             ),
             parameters={
                 "query": {
