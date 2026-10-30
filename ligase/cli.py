@@ -182,7 +182,7 @@ def model_presets() -> Dict[str, Dict[str, Any]]:
             "where": "private host · OpenAI-compatible",
         },
         "openai": {
-            "model": _env("OPENAI_MODEL", "gpt-5.6-luna"),
+            "model": _env("OPENAI_MODEL", "gpt-6-luna"),
             "base_url": None,
             "api_key": _env("OPENAI_API_KEY"),
             "api_key_env": "OPENAI_API_KEY",
@@ -563,6 +563,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("examples", help="list ready-made studies")
     sub.add_parser("doctor", parents=[common], help="check install, tools, model endpoint and sandbox")
     sub.add_parser("chat", parents=[common], help="interactive prompt (same as no command)")
+    ui = sub.add_parser("ui", help="launch the interactive Ligase web application")
+    ui.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
+    ui.add_argument("--port", type=int, default=8080, help="bind port (default: 8080)")
+    ui.add_argument("--model", default="gpt-6-luna", help="model ID or preset for web sessions (default: gpt-6-luna)")
     return parser
 
 
@@ -577,6 +581,16 @@ def main(argv=None) -> int:
     try:
         if args.cmd == "examples":
             _print_examples(console)
+            return 0
+        if args.cmd == "ui":
+            import uvicorn
+
+            os.environ.setdefault("LIGASE_WEB_MODEL", args.model)
+            console.print(
+                f"[bold cyan]{BRAND} WebApp[/bold cyan] · model [bold]{os.environ['LIGASE_WEB_MODEL']}[/bold] "
+                f"· http://{args.host}:{args.port}"
+            )
+            uvicorn.run("ligase.webapp.server:app", host=args.host, port=args.port, log_level="info")
             return 0
         if args.cmd == "doctor":
             code = doctor(console, model_name=getattr(args, "model", "auto"))

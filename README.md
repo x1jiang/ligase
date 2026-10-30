@@ -66,6 +66,7 @@ ligase example apoe4
 | Command | What it does |
 |---|---|
 | `ligase` | Interactive prompt: type questions, `examples`, `exit` |
+| `ligase ui` | Launch the interactive Ligase WebApp (`gpt-6-luna` default, live tool trace, Plan & Approve) |
 | `ligase run "<question>"` | One study; prints tool calls live and the answer |
 | `ligase examples` | List ready-made studies |
 | `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `adsp`, `psp` |

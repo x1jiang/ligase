@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try {
+      document.querySelector('meta[name="color-scheme"]').content = localStorage.getItem("color-scheme") ?? "light dark";
+    } catch {}
+  </script>
+  <title>Ligase · Biomedical &amp; NIAGADS Co-Scientist</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%230f766e'/%3E%3Cpath d='M11 9c0 6 14 6 14 12s-14 6-14 12M25 9c0 6-14 6-14 12s14 6 14 12' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='18' cy='15' r='2.1' fill='%2399f6e4'/%3E%3Ccircle cx='18' cy='21' r='2.1' fill='%2399f6e4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Thread & Study Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="Study history">
+      <div class="sidebar-header">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
+              <path d="M9 6c0 5.5 14 5.5 14 10S9 21.5 9 27M23 6c0 5.5-14 5.5-14 10s14 5.5 14 11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+              <circle cx="16" cy="11" r="2" fill="currentColor"/>
+              <circle cx="16" cy="21" r="2" fill="currentColor"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.1</span></div>
+            <div class="brand-sub">Biomedical Co-Scientist</div>
+          </div>
+        </div>
+        <button type="button" class="icon-btn mobile-only" id="close-sidebar-btn" aria-label="Close study history">
+          ✕
+        </button>
+      </div>
+
+      <div class="sidebar-actions">
+        <button type="button" class="primary-new-btn" id="new-study-btn">
+          <span aria-hidden="true">＋</span> New Biomedical Study
+        </button>
+      </div>
+
+      <div class="sidebar-section-label">Recent Studies</div>
+      <nav class="thread-list" id="thread-list" aria-label="Saved study threads"></nav>
+
+      <div class="sidebar-footer">
+        <button type="button" class="ghost-footer-btn" id="open-catalog-btn">
+          <span aria-hidden="true">🧬</span> NIAGADS &amp; Tool Catalog
+        </button>
+        <button type="button" class="ghost-footer-btn" id="open-settings-btn">
+          <span aria-hidden="true">⚙️</span> Workspace &amp; Theme
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Research Workspace -->
+    <main class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" class="icon-btn mobile-only" id="open-sidebar-btn" aria-label="Open study history">
+            ☰
+          </button>
+          <div class="segmented" role="group" aria-label="Agent specialist profile">
+            <button type="button" class="seg-btn active" data-profile="ad1" id="profile-ad1-btn" title="Alzheimer's Disease &amp; NIAGADS Co-Scientist">
+              AD1 · Alzheimer's &amp; NIAGADS
+            </button>
+            <button type="button" class="seg-btn" data-profile="a1" id="profile-a1-btn" title="General-Purpose Biomedical Research Agent">
+              A1 · General Biomedical
+            </button>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="segmented compact" role="group" aria-label="Execution workflow">
+            <button type="button" class="seg-btn active" data-mode="direct" id="mode-direct-btn" title="Execute tools and synthesize answer immediately">
+              ⚡ Direct Run
+            </button>
+            <button type="button" class="seg-btn" data-mode="plan" id="mode-plan-btn" title="Biomni-style Plan-then-Approve scientific workflow">
+              📋 Plan &amp; Approve
+            </button>
+          </div>
+          <div class="engine-pill" id="engine-pill" title="Active frontier reasoning model and tool engine">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="model-badge-text">gpt-6-luna</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Conversation + Onboarding Canvas -->
+      <section class="canvas" id="canvas" aria-live="polite">
+        <div class="welcome-view" id="welcome-view">
+          <div class="hero-header">
+            <div class="hero-eyebrow" id="hero-eyebrow">ALZHEIMER'S GENOMICS · NIAGADS · MULTI-OMICS CO-SCIENTIST</div>
+            <h1 class="hero-title" id="hero-title">Grounded Quantitative Discovery with Ligase</h1>
+            <p class="hero-lead" id="hero-lead">
+              Powered by <strong>gpt-6-luna</strong> on the ClawAgents engine with deterministic grounding across
+              NIAGADS DSS, FILER, MiGA (<code>NG00105</code>), ADSP (<code>NG00067</code>/<code>NG00100</code>),
+              PSP WGS (<code>NG00169</code>/<code>NG00172</code>), UniProt, Ensembl, PubChem, and Python bioinformatics.
+            </p>
+          </div>
+
+          <div class="starter-section-head">
+            <span>Ready-Made Quantitative Studies</span>
+            <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 10 NIAGADS Accessions &amp; 8 Tool Suites →</button>
+          </div>
+          <div class="starter-grid" id="starter-grid"></div>
+        </div>
+
+        <div class="transcript" id="transcript" hidden></div>
+      </section>
+
+      <!-- Composer Dock -->
+      <footer class="composer-dock">
+        <div class="attachment-strip" id="attachment-strip" hidden></div>
+        <form id="composer-form" class="composer-card">
+          <label for="chat-input" class="visually-hidden">Biomedical research question</label>
+          <textarea
+            id="chat-input"
+            name="prompt"
+            placeholder="Ask a quantitative NIAGADS, genomics, pharmacology, or bioinformatics question… (Enter to run, Shift+Enter for newline)"
+            autocomplete="off"
+            spellcheck="true"
+          ></textarea>
+          <div class="composer-toolbar">
+            <div class="composer-left-tools">
+              <input
+                type="file"
+                id="file-upload-input"
+                accept=".tsv,.csv,.txt,.vcf,.bed,.fasta,.fa,.json,.md,.py,.r,.gff,.gtf"
+                multiple
+                hidden
+              >
+              <button type="button" class="tool-chip-btn" id="attach-file-btn" title="Attach .tsv, .csv, .vcf, .bed, .fasta, or .json dataset">
+                📎 Attach Data
+              </button>
+              <span class="composer-hint" id="workflow-hint">Direct execution · live tool trace &amp; downloadable Markdown report</span>
+            </div>
+            <div class="composer-right-tools">
+              <button type="button" class="stop-btn" id="stop-run-btn" hidden>
+                ⏹ Stop Run
+              </button>
+              <button type="submit" class="send-btn" id="send-btn">
+                Run Study ↵
+              </button>
+            </div>
+          </div>
+        </form>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Native Modal Dialog: NIAGADS & Biomedical Tool Catalog -->
+  <dialog id="catalog-dialog" closedby="any" aria-labelledby="catalog-dialog-title">
+    <div class="dialog-header">
+      <div>
+        <h2 id="catalog-dialog-title">NIAGADS Reference Catalog &amp; Biomedical Tools</h2>
+        <p class="dialog-sub">Ground-truth repositories and deterministic tool suites wired into Ligase</p>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="icon-btn" aria-label="Close catalog dialog" autofocus>✕</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <h3 class="dialog-section-title">Active Biomedical &amp; Quantitative Tools</h3>
+      <div class="catalog-cards" id="tools-catalog-list"></div>
+
+      <h3 class="dialog-section-title">NIAGADS Platforms &amp; Curated Accessions</h3>
+      <div class="catalog-cards" id="niagads-catalog-list"></div>
+    </div>
+  </dialog>
+
+  <!-- Native Modal Dialog: Workspace & Color Scheme Settings -->
+  <dialog id="settings-dialog" closedby="any" aria-labelledby="settings-dialog-title">
+    <div class="dialog-header">
+      <div>
+        <h2 id="settings-dialog-title">Workspace &amp; Execution Settings</h2>
+        <p class="dialog-sub">Configure iteration cap, appearance, and session diagnostics</p>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="icon-btn" aria-label="Close settings dialog" autofocus>✕</button>
+      </form>
+    </div>
+    <div class="dialog-body settings-grid">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Color Scheme</div>
+          <div class="setting-desc">Follow your operating system theme or pin Light / Dark mode</div>
+        </div>
+        <div class="segmented compact" role="group" aria-label="Color scheme preference">
+          <button type="button" class="seg-btn" data-theme-choice="system">System</button>
+          <button type="button" class="seg-btn" data-theme-choice="light">Light</button>
+          <button type="button" class="seg-btn" data-theme-choice="dark">Dark</button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <label class="setting-label" for="max-iter-select">Max Tool Iterations per Study</label>
+          <div class="setting-desc">Upper bound on ClawAgents reasoning + tool verification rounds</div>
+        </div>
+        <select id="max-iter-select" class="compact-select">
+          <option value="6">6 rounds (Fast)</option>
+          <option value="10" selected>10 rounds (Balanced)</option>
+          <option value="15">15 rounds (Deep Multi-Omics)</option>
+          <option value="20">20 rounds (Exhaustive)</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Runtime Diagnostics</div>
+          <div class="setting-desc" id="diagnostics-summary">Loading engine telemetry…</div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

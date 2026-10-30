@@ -187,7 +187,7 @@ class LigaseAgent:
 
 
 def create_agent(
-    model: str = "gpt-5.6-luna",
+    model: str = "gpt-6-luna",
     data_path: str = "./data",
     modules: Optional[List[str]] = None,
     commercial_mode: bool = False,
@@ -202,7 +202,7 @@ def create_agent(
     Factory to create a Ligase Agent.
 
     Args:
-        model: Frontier or local model name ("gpt-5.6-luna", "Muse-Glimmer-30B", etc.)
+        model: Frontier or local model name ("gpt-6-luna", "Muse-Glimmer-30B", etc.)
         data_path: Path to local and S3 biological data lake
         modules: List of specific biomedical domain modules to load
         commercial_mode: Filter non-commercial datasets
