@@ -232,7 +232,16 @@ def test_portal_polish_security_headers_landmarks_and_provenance(tmp_path: Path)
     boot_bytes = m.group(1).encode("utf-8")
     assert len(boot_bytes) < 12_000
     parsed = json.loads(m.group(1))
-    assert parsed["boot"]["version"] == "0.5.1"
+    assert parsed["boot"]["version"] == "0.5.2"
+
+    # Organized 3-shelf Studio Home architecture preserving Find-in-Page indexing
+    assert 'id="studio-home-shelf"' in html
+    assert ':not([hidden="until-found"])[hidden]' in html
+    assert 'id="shelf-pane-studies"' in html
+    assert 'id="shelf-pane-video"' in html and 'hidden="until-found"' in html
+    assert 'id="shelf-pane-niagads"' in html
+    assert 'id="shelf-expand-all-btn"' in html
+    assert "NG00105" in html and "NG00100" in html and "NG00169" in html
 
     mm = build_capabilities_mindmap()
     assert mm["stats"]["components"] >= 36
@@ -269,13 +278,13 @@ def test_grok_narrated_showcase_video_embed_and_range_streaming(tmp_path: Path) 
     assert "data-video-seek=" in html
 
     # Verify poster WebP
-    poster_res = client.get("/static/media/ligase-showcase-poster.webp?v=0.5.1")
+    poster_res = client.get("/static/media/ligase-showcase-poster.webp?v=0.5.2")
     assert poster_res.status_code == 200
     assert "image/webp" in poster_res.headers.get("content-type", "")
     assert "immutable" in poster_res.headers.get("cache-control", "")
 
     # Verify synchronous WebVTT captions
-    vtt_res = client.get("/static/media/ligase-showcase-en.vtt?v=0.5.1")
+    vtt_res = client.get("/static/media/ligase-showcase-en.vtt?v=0.5.2")
     assert vtt_res.status_code == 200
     assert "text/vtt" in vtt_res.headers.get("content-type", "")
     assert vtt_res.text.startswith("WEBVTT")
@@ -284,7 +293,7 @@ def test_grok_narrated_showcase_video_embed_and_range_streaming(tmp_path: Path) 
 
     # Verify byte-range 206 Partial Content video streaming without gzip interference
     range_res = client.get(
-        "/static/media/ligase-showcase.mp4?v=0.5.1",
+        "/static/media/ligase-showcase.mp4?v=0.5.2",
         headers={"Range": "bytes=0-1023", "Accept-Encoding": "gzip"},
     )
     assert range_res.status_code == 206

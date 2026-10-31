@@ -25,10 +25,10 @@
     html, body { margin: 0; background: var(--bg-app); color: var(--text-primary); font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     .app-shell { display: grid; grid-template-columns: 276px minmax(0, 1fr); block-size: 100dvh; overflow: hidden; }
     .sidebar { background: var(--bg-sidebar); border-inline-end: 1px solid var(--border-subtle); }
-    [hidden] { display: none !important; }
+    :not([hidden="until-found"])[hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.5.1">
+  <link rel="stylesheet" href="/static/styles.css?v=0.5.2">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.1</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.2</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -230,183 +230,243 @@
               <div class="hero-eyebrow" id="hero-eyebrow">ALZHEIMER'S GENOMICS · NIAGADS OPEN ACCESS v2.0 · MULTI-OMICS CO-SCIENTIST</div>
               <h1 class="hero-title" id="hero-title">Grounded Quantitative Discovery with Ligase</h1>
               <p class="hero-lead" id="hero-lead">
-                Powered by <strong>gpt-6-luna</strong> on the ClawAgents engine with live
-                <strong>NIAGADS Open Access API v2.0</strong> (<code>api.niagads.org</code>: GenomicsDB, ADSP R5 SNVs/INDELs, GVC TopGenes),
-                live <strong>FILER</strong> hg38 overlaps, MiGA (<code>NG00105</code>), ADSP (<code>NG00067</code>/<code>NG00100</code>),
-                PSP WGS (<code>NG00169</code>/<code>NG00172</code>), 180+ Biomni tools, and sandboxed Python bioinformatics.
+                Co-scientist powered by <strong>gpt-6-luna</strong> on ClawAgents — uniting live
+                <strong>NIAGADS Open Access API v2.0</strong>, <strong>58,000+ FILER</strong> hg38 tracks,
+                <strong>24 AD/ADRD cohorts</strong>, 180+ Biomni tools, and sandboxed Python bioinformatics.
               </p>
               <div class="hero-quick-pills">
                 <button type="button" class="hero-pill-btn" id="hero-watch-video-btn">
-                  <span aria-hidden="true">🎬</span> Watch 1-Min Video Tour (Grok Voice)
+                  <span aria-hidden="true">🎬</span> Watch 1-Min Tour
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> Capabilities Mindmap (6 Pillars · 36 Components)
+                  <span aria-hidden="true">🧠</span> 36-Node Mindmap
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
-                  <span aria-hidden="true">🌐</span> Live NIAGADS V2F Locus Dossier
+                  <span aria-hidden="true">🌐</span> Live NIAGADS API
                 </button>
                 <button type="button" class="hero-pill-btn secondary" id="hero-open-cmdk-btn">
-                  <span aria-hidden="true">⌕</span> Quick Locus &amp; Cohort Jump (<kbd>⌘K</kbd>)
-                </button>
-                <button type="button" class="hero-pill-btn secondary" data-goto-tab="usage">
-                  <span aria-hidden="true">📊</span> Usage &amp; Volume Ledger
+                  <span aria-hidden="true">⌕</span> Quick Jump <kbd>⌘K</kbd>
                 </button>
               </div>
             </div>
 
-            <!-- NIAGADS Ecosystem Bond Ribbon -->
-            <section class="niagads-bond-strip" aria-label="Bonded NIAGADS genomic data ecosystem">
-              <div class="niagads-bond-head">
-                <div class="niagads-bond-title">
-                  <span class="niagads-bond-pulse" aria-hidden="true"></span>
-                  <strong>NIAGADS Bonded Genomic Architecture</strong>
-                  <span class="niagads-bond-tag">Live OpenAPI v2.0 + Curated Multi-Cohort Panels</span>
-                </div>
-                <button type="button" class="link-btn" id="copy-niagads-ack-btn" title="Copy NIH/NIA U24AG041689 acknowledgment &amp; BibTeX">
-                  📜 Cite NIAGADS (U24AG041689)
-                </button>
-              </div>
-              <div class="niagads-bond-grid">
-                <button type="button" class="niagads-bond-chip" data-bond-action="locus_dossier" data-bond-target="BIN1">
-                  <span class="bond-chip-kicker">LIVE · 19 PATHS</span>
-                  <strong>Open Access API v2.0</strong>
-                  <span>4-way parallel V2F Dossier (<code>BIN1</code>) →</span>
-                </button>
-                <button type="button" class="niagads-bond-chip" data-bond-action="gene" data-bond-target="APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2">
-                  <span class="bond-chip-kicker">ADSP GVC · GRCh38</span>
-                  <strong>GenomicsDB &amp; TopGenes</strong>
-                  <span>Batch AD 6-Gene Panel →</span>
-                </button>
-                <button type="button" class="niagads-bond-chip" data-bond-action="variant" data-bond-target="rs429358,rs7412,rs6733839,rs75932628">
-                  <span class="bond-chip-kicker">GA4GH VRS · AFs</span>
-                  <strong>ADSP Release 5 WGS</strong>
-                  <span>SNVs/INDELs &amp; VRS Panel →</span>
-                </button>
-                <button type="button" class="niagads-bond-chip" data-bond-action="filer_overlap" data-bond-target="chr2:127135200-127135300">
-                  <span class="bond-chip-kicker">GIGGLE · hg38</span>
-                  <strong>FILER 58k+ Tracks</strong>
-                  <span>Microglia ATAC / ChIP Overlap →</span>
-                </button>
-                <button type="button" class="niagads-bond-chip" data-bond-catalog="1">
-                  <span class="bond-chip-kicker">24 COHORTS · NG*</span>
-                  <strong>NIAGADS DSS &amp; ADVP</strong>
-                  <span>IGAP · MiGA · ADSP · PSP →</span>
-                </button>
-              </div>
-            </section>
-
-            <!-- Featured 1-Minute Grok-Narrated Video Tour (Lazy-Loaded, Zero Cold-Start Overhead) -->
-            <figure class="video-showcase-card" id="video-showcase-card" aria-labelledby="video-showcase-title">
-              <figcaption class="video-showcase-head">
-                <div class="video-showcase-meta">
-                  <span class="video-voice-badge">🎬 1-MIN KEYNOTE · GROK VOICE (ARA &amp; REX)</span>
-                  <h2 class="video-showcase-title" id="video-showcase-title">
-                    Ligase &amp; NIAGADS Open Access v2.0 Architecture Tour
-                  </h2>
-                </div>
-                <div class="video-showcase-actions">
-                  <button type="button" class="tool-chip-btn" id="video-play-toggle-btn">
-                    ▶ Play 1-Min Tour
-                  </button>
-                  <button type="button" class="tool-chip-btn" id="video-wide-toggle-btn" aria-pressed="false">
-                    ⛶ Wide View
-                  </button>
-                </div>
-              </figcaption>
-
-              <div class="video-frame-shell">
-                <video
-                  id="ligase-showcase-video"
-                  class="showcase-video-player"
-                  controls
-                  loading="lazy"
-                  preload="none"
-                  playsinline
-                  width="1280"
-                  height="720"
-                  poster="/static/media/ligase-showcase-poster.webp?v=0.5.1"
-                  aria-labelledby="video-showcase-title"
-                  aria-details="showcase-video-transcript"
-                >
-                  <source src="/static/media/ligase-showcase.mp4?v=0.5.1" type="video/mp4">
-                  <track
-                    src="/static/media/ligase-showcase-en.vtt?v=0.5.1"
-                    kind="captions"
-                    srclang="en"
-                    label="English (Grok Voice Verbatim)"
-                    default
+            <!-- Organized 3-Section Studio Shelf (Searchable via hidden="until-found") -->
+            <div class="studio-shelf" id="studio-home-shelf">
+              <div class="studio-shelf-bar">
+                <div class="studio-shelf-tabs" role="group" aria-label="Home workspace sections">
+                  <button
+                    type="button"
+                    class="studio-shelf-btn active"
+                    id="shelf-btn-studies"
+                    aria-expanded="true"
+                    aria-controls="shelf-pane-studies"
+                    data-shelf-target="studies"
                   >
-                </video>
-              </div>
-
-              <div class="video-chapter-strip" role="group" aria-label="Jump to video chapter">
-                <button type="button" class="video-chapter-btn active" data-video-seek="0.2" data-video-end="9.79">
-                  <span class="vc-time">0:00</span> V2F Mission
-                </button>
-                <button type="button" class="video-chapter-btn" data-video-seek="9.79" data-video-end="20.29">
-                  <span class="vc-time">0:10</span> Live NIAGADS v2.0
-                </button>
-                <button type="button" class="video-chapter-btn" data-video-seek="20.29" data-video-end="31.48">
-                  <span class="vc-time">0:20</span> BIN1 94.6% PIP
-                </button>
-                <button type="button" class="video-chapter-btn" data-video-seek="31.48" data-video-end="41.58">
-                  <span class="vc-time">0:31</span> ABCA7 8.7× &amp; PSP 56.8×
-                </button>
-                <button type="button" class="video-chapter-btn" data-video-seek="41.58" data-video-end="50.89">
-                  <span class="vc-time">0:42</span> 36-Node Mindmap
-                </button>
-                <button type="button" class="video-chapter-btn" data-video-seek="50.89" data-video-end="60.51">
-                  <span class="vc-time">0:51</span> &lt;120 ms Cloud Run
-                </button>
-              </div>
-
-              <details id="showcase-video-transcript" class="video-transcript-details">
-                <summary>Read Verbatim Grok Voice Narration &amp; Visual Scene Transcript (1:00)</summary>
-                <div class="video-transcript-body">
-                  <p class="vt-note">
-                    <em>Audio &amp; visual context:</em> Warm ambient harmonic synth bed plays softly beneath dual-speaker xAI Grok Voice narration (Ara &amp; Rex), accompanied by soft chime transitions and live captures of the Ligase v0.5 portal.
-                  </p>
-                  <ol class="vt-list">
-                    <li>
-                      <strong>[00:00 – 00:10] Grok Voice — Ara (Lead Architect):</strong>
-                      “90% of Alzheimer's risk variants are non-coding. Meet Ligase: a quantitative co-scientist uniting <code>gpt-6-luna</code> with live NIAGADS genomics.”
-                      <em>(Visual: Research Studio hero, NIAGADS Bonded Genomic Architecture strip, and <code>⌘K</code> Quick Locus &amp; Cohort Jump palette.)</em>
-                    </li>
-                    <li>
-                      <strong>[00:10 – 00:20] Grok Voice — Ara (Lead Architect):</strong>
-                      “One click launches 4-way parallel Locus Dossiers on NIAGADS Open Access v2.0: fusing GenomicsDB, ADSP variants, and 58,000+ FILER tracks.”
-                      <em>(Visual: Live NIAGADS Open Access Explorer executing <code>rs6733839</code> dossier with <code>-log10(p) = 8.4</code> SVG bar chart and GA4GH VRS allele digests.)</em>
-                    </li>
-                    <li>
-                      <strong>[00:20 – 00:31] Grok Voice — Rex (Genomics Co-Scientist):</strong>
-                      “Intersecting microglia PU.1 enhancers concentrates <code>BIN1</code> <code>rs6733839</code> causal probability from 52.8% to 94.6%.”
-                      <em>(Visual: Animated Bayesian PIP bar concentrating from 52.8% IGAP prior to 94.6% microglia posterior, plus <code>TREM2 R47H × PLCG2 P522R</code> phagocytosis rescue from 38% to 94% WT.)</em>
-                    </li>
-                    <li>
-                      <strong>[00:31 – 00:42] Grok Voice — Rex (Genomics Co-Scientist):</strong>
-                      “Across diverse cohorts, Ligase uncovers an 8.7× <code>ABCA7</code> burden in African ancestry, and a 56.8× <code>APOE</code> ε2 reversal in PSP.”
-                      <em>(Visual: Comparative PAF bars showing 7.22% African vs. 0.83% European attributable risk in <code>NG00100</code>, alongside <code>APOE ε2/ε2 + MAPT H1/H1</code> shifting from AD protection OR = 0.26 to PSP risk OR = 2.41 / combined 13.6.)</em>
-                    </li>
-                    <li>
-                      <strong>[00:42 – 00:51] Grok Voice — Ara (Lead Architect):</strong>
-                      “Navigate 36 components on the interactive Mindmap, linking UniProt, Ensembl, ChEMBL, ClinVar, and AST-verified Python with live traces.”
-                      <em>(Visual: 6-pillar SVG Capabilities Mindmap and 24-cohort NIAGADS DSS reference catalog.)</em>
-                    </li>
-                    <li>
-                      <strong>[00:51 – 01:00] Grok Voice — Ara (Lead Architect):</strong>
-                      “Built on Cloud Run with sub-120 ms cold starts, scale-to-zero efficiency, persistent telemetry, and screenshot feedback. Discover faster with Ligase.”
-                      <em>(Visual: Persistent GCS Usage &amp; Volume Ledger and closing architectural summary card citing NIH/NIA Cooperative Agreement <code>U24AG041689</code>.)</em>
-                    </li>
-                  </ol>
+                    <span aria-hidden="true">🧪</span> Starter Studies
+                    <span class="shelf-count-pill">7</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="studio-shelf-btn"
+                    id="shelf-btn-video"
+                    aria-expanded="false"
+                    aria-controls="shelf-pane-video"
+                    data-shelf-target="video"
+                  >
+                    <span aria-hidden="true">🎬</span> 1-Min Video Tour
+                    <span class="shelf-count-pill">Grok Voice</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="studio-shelf-btn"
+                    id="shelf-btn-niagads"
+                    aria-expanded="false"
+                    aria-controls="shelf-pane-niagads"
+                    data-shelf-target="niagads"
+                  >
+                    <span aria-hidden="true">🧬</span> NIAGADS Ecosystem
+                    <span class="shelf-count-pill">19 APIs · 24 NG*</span>
+                  </button>
                 </div>
-              </details>
-            </figure>
 
-            <div class="starter-section-head">
-              <span>Ready-Made Quantitative &amp; Live API Studies</span>
-              <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 24 NIAGADS Cohorts &amp; 9 Tool Suites →</button>
+                <div class="studio-shelf-actions">
+                  <button
+                    type="button"
+                    class="shelf-expand-btn"
+                    id="shelf-expand-all-btn"
+                    aria-pressed="false"
+                    title="Show or collapse all three home sections simultaneously"
+                  >
+                    ⊞ Show All
+                  </button>
+                  <button type="button" class="link-btn" id="inspect-catalog-inline">24 Cohorts &amp; 9 Tool Suites →</button>
+                </div>
+              </div>
+
+              <!-- Shelf Pane 1 (Default Open): Ready-Made Quantitative & Live API Studies -->
+              <div class="studio-shelf-pane" id="shelf-pane-studies" data-shelf-pane="studies">
+                <div class="shelf-pane-inner">
+                  <div class="starter-grid" id="starter-grid"><!-- LIGASE_STARTERS_SSR --></div>
+                </div>
+              </div>
+
+              <!-- Shelf Pane 2 (Searchable Collapsed): 1-Minute Grok-Narrated Video Tour -->
+              <div class="studio-shelf-pane" id="shelf-pane-video" data-shelf-pane="video" hidden="until-found">
+                <figure class="video-showcase-card" id="video-showcase-card" aria-labelledby="video-showcase-title">
+                  <figcaption class="video-showcase-head">
+                    <div class="video-showcase-meta">
+                      <span class="video-voice-badge">🎬 1-MIN KEYNOTE · GROK VOICE (ARA &amp; REX)</span>
+                      <h2 class="video-showcase-title" id="video-showcase-title">
+                        Ligase &amp; NIAGADS Open Access v2.0 Architecture Tour
+                      </h2>
+                    </div>
+                    <div class="video-showcase-actions">
+                      <button type="button" class="tool-chip-btn" id="video-play-toggle-btn">
+                        ▶ Play 1-Min Tour
+                      </button>
+                      <button type="button" class="tool-chip-btn" id="video-wide-toggle-btn" aria-pressed="false">
+                        ⛶ Wide View
+                      </button>
+                    </div>
+                  </figcaption>
+
+                  <div class="video-frame-shell">
+                    <video
+                      id="ligase-showcase-video"
+                      class="showcase-video-player"
+                      controls
+                      loading="lazy"
+                      preload="none"
+                      playsinline
+                      width="1280"
+                      height="720"
+                      poster="/static/media/ligase-showcase-poster.webp?v=0.5.2"
+                      aria-labelledby="video-showcase-title"
+                      aria-details="showcase-video-transcript"
+                    >
+                      <source src="/static/media/ligase-showcase.mp4?v=0.5.2" type="video/mp4">
+                      <track
+                        src="/static/media/ligase-showcase-en.vtt?v=0.5.2"
+                        kind="captions"
+                        srclang="en"
+                        label="English (Grok Voice Verbatim)"
+                        default
+                      >
+                    </video>
+                  </div>
+
+                  <div class="video-chapter-strip" role="group" aria-label="Jump to video chapter">
+                    <button type="button" class="video-chapter-btn active" data-video-seek="0.2" data-video-end="9.79">
+                      <span class="vc-time">0:00</span> V2F Mission
+                    </button>
+                    <button type="button" class="video-chapter-btn" data-video-seek="9.79" data-video-end="20.29">
+                      <span class="vc-time">0:10</span> Live NIAGADS v2.0
+                    </button>
+                    <button type="button" class="video-chapter-btn" data-video-seek="20.29" data-video-end="31.48">
+                      <span class="vc-time">0:20</span> BIN1 94.6% PIP
+                    </button>
+                    <button type="button" class="video-chapter-btn" data-video-seek="31.48" data-video-end="41.58">
+                      <span class="vc-time">0:31</span> ABCA7 8.7× &amp; PSP 56.8×
+                    </button>
+                    <button type="button" class="video-chapter-btn" data-video-seek="41.58" data-video-end="50.89">
+                      <span class="vc-time">0:42</span> 36-Node Mindmap
+                    </button>
+                    <button type="button" class="video-chapter-btn" data-video-seek="50.89" data-video-end="60.51">
+                      <span class="vc-time">0:51</span> &lt;120 ms Cloud Run
+                    </button>
+                  </div>
+
+                  <details id="showcase-video-transcript" class="video-transcript-details">
+                    <summary>Read Verbatim Grok Voice Narration &amp; Visual Scene Transcript (1:00)</summary>
+                    <div class="video-transcript-body">
+                      <p class="vt-note">
+                        <em>Audio &amp; visual context:</em> Warm ambient harmonic synth bed plays softly beneath dual-speaker xAI Grok Voice narration (Ara &amp; Rex), accompanied by soft chime transitions and live captures of the Ligase v0.5 portal.
+                      </p>
+                      <ol class="vt-list">
+                        <li>
+                          <strong>[00:00 – 00:10] Grok Voice — Ara (Lead Architect):</strong>
+                          “90% of Alzheimer's risk variants are non-coding. Meet Ligase: a quantitative co-scientist uniting <code>gpt-6-luna</code> with live NIAGADS genomics.”
+                          <em>(Visual: Research Studio hero, NIAGADS Bonded Genomic Architecture strip, and <code>⌘K</code> Quick Locus &amp; Cohort Jump palette.)</em>
+                        </li>
+                        <li>
+                          <strong>[00:10 – 00:20] Grok Voice — Ara (Lead Architect):</strong>
+                          “One click launches 4-way parallel Locus Dossiers on NIAGADS Open Access v2.0: fusing GenomicsDB, ADSP variants, and 58,000+ FILER tracks.”
+                          <em>(Visual: Live NIAGADS Open Access Explorer executing <code>rs6733839</code> dossier with <code>-log10(p) = 8.4</code> SVG bar chart and GA4GH VRS allele digests.)</em>
+                        </li>
+                        <li>
+                          <strong>[00:20 – 00:31] Grok Voice — Rex (Genomics Co-Scientist):</strong>
+                          “Intersecting microglia PU.1 enhancers concentrates <code>BIN1</code> <code>rs6733839</code> causal probability from 52.8% to 94.6%.”
+                          <em>(Visual: Animated Bayesian PIP bar concentrating from 52.8% IGAP prior to 94.6% microglia posterior, plus <code>TREM2 R47H × PLCG2 P522R</code> phagocytosis rescue from 38% to 94% WT.)</em>
+                        </li>
+                        <li>
+                          <strong>[00:31 – 00:42] Grok Voice — Rex (Genomics Co-Scientist):</strong>
+                          “Across diverse cohorts, Ligase uncovers an 8.7× <code>ABCA7</code> burden in African ancestry, and a 56.8× <code>APOE</code> ε2 reversal in PSP.”
+                          <em>(Visual: Comparative PAF bars showing 7.22% African vs. 0.83% European attributable risk in <code>NG00100</code>, alongside <code>APOE ε2/ε2 + MAPT H1/H1</code> shifting from AD protection OR = 0.26 to PSP risk OR = 2.41 / combined 13.6.)</em>
+                        </li>
+                        <li>
+                          <strong>[00:42 – 00:51] Grok Voice — Ara (Lead Architect):</strong>
+                          “Navigate 36 components on the interactive Mindmap, linking UniProt, Ensembl, ChEMBL, ClinVar, and AST-verified Python with live traces.”
+                          <em>(Visual: 6-pillar SVG Capabilities Mindmap and 24-cohort NIAGADS DSS reference catalog.)</em>
+                        </li>
+                        <li>
+                          <strong>[00:51 – 01:00] Grok Voice — Ara (Lead Architect):</strong>
+                          “Built on Cloud Run with sub-120 ms cold starts, scale-to-zero efficiency, persistent telemetry, and screenshot feedback. Discover faster with Ligase.”
+                          <em>(Visual: Persistent GCS Usage &amp; Volume Ledger and closing architectural summary card citing NIH/NIA Cooperative Agreement <code>U24AG041689</code>.)</em>
+                        </li>
+                      </ol>
+                    </div>
+                  </details>
+                </figure>
+              </div>
+
+              <!-- Shelf Pane 3 (Searchable Collapsed): NIAGADS Bonded Genomic Architecture -->
+              <div class="studio-shelf-pane" id="shelf-pane-niagads" data-shelf-pane="niagads" hidden="until-found">
+                <section class="niagads-bond-strip" aria-label="Bonded NIAGADS genomic data ecosystem">
+                  <div class="niagads-bond-head">
+                    <div class="niagads-bond-title">
+                      <span class="niagads-bond-pulse" aria-hidden="true"></span>
+                      <strong>NIAGADS Bonded Genomic Architecture</strong>
+                      <span class="niagads-bond-tag">Live OpenAPI v2.0 + Curated Multi-Cohort Panels</span>
+                    </div>
+                    <button type="button" class="link-btn" id="copy-niagads-ack-btn" title="Copy NIH/NIA U24AG041689 acknowledgment &amp; BibTeX">
+                      📜 Cite NIAGADS (U24AG041689)
+                    </button>
+                  </div>
+                  <p class="niagads-bond-scope">
+                    Direct live queries against <code>api.niagads.org</code> (GenomicsDB, ADSP R5 SNVs/INDELs, GVC TopGenes) and
+                    <strong>FILER</strong> hg38 tracks, bonded with curated panels from IGAP (<code>NG00075</code>), MiGA microglia eQTL/sQTL (<code>NG00105</code>),
+                    multi-ancestry ADSP (<code>NG00067</code>/<code>NG00100</code>), and PSP WGS (<code>NG00169</code>/<code>NG00172</code>).
+                  </p>
+                  <div class="niagads-bond-grid">
+                    <button type="button" class="niagads-bond-chip" data-bond-action="locus_dossier" data-bond-target="BIN1">
+                      <span class="bond-chip-kicker">LIVE · 19 PATHS</span>
+                      <strong>Open Access API v2.0</strong>
+                      <span>4-way parallel V2F Dossier (<code>BIN1</code>) →</span>
+                    </button>
+                    <button type="button" class="niagads-bond-chip" data-bond-action="gene" data-bond-target="APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2">
+                      <span class="bond-chip-kicker">ADSP GVC · GRCh38</span>
+                      <strong>GenomicsDB &amp; TopGenes</strong>
+                      <span>Batch AD 6-Gene Panel →</span>
+                    </button>
+                    <button type="button" class="niagads-bond-chip" data-bond-action="variant" data-bond-target="rs429358,rs7412,rs6733839,rs75932628">
+                      <span class="bond-chip-kicker">GA4GH VRS · AFs</span>
+                      <strong>ADSP Release 5 WGS</strong>
+                      <span>SNVs/INDELs &amp; VRS Panel →</span>
+                    </button>
+                    <button type="button" class="niagads-bond-chip" data-bond-action="filer_overlap" data-bond-target="chr2:127135200-127135300">
+                      <span class="bond-chip-kicker">GIGGLE · hg38</span>
+                      <strong>FILER 58k+ Tracks</strong>
+                      <span>Microglia ATAC / ChIP Overlap →</span>
+                    </button>
+                    <button type="button" class="niagads-bond-chip" data-bond-catalog="1">
+                      <span class="bond-chip-kicker">24 COHORTS · NG*</span>
+                      <strong>NIAGADS DSS &amp; ADVP</strong>
+                      <span>IGAP · MiGA · ADSP · PSP →</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
             </div>
-            <div class="starter-grid" id="starter-grid"><!-- LIGASE_STARTERS_SSR --></div>
 
             <div class="niagads-attribution-bar">
               <span>
@@ -1289,6 +1349,6 @@
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.5.1" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.5.2" defer fetchpriority="high"></script>
 </body>
 </html>

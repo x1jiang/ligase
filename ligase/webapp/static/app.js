@@ -1166,7 +1166,7 @@
       "  title        = {NIAGADS Alzheimer's GenomicsDB \\& Open Access API v2.0},",
       "  organization = {National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS)},",
       "  url          = {https://api.niagads.org/open-access},",
-      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.1}",
+      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.2}",
       "}",
     ].join("\n");
   }
@@ -3912,6 +3912,7 @@
     // Portal Views & Actions
     const navItems = [
       { title: "Watch 1-Minute Grok-Narrated Video Tour (Ara & Rex)", sub: "60s 1080p showcase of NIAGADS Open Access v2.0, BIN1 94.6% PIP, ABCA7 8.7x PAF & PSP 56.8x shift", badge: "1:00 Video", run: () => focusAndPlayShowcaseVideo() },
+      { title: "Open NIAGADS Bonded Ecosystem Shelf (5 Live Launchers)", sub: "Open Access v2.0 BIN1 dossier, GenomicsDB 6-gene batch, ADSP R5 VRS, FILER 58k+ & 24 NG* cohorts", badge: "NIAGADS", run: async () => { await switchPortalTab("studio", { focusHeading: false }); if (el.welcomeView?.hidden) el.newStudyBtn?.click(); switchStudioShelf("niagads"); } },
       { title: "Switch to Research Studio", sub: "Streaming gpt-6-luna co-scientist & grounded tool trace", badge: "Tab 1", run: () => switchPortalTab("studio", { focusHeading: true }) },
       { title: "Switch to Capabilities Mindmap", sub: "Interactive 6-pillar · 36-component SVG graph & accessible matrix", badge: "Tab 2", run: () => switchPortalTab("mindmap", { focusHeading: true }) },
       { title: "Switch to NIAGADS Open Access v2.0 Explorer", sub: "Interactive REST console + SVG genomics charts", badge: "Tab 3", run: () => switchPortalTab("niagads-api", { focusHeading: true }) },
@@ -4117,6 +4118,116 @@
     }
   }
 
+  let activeStudioShelf = "studies";
+  let allStudioShelvesExpanded = false;
+
+  function switchStudioShelf(targetName = "studies") {
+    const shelf = document.getElementById("studio-home-shelf");
+    if (!shelf) return;
+    activeStudioShelf = targetName;
+    allStudioShelvesExpanded = false;
+
+    const expandBtn = document.getElementById("shelf-expand-all-btn");
+    if (expandBtn) {
+      expandBtn.setAttribute("aria-pressed", "false");
+      expandBtn.textContent = "⊞ Show All";
+    }
+
+    for (const pane of shelf.querySelectorAll(".studio-shelf-pane[data-shelf-pane]")) {
+      if (pane.dataset.shelfPane === targetName) {
+        pane.removeAttribute("hidden");
+      } else {
+        pane.setAttribute("hidden", "until-found");
+      }
+    }
+
+    for (const btn of shelf.querySelectorAll(".studio-shelf-btn[data-shelf-target]")) {
+      const isMatch = btn.dataset.shelfTarget === targetName;
+      btn.classList.toggle("active", isMatch);
+      btn.setAttribute("aria-expanded", isMatch ? "true" : "false");
+    }
+
+    const video = document.getElementById("ligase-showcase-video");
+    if (video) {
+      if (targetName === "video") {
+        hydrateDeferredMedia(video);
+        if (video.preload === "none") {
+          video.preload = "metadata";
+        }
+      } else if (!video.paused) {
+        video.pause();
+      }
+    }
+  }
+
+  function setAllStudioShelvesExpanded(expanded) {
+    const shelf = document.getElementById("studio-home-shelf");
+    if (!shelf) return;
+    if (!expanded) {
+      switchStudioShelf(activeStudioShelf || "studies");
+      return;
+    }
+    allStudioShelvesExpanded = true;
+    const expandBtn = document.getElementById("shelf-expand-all-btn");
+    if (expandBtn) {
+      expandBtn.setAttribute("aria-pressed", "true");
+      expandBtn.textContent = "⊟ Compact View";
+    }
+    for (const pane of shelf.querySelectorAll(".studio-shelf-pane[data-shelf-pane]")) {
+      pane.removeAttribute("hidden");
+    }
+    for (const btn of shelf.querySelectorAll(".studio-shelf-btn[data-shelf-target]")) {
+      btn.classList.add("active");
+      btn.setAttribute("aria-expanded", "true");
+    }
+    const video = document.getElementById("ligase-showcase-video");
+    if (video) hydrateDeferredMedia(video);
+  }
+
+  function initStudioHomeShelf() {
+    const shelf = document.getElementById("studio-home-shelf");
+    if (!shelf) return;
+
+    for (const btn of shelf.querySelectorAll(".studio-shelf-btn[data-shelf-target]")) {
+      btn.addEventListener("click", () => {
+        switchStudioShelf(btn.dataset.shelfTarget || "studies");
+      });
+    }
+
+    const expandBtn = document.getElementById("shelf-expand-all-btn");
+    expandBtn?.addEventListener("click", () => {
+      setAllStudioShelvesExpanded(!allStudioShelvesExpanded);
+    });
+
+    // Synchronize mutually exclusive shelf panes & ARIA state on browser Find-in-Page (search-hidden-content)
+    shelf.addEventListener("beforematch", (ev) => {
+      const matchedPane =
+        ev.target instanceof Element ? ev.target.closest(".studio-shelf-pane[data-shelf-pane]") : null;
+      if (!matchedPane) return;
+      const matchedName = matchedPane.dataset.shelfPane || "studies";
+      activeStudioShelf = matchedName;
+      allStudioShelvesExpanded = false;
+      if (expandBtn) {
+        expandBtn.setAttribute("aria-pressed", "false");
+        expandBtn.textContent = "⊞ Show All";
+      }
+      for (const pane of shelf.querySelectorAll(".studio-shelf-pane[data-shelf-pane]")) {
+        if (pane !== matchedPane) {
+          pane.setAttribute("hidden", "until-found");
+        }
+      }
+      for (const btn of shelf.querySelectorAll(".studio-shelf-btn[data-shelf-target]")) {
+        const controls = btn.getAttribute("aria-controls");
+        const isMatch = controls === matchedPane.id;
+        btn.classList.toggle("active", isMatch);
+        btn.setAttribute("aria-expanded", isMatch ? "true" : "false");
+      }
+      if (matchedName === "video") {
+        hydrateDeferredMedia(document.getElementById("ligase-showcase-video"));
+      }
+    });
+  }
+
   async function focusAndPlayShowcaseVideo(seekTimeSec = null) {
     if (state.activeTab !== "studio") {
       await switchPortalTab("studio", { focusHeading: false });
@@ -4124,6 +4235,7 @@
     if (el.welcomeView?.hidden) {
       el.newStudyBtn?.click();
     }
+    switchStudioShelf("video");
     const card = document.getElementById("video-showcase-card");
     const video = document.getElementById("ligase-showcase-video");
     if (!video) return;
@@ -4270,6 +4382,7 @@
     syncUsageExportLinks();
     initFeedbackController();
     initBondAndCommandPalette();
+    initStudioHomeShelf();
     initShowcaseVideo();
 
     const bootstrap = readServerBootstrap();
@@ -4299,6 +4412,10 @@
       switchPortalTab("feedback", { updateHash: false });
     } else if (hashTab === "mindmap" || hashTab === "niagads-api") {
       switchPortalTab(hashTab, { updateHash: false });
+    } else if (hashTab === "video" || hashTab === "shelf-video") {
+      switchStudioShelf("video");
+    } else if (hashTab === "shelf-niagads" || hashTab === "niagads") {
+      switchStudioShelf("niagads");
     }
 
     // Fetch saved study threads and warm secondary tab payloads at low priority

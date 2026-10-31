@@ -26,7 +26,7 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.5.1 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_UA = "Ligase/0.5.2 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
 _CACHE_TTL_S = 900.0
 _CACHE_MAX_SIZE = 512
