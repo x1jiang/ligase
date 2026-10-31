@@ -8,7 +8,7 @@ Ligase: local-first biomedical research agent.
 
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 __all__ = [
     "create_agent",
     "LigaseAgent",

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+import hashlib
 import html
+import inspect
 import json
 import logging
 import os
@@ -32,6 +35,7 @@ from ligase.niagads_api import OPEN_ACCESS_ROLLOUT_CATALOG, execute_niagads_acti
 from ligase.webapp.mindmap import build_capabilities_mindmap
 from ligase.webapp.planner import generate_plan_or_triage
 from ligase.webapp.store import ThreadStore
+from ligase.webapp.usage_tracker import UsageTracker
 
 # Kept as a patchable module attribute for tests while avoiding eager ClawAgents/LangChain imports on boot.
 create_agent: Optional[Any] = None
@@ -345,9 +349,150 @@ class ChatStreamRequest(BaseModel):
     thread_id: Optional[str] = None
     prompt: str = Field(..., min_length=1, max_length=16000)
     profile: str = "ad1"
+    speed_mode: str = "fast"
     max_iterations: int = Field(default=10, ge=1, le=25)
     attachments: List[str] = Field(default_factory=list)
     approved_plan: Optional[str] = None
+
+
+_PREGROUND_RSID_RE = re.compile(r"\brs\d{3,12}\b", re.I)
+_PREGROUND_DNA_RE = re.compile(r"(?:5'-)?[ACGT]{9,}(?:-3')?", re.I)
+_PREGROUND_NIAGADS_RE = re.compile(
+    r"\b(niagads|filer|advp|adsp|vcpa|gcad|miga|topgenes|vrs|ng00\d{3}|"
+    r"apoe|bin1|trem2|abca7|plcg2|abi3|mapt|supranuclear\s+palsy|4r-tauopathy|"
+    r"rs6733839|rs429358|rs115550680|rs7412)\b",
+    re.I,
+)
+_PREGROUND_LIVE_OA_RE = re.compile(
+    r"\b(open[\s-]?access|api\.niagads\.org|vrs|topgenes|adsp\s+r(?:elease\s*)?5|exon\s+structure|ng00166)\b",
+    re.I,
+)
+_PREGROUND_AD_GENES = ("TREM2", "APOE", "BIN1", "ABCA7", "MAPT", "PLCG2", "ABI3", "SORL1", "CLU", "CR1")
+_PREGROUND_COMPOUNDS = (
+    "imatinib",
+    "aspirin",
+    "donepezil",
+    "memantine",
+    "galantamine",
+    "rivastigmine",
+    "venetoclax",
+    "olaparib",
+    "metformin",
+    "paclitaxel",
+    "doxorubicin",
+)
+
+
+def _parallel_preground_prompt(
+    prompt: str,
+    emit_tool_start: Any,
+    emit_tool_result: Any,
+) -> str:
+    """Execute deterministic ground-truth lookups concurrently (<350 ms) in fast mode."""
+    text = (prompt or "").strip()
+    if not text:
+        return ""
+    low = text.lower()
+    tasks: List[Tuple[str, Dict[str, Any], Any]] = []
+
+    # 1. NIAGADS curated cohort & V2F / ADSP / PSP catalog card (<5 ms local)
+    if _PREGROUND_NIAGADS_RE.search(text):
+        from ligase.gemma_tools import query_niagads
+
+        tasks.append(("query_niagads", {"query": text[:120]}, lambda q=text: query_niagads(q)))
+
+    # 2. Live NIAGADS Open Access v2.0 REST lookup for explicit rsIDs or AD genes
+    if os.getenv("LIGASE_DISABLE_LIVE_NIAGADS", "").strip().lower() not in ("1", "true", "yes"):
+        rsids: List[str] = []
+        for m in _PREGROUND_RSID_RE.findall(text):
+            norm_r = m.lower()
+            if norm_r not in rsids:
+                rsids.append(norm_r)
+        wants_live = bool(_PREGROUND_LIVE_OA_RE.search(text))
+        for rsid in rsids[:2]:
+            if wants_live or len(rsids) == 1:
+                from ligase.niagads_api import niagads_open_access_api
+
+                tasks.append(
+                    (
+                        "niagads_open_access_api",
+                        {"action": "auto", "target": rsid},
+                        lambda r=rsid: niagads_open_access_api(action="auto", target=r),
+                    )
+                )
+        if wants_live:
+            upper_words = set(re.findall(r"\b[A-Z0-9]{3,10}\b", text.upper()))
+            for gsym in _PREGROUND_AD_GENES:
+                if gsym in upper_words and len(tasks) < 4:
+                    from ligase.niagads_api import niagads_open_access_api
+
+                    act = "gene_structure" if "exon" in low or "transcript" in low else "gene"
+                    tasks.append(
+                        (
+                            "niagads_open_access_api",
+                            {"action": act, "target": gsym},
+                            lambda a=act, g=gsym: niagads_open_access_api(action=a, target=g),
+                        )
+                    )
+                    break
+
+    # 3. Deterministic DNA transcription / ORF translation (<2 ms)
+    if _PREGROUND_DNA_RE.search(text) and any(
+        w in low for w in ("transcribe", "translate", "codon", "orf", "mrna", "peptide", "del", "frameshift")
+    ):
+        from ligase.gemma_tools import transcribe_translate
+
+        tasks.append(("transcribe_translate", {"dna": text[:90]}, lambda q=text: transcribe_translate(q)))
+
+    # 4. PubChem compound ground-truth card
+    if any(w in low for w in ("formula", "molecular weight", "smiles", "iupac", "pubchem", "compound", "kinase", "bcr-abl")):
+        for comp in _PREGROUND_COMPOUNDS:
+            if comp in low:
+                from ligase.gemma_tools import lookup_compound
+
+                tasks.append(("lookup_compound", {"name": comp.capitalize()}, lambda c=comp.capitalize(): lookup_compound(c)))
+                break
+
+    if not tasks:
+        return ""
+
+    call_entries: List[Tuple[str, str, Dict[str, Any], Any]] = []
+    for idx, (tname, targs, fn) in enumerate(tasks[:4], 1):
+        cid = f"preground_{idx}_{tname}"
+        emit_tool_start(cid, tname, targs)
+        call_entries.append((cid, tname, targs, fn))
+
+    evidence_blocks: List[str] = []
+
+    def _run_one(entry: Tuple[str, str, Dict[str, Any], Any]) -> Tuple[str, str, bool, int, str]:
+        cid, tname, _targs, fn = entry
+        t_start = time.monotonic()
+        try:
+            out = str(fn() or "").strip()
+            ok = bool(out) and not out.lower().startswith("error")
+        except Exception as exc:
+            out = f"Pre-grounding lookup skipped: {exc}"
+            ok = False
+        dur_ms = max(1, int((time.monotonic() - t_start) * 1000))
+        return cid, tname, ok, dur_ms, out
+
+    with ThreadPoolExecutor(max_workers=min(4, len(call_entries))) as pool:
+        results = list(pool.map(_run_one, call_entries))
+
+    for cid, tname, ok, dur_ms, out in results:
+        emit_tool_result(cid, tname, ok, dur_ms, out)
+        if ok and out:
+            trimmed = out[:5500] + ("\n...[truncated]" if len(out) > 5500 else "")
+            evidence_blocks.append(f"#### Ground-Truth Tool Output (`{tname}`)\n{trimmed}")
+
+    if not evidence_blocks:
+        return ""
+    return (
+        "### [Pre-Grounded Verified Evidence]\n"
+        "The following ground-truth records were fetched in parallel for this study. "
+        "Synthesize directly from these exact figures without re-calling tools for the same targets:\n\n"
+        + "\n\n".join(evidence_blocks)
+    )
 
 
 TOOL_CATALOG: List[Dict[str, str]] = [
@@ -441,14 +586,17 @@ _WARMUP_LOCK = threading.Lock()
 
 
 def _warmup_agent_runtime() -> None:
-    """Warm ClawAgents, Biomni lazy tool descriptors, context layers, and default NIAGADS preset in background."""
+    """Warm ClawAgents, persistent loop, Biomni lazy descriptors, context layers, and NIAGADS preset in background."""
     try:
+        from ligase.agent import _get_persistent_agent_loop, create_agent as _real_ca
         from ligase.context_layers import warmup_context_layers
         from ligase.tools_adapter import get_biomni_claw_tools
 
-        _get_create_agent()
+        _get_persistent_agent_loop()
         get_biomni_claw_tools(lazy=True)
         warmup_context_layers()
+        # Prime fast system prompt & domain tool cache (<2 ms)
+        _real_ca(model=DEFAULT_WEB_MODEL, is_ad_specialized=True, speed_mode="fast", api_key=_CAPTURED_OPENAI_KEY or "warmup")
         if os.getenv("LIGASE_DISABLE_LIVE_NIAGADS", "").strip().lower() not in ("1", "true", "yes"):
             execute_niagads_action(action="auto", target="rs6733839")
     except Exception as exc:
@@ -461,7 +609,9 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
     resolved_state.mkdir(parents=True, exist_ok=True)
     resolved_runs.mkdir(parents=True, exist_ok=True)
 
-    store = ThreadStore(resolved_state / "ligase_webapp.sqlite3")
+    db_path = resolved_state / "ligase_webapp.sqlite3"
+    store = ThreadStore(db_path)
+    usage_tracker = UsageTracker(db_path)
     niagads_summary = _load_niagads_summary()
     starters_list = _build_starters()
     starters_ssr_html = _render_starters_ssr(starters_list)
@@ -485,7 +635,8 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             mindmap_cache[model_name] = cached
         return cached
 
-    def _build_meta(model_name: str, is_ready: bool) -> Dict[str, Any]:
+    def _build_lean_boot(model_name: str, is_ready: bool) -> Dict[str, Any]:
+        """Above-the-fold bootstrap (~3.5 KB raw) so GET / streams in <60 ms."""
         return {
             "brand": "Ligase",
             "version": VERSION,
@@ -495,9 +646,27 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             "sandbox_mode": "AST + Isolated Workspace" if IS_CLOUD else "OS Sandbox (Seatbelt/Bubblewrap)",
             "profiles": PROFILES_CATALOG,
             "starters": starters_list,
+        }
+
+    def _build_meta(model_name: str, is_ready: bool) -> Dict[str, Any]:
+        return {
+            **_build_lean_boot(model_name, is_ready),
             "tools": TOOL_CATALOG,
             "niagads": niagads_full,
         }
+
+    def _etag_json_response(request: Request, payload: Dict[str, Any], max_age: int = 0) -> Response:
+        body_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        etag = f'W/"{hashlib.md5(body_bytes).hexdigest()[:16]}"'
+        cache_hdr = f"public, max-age={max_age}" if max_age > 0 else "no-cache"
+        inm = request.headers.get("if-none-match") or ""
+        if etag in inm:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": cache_hdr})
+        return Response(
+            content=body_bytes,
+            media_type="application/json",
+            headers={"ETag": etag, "Cache-Control": cache_hdr},
+        )
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
@@ -518,6 +687,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
     )
     webapp.add_middleware(_SSESafeGZipMiddleware, minimum_size=500)
     webapp.state.store = store
+    webapp.state.usage_tracker = usage_tracker
     webapp.state.runs_root = resolved_runs
     webapp.state.active_cancels = active_cancels
 
@@ -531,7 +701,10 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         if request.url.path.startswith("/static/"):
-            resp.headers.setdefault("Cache-Control", "public, max-age=86400")
+            if "v=" in (request.url.query or ""):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                resp.headers.setdefault("Cache-Control", "public, max-age=86400")
         return resp
 
     @webapp.get("/healthz")
@@ -553,6 +726,8 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         return JSONResponse(status_code=200 if ready else 503, content=payload)
 
     @webapp.get("/", response_class=HTMLResponse)
+    @webapp.get("/usage", response_class=HTMLResponse)
+    @webapp.get("/admin", response_class=HTMLResponse)
     async def index() -> Response:
         if not index_template:
             return HTMLResponse("<h1>Ligase WebApp</h1><p>Static bundle missing.</p>", status_code=500)
@@ -561,10 +736,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         cache_key = (model, is_ready)
         rendered = index_html_cache.get(cache_key)
         if rendered is None:
-            bootstrap_obj = {
-                "meta": _build_meta(model, is_ready),
-                "mindmap": _get_mindmap(model),
-            }
+            bootstrap_obj = {"boot": _build_lean_boot(model, is_ready)}
             bootstrap_tag = (
                 f'<script id="ligase-bootstrap" type="application/json">'
                 f"{_safe_json_for_script_tag(bootstrap_obj)}</script>"
@@ -577,14 +749,63 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         return HTMLResponse(rendered, headers={"Cache-Control": "no-cache"})
 
     @webapp.get("/api/meta")
-    async def api_meta() -> Dict[str, Any]:
+    async def api_meta(request: Request) -> Response:
         model, api_key, base_url = _resolve_web_credentials()
-        return _build_meta(model, bool(api_key or base_url))
+        return _etag_json_response(request, _build_meta(model, bool(api_key or base_url)), max_age=60)
 
     @webapp.get("/api/mindmap")
-    async def api_mindmap() -> Dict[str, Any]:
+    async def api_mindmap(request: Request) -> Response:
         model, _, _ = _resolve_web_credentials()
-        return _get_mindmap(model)
+        return _etag_json_response(request, _get_mindmap(model), max_age=120)
+
+    @webapp.get("/api/usage")
+    async def api_usage(request: Request, days: str = "all") -> Response:
+        model, _, _ = _resolve_web_credentials()
+        payload = usage_tracker.get_dashboard_summary(days=days, active_model=model)
+        return _etag_json_response(request, payload, max_age=0)
+
+    @webapp.get("/api/usage/export.json")
+    async def api_usage_export_json(days: str = "all") -> Response:
+        model, _, _ = _resolve_web_credentials()
+        payload = usage_tracker.get_dashboard_summary(days=days, active_model=model)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        body = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="ligase_usage_{days}_{stamp}.json"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @webapp.get("/api/usage/export.md")
+    async def api_usage_export_md(days: str = "all") -> Response:
+        model, _, _ = _resolve_web_credentials()
+        md = usage_tracker.export_markdown_report(days=days, active_model=model)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return PlainTextResponse(
+            md,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="ligase_usage_report_{days}_{stamp}.md"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @webapp.get("/api/usage/export.csv")
+    async def api_usage_export_csv(days: str = "all") -> Response:
+        model, _, _ = _resolve_web_credentials()
+        zip_bytes = usage_tracker.export_csv_bundle_zip(days=days, active_model=model)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="ligase_usage_csv_bundle_{days}_{stamp}.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @webapp.get("/api/niagads/endpoints")
     async def api_niagads_endpoints() -> Dict[str, Any]:
@@ -592,6 +813,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
 
     @webapp.get("/api/niagads/live")
     async def api_niagads_live(
+        request: Request,
         action: str = "auto",
         target: str = "",
         loc: str = "",
@@ -605,6 +827,8 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                 status_code=400,
                 detail="Query parameter 'target' (e.g. APOE, rs6733839, chr2:127134000-127136000) is required.",
             )
+        cid = _client_id_from_request(request)
+        t_start = time.monotonic()
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
@@ -618,6 +842,23 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                 page=page,
             ),
         )
+        dur_ms = int(result.get("elapsed_ms") or max(1, int((time.monotonic() - t_start) * 1000)))
+        try:
+            payload_bytes = len(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+        except Exception:
+            payload_bytes = 0
+        try:
+            usage_tracker.record_niagads_api_call(
+                client_id=cid,
+                action=action,
+                target=target or loc,
+                endpoint=str(result.get("endpoint") or action),
+                ok=bool(result.get("ok")),
+                elapsed_ms=dur_ms,
+                payload_bytes=payload_bytes,
+            )
+        except Exception:
+            pass
         return JSONResponse(status_code=200 if result.get("ok") else 502, content=result)
 
     @webapp.get("/api/threads")
@@ -679,6 +920,10 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         if not str(dest).startswith(str(uploads_dir)):
             raise HTTPException(status_code=400, detail="Invalid upload filename")
         dest.write_bytes(payload)
+        try:
+            usage_tracker.record_file_upload(client_id=cid, filename=safe_name, size_bytes=len(payload))
+        except Exception:
+            pass
 
         rel_token = f"{cid}/{stamped_name}"
         return {
@@ -703,6 +948,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                     for m in thread.get("messages", [])
                     if m.get("role") in ("user", "assistant")
                 ]
+        t_plan0 = time.monotonic()
         try:
             plan_res = await generate_plan_or_triage(
                 prompt=body.prompt,
@@ -716,6 +962,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         except Exception as exc:
             logger.exception("Plan generation failed")
             raise HTTPException(status_code=502, detail=f"Model planning error: {type(exc).__name__}: {exc}") from exc
+        plan_elapsed_ms = max(1, int((time.monotonic() - t_plan0) * 1000))
         # If triage answered directly, persist the exchange into the thread right away.
         if not plan_res.get("needs_plan") and plan_res.get("direct_answer"):
             tid = body.thread_id
@@ -732,6 +979,19 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             )
             plan_res["thread_id"] = tid
             plan_res["thread_title"] = user_msg.get("thread_title")
+        try:
+            usage_tracker.record_plan_triage(
+                client_id=cid,
+                thread_id=str(plan_res.get("thread_id") or body.thread_id or ""),
+                prompt=body.prompt,
+                model=model,
+                profile=body.profile,
+                needs_plan=bool(plan_res.get("needs_plan")),
+                elapsed_ms=plan_elapsed_ms,
+                usage=plan_res.get("usage"),
+            )
+        except Exception:
+            pass
         return plan_res
 
     @webapp.post("/api/runs/{run_id}/cancel")
@@ -803,6 +1063,10 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             body.approved_plan,
         )
 
+        speed_norm = "deep" if str(body.speed_mode or "").strip().lower() == "deep" else "fast"
+        attachment_bytes = sum(Path(p).stat().st_size for p in resolved_attachments if Path(p).is_file())
+        mode_norm = "plan" if body.approved_plan else "direct"
+
         cancel_event = threading.Event()
         active_cancels[run_id] = cancel_event
 
@@ -817,28 +1081,113 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                 "total_tokens": 0,
                 "cached_input_tokens": 0,
             }
+            ttft_holder: List[int] = []
             initial_files = {p.name for p in run_dir.iterdir() if p.is_file()}
             t0 = time.monotonic()
+
+            def _mark_ttft(explicit_ms: int = 0) -> None:
+                if not ttft_holder:
+                    ms = explicit_ms if explicit_ms > 0 else max(1, int((time.monotonic() - t0) * 1000))
+                    ttft_holder.append(ms)
 
             def _push(event_type: str, payload: Dict[str, Any]) -> None:
                 if cancel_event.is_set() and event_type not in ("run_cancelled", "run_error"):
                     return
                 loop.call_soon_threadsafe(q.put_nowait, {"event": event_type, "data": payload})
 
+            def _record_and_emit_tool_start(call_id: str, tname: str, args: Any) -> None:
+                _mark_ttft()
+                tool_starts[call_id] = time.monotonic()
+                args_preview = _compact_json(args, limit=320)
+                tool_trace.append(
+                    {
+                        "call_id": call_id,
+                        "tool_name": tname,
+                        "args_preview": args_preview,
+                        "success": True,
+                        "elapsed_ms": 0,
+                        "output_preview": "",
+                    }
+                )
+                _push(
+                    "tool_started",
+                    {
+                        "call_id": call_id,
+                        "tool_name": tname,
+                        "args_preview": args_preview,
+                    },
+                )
+
+            def _record_and_emit_tool_result(
+                call_id: str,
+                tname: str,
+                success: bool,
+                elapsed_ms: int,
+                out_str: str,
+            ) -> None:
+                preview = _compact_json(out_str, limit=1400)
+                for entry in reversed(tool_trace):
+                    if entry["call_id"] == call_id or entry["tool_name"] == tname:
+                        entry["success"] = success
+                        entry["elapsed_ms"] = elapsed_ms
+                        entry["output_preview"] = preview
+                        break
+                _push(
+                    "tool_result",
+                    {
+                        "call_id": call_id,
+                        "tool_name": tname,
+                        "success": success,
+                        "elapsed_ms": elapsed_ms,
+                        "output_preview": preview,
+                    },
+                )
+
             def _worker() -> None:
                 try:
                     clear_tool_cards()
                     agent_factory = _get_create_agent()
-                    agent = agent_factory(
-                        model=model,
-                        data_path=str(run_dir),
-                        is_ad_specialized=(profile_norm == "ad1"),
-                        api_key=api_key,
-                        base_url=base_url,
-                        streaming=True,
-                        max_iterations=body.max_iterations,
-                        sandbox_enabled=True,
+                    factory_kwargs: Dict[str, Any] = {
+                        "model": model,
+                        "data_path": str(run_dir),
+                        "is_ad_specialized": (profile_norm == "ad1"),
+                        "api_key": api_key,
+                        "base_url": base_url,
+                        "streaming": True,
+                        "max_iterations": min(body.max_iterations, 6) if speed_norm == "fast" else body.max_iterations,
+                        "sandbox_enabled": True,
+                    }
+                    try:
+                        sig = inspect.signature(agent_factory)
+                        has_var_kw = any(
+                            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                        )
+                        if has_var_kw or "speed_mode" in sig.parameters:
+                            factory_kwargs["speed_mode"] = speed_norm
+                    except Exception:
+                        pass
+
+                    agent = agent_factory(**factory_kwargs)
+
+                    # Parallel instant pre-grounding (<350 ms) in fast mode when running the real engine
+                    effective_prompt = contextual_prompt
+                    allow_preground = (
+                        speed_norm == "fast"
+                        and os.getenv("LIGASE_DISABLE_WEB_PREGROUND", "").strip().lower() not in ("1", "true", "yes")
+                        and (
+                            create_agent is None
+                            or os.getenv("LIGASE_FORCE_WEB_PREGROUND", "").strip() == "1"
+                        )
                     )
+                    if allow_preground:
+                        pregrounded_block = _parallel_preground_prompt(
+                            body.prompt,
+                            _record_and_emit_tool_start,
+                            _record_and_emit_tool_result,
+                        )
+                        if pregrounded_block:
+                            effective_prompt = f"{contextual_prompt}\n\n---\n\n{pregrounded_block}"
+
                     # On public Cloud Run, confine execution to AST-verified `run_python`,
                     # workspace `read_file`, and domain tools unless LIGASE_ALLOW_CLOUD_EXEC=1.
                     if IS_CLOUD and os.getenv("LIGASE_ALLOW_CLOUD_EXEC", "").strip() != "1":
@@ -863,81 +1212,71 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         if cancel_event.is_set():
                             raise InterruptedError("Run stopped by researcher.")
                         kind = getattr(ev, "kind", "") or ""
+                        ev_data = getattr(ev, "data", {}) or {}
                         if kind == "turn_started":
                             _push("turn_started", {"iteration": getattr(ev, "iteration", 0)})
                         elif kind == "tool_started":
-                            call_id = getattr(ev, "call_id", "") or f"call_{len(tool_trace) + 1}"
-                            tname = getattr(ev, "tool_name", "") or "tool"
-                            args = getattr(ev, "args", {}) or {}
-                            tool_starts[call_id] = time.monotonic()
-                            args_preview = _compact_json(args, limit=320)
-                            tool_trace.append(
-                                {
-                                    "call_id": call_id,
-                                    "tool_name": tname,
-                                    "args_preview": args_preview,
-                                    "success": True,
-                                    "elapsed_ms": 0,
-                                    "output_preview": "",
-                                }
-                            )
-                            _push(
-                                "tool_started",
-                                {
-                                    "call_id": call_id,
-                                    "tool_name": tname,
-                                    "args_preview": args_preview,
-                                },
-                            )
+                            call_id = getattr(ev, "call_id", "") or ev_data.get("call_id") or f"call_{len(tool_trace) + 1}"
+                            tname = getattr(ev, "tool_name", "") or ev_data.get("tool_name") or "tool"
+                            args = getattr(ev, "args", None) or ev_data.get("args") or {}
+                            _record_and_emit_tool_start(str(call_id), str(tname), args)
                         elif kind == "tool_progress":
-                            delta = getattr(ev, "delta", "") or ""
+                            delta = getattr(ev, "delta", "") or ev_data.get("delta", "") or ""
                             if delta:
                                 _push(
                                     "tool_progress",
                                     {
                                         "tool_name": getattr(ev, "tool_name", "tool"),
-                                        "delta": delta[:600],
+                                        "delta": str(delta)[:600],
                                     },
                                 )
                         elif kind == "tool_result":
-                            call_id = getattr(ev, "call_id", "") or ""
-                            tname = getattr(ev, "tool_name", "") or "tool"
-                            success = bool(getattr(ev, "success", True))
-                            out_str = getattr(ev, "output", "") or getattr(ev, "error", "") or ""
+                            call_id = str(getattr(ev, "call_id", "") or ev_data.get("call_id") or "")
+                            tname = str(getattr(ev, "tool_name", "") or ev_data.get("tool_name") or "tool")
+                            success = bool(getattr(ev, "success", ev_data.get("success", True)))
+                            out_str = str(
+                                getattr(ev, "output", "")
+                                or getattr(ev, "error", "")
+                                or ev_data.get("output", "")
+                                or ev_data.get("error", "")
+                                or ""
+                            )
                             started_at = tool_starts.get(call_id, time.monotonic())
                             elapsed_ms = max(1, int((time.monotonic() - started_at) * 1000))
-                            preview = _compact_json(out_str, limit=1400)
-                            for entry in reversed(tool_trace):
-                                if entry["call_id"] == call_id or entry["tool_name"] == tname:
-                                    entry["success"] = success
-                                    entry["elapsed_ms"] = elapsed_ms
-                                    entry["output_preview"] = preview
-                                    break
-                            _push(
-                                "tool_result",
-                                {
-                                    "call_id": call_id,
-                                    "tool_name": tname,
-                                    "success": success,
-                                    "elapsed_ms": elapsed_ms,
-                                    "output_preview": preview,
-                                },
-                            )
+                            _record_and_emit_tool_result(call_id, tname, success, elapsed_ms, out_str)
                         elif kind == "assistant_delta":
-                            delta = getattr(ev, "delta", "") or (getattr(ev, "data", {}) or {}).get("content", "")
+                            delta = getattr(ev, "delta", "") or ev_data.get("content", "") or ev_data.get("delta", "")
                             if delta:
+                                _mark_ttft()
                                 _push("assistant_delta", {"delta": str(delta)})
                         elif kind == "usage":
-                            usage_totals["input_tokens"] += int(getattr(ev, "input_tokens", 0) or 0)
-                            usage_totals["output_tokens"] += int(getattr(ev, "output_tokens", 0) or 0)
-                            usage_totals["total_tokens"] += int(getattr(ev, "total_tokens", 0) or 0)
-                            usage_totals["cached_input_tokens"] += int(getattr(ev, "cached_input_tokens", 0) or 0)
+                            uncached_inp = int(getattr(ev, "input_tokens", 0) or ev_data.get("input_tokens", 0) or 0)
+                            prompt_inp = int(getattr(ev, "prompt_tokens", 0) or ev_data.get("prompt_tokens", 0) or 0)
+                            out = int(getattr(ev, "output_tokens", 0) or ev_data.get("output_tokens", 0) or 0)
+                            tot = int(getattr(ev, "total_tokens", 0) or ev_data.get("total_tokens", 0) or 0)
+                            inferred_prompt = max(prompt_inp, max(0, tot - out) if tot > out else 0)
+                            cached = int(
+                                getattr(ev, "cached_input_tokens", 0)
+                                or ev_data.get("cached_input_tokens", 0)
+                                or ev_data.get("cache_read_tokens", 0)
+                                or (max(0, inferred_prompt - uncached_inp) if inferred_prompt > uncached_inp > 0 else 0)
+                            )
+                            full_inp = max(inferred_prompt, uncached_inp + cached)
+                            full_tot = max(tot, full_inp + out)
+                            ev_ttft = int(getattr(ev, "time_to_first_token_ms", 0) or ev_data.get("time_to_first_token_ms", 0) or 0)
+                            if ev_ttft > 0:
+                                _mark_ttft(ev_ttft)
+                            usage_totals["input_tokens"] += full_inp
+                            usage_totals["output_tokens"] += out
+                            usage_totals["total_tokens"] += full_tot
+                            usage_totals["cached_input_tokens"] += min(full_inp, cached)
 
                     agent.claw_agent.on_stream_event = _on_stream_event
-                    final_answer = agent.go(contextual_prompt)
+                    final_answer = agent.go(effective_prompt)
                     final_answer = merge_tool_cards(str(final_answer or "").strip())
                     elapsed_s = round(time.monotonic() - t0, 2)
                     iterations = int(getattr(agent.last_state, "iterations", 1) or 1)
+                    resolved_ttft_ms = ttft_holder[0] if ttft_holder else max(1, int(elapsed_s * 200))
 
                     # Detect any newly created figure files inside run_dir
                     figures: List[Dict[str, str]] = []
@@ -962,15 +1301,18 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         iterations=iterations,
                         tool_trace=tool_trace,
                     )
+                    report_bytes = len(report_md.encode("utf-8"))
                     (run_dir / "report.md").write_text(report_md, encoding="utf-8")
                     run_record = {
                         "run_id": run_id,
                         "thread_id": tid,
                         "model": model,
                         "profile": profile_norm,
+                        "speed_mode": speed_norm,
                         "prompt": body.prompt,
                         "answer": final_answer,
                         "elapsed_s": elapsed_s,
+                        "ttft_ms": resolved_ttft_ms,
                         "iterations": iterations,
                         "tool_trace": tool_trace,
                         "usage": usage_totals,
@@ -986,7 +1328,9 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                     msg_meta = {
                         "model": model,
                         "profile": profile_norm,
+                        "speed_mode": speed_norm,
                         "elapsed_s": elapsed_s,
+                        "ttft_ms": resolved_ttft_ms,
                         "iterations": iterations,
                         "tool_trace": tool_trace,
                         "usage": usage_totals,
@@ -1011,6 +1355,28 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         tool_trace=tool_trace,
                         usage=usage_totals,
                     )
+                    try:
+                        usage_tracker.record_study_run(
+                            run_id=run_id,
+                            client_id=cid,
+                            thread_id=tid,
+                            prompt=body.prompt,
+                            answer=final_answer,
+                            model=model,
+                            profile=profile_norm,
+                            mode=mode_norm,
+                            speed_mode=speed_norm,
+                            status="completed",
+                            elapsed_s=elapsed_s,
+                            ttft_ms=resolved_ttft_ms,
+                            iterations=iterations,
+                            tool_trace=tool_trace,
+                            usage=usage_totals,
+                            attachment_bytes=attachment_bytes,
+                            report_bytes=report_bytes,
+                        )
+                    except Exception:
+                        pass
                     _push(
                         "run_complete",
                         {
@@ -1019,8 +1385,10 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                             "thread_title": thread_title,
                             "model": model,
                             "profile": profile_norm,
+                            "speed_mode": speed_norm,
                             "content": final_answer,
                             "elapsed_s": elapsed_s,
+                            "ttft_ms": resolved_ttft_ms,
                             "iterations": iterations,
                             "tool_trace": tool_trace,
                             "usage": usage_totals,
@@ -1040,6 +1408,27 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         tool_trace=tool_trace,
                         usage=usage_totals,
                     )
+                    try:
+                        usage_tracker.record_study_run(
+                            run_id=run_id,
+                            client_id=cid,
+                            thread_id=tid,
+                            prompt=body.prompt,
+                            answer="",
+                            model=model,
+                            profile=profile_norm,
+                            mode=mode_norm,
+                            speed_mode=speed_norm,
+                            status="cancelled",
+                            elapsed_s=elapsed_s,
+                            ttft_ms=ttft_holder[0] if ttft_holder else 0,
+                            iterations=len(tool_trace),
+                            tool_trace=tool_trace,
+                            usage=usage_totals,
+                            attachment_bytes=attachment_bytes,
+                        )
+                    except Exception:
+                        pass
                     loop.call_soon_threadsafe(
                         q.put_nowait,
                         {"event": "run_cancelled", "data": {"run_id": run_id, "elapsed_s": elapsed_s}},
@@ -1056,6 +1445,27 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         tool_trace=tool_trace,
                         usage=usage_totals,
                     )
+                    try:
+                        usage_tracker.record_study_run(
+                            run_id=run_id,
+                            client_id=cid,
+                            thread_id=tid,
+                            prompt=body.prompt,
+                            answer="",
+                            model=model,
+                            profile=profile_norm,
+                            mode=mode_norm,
+                            speed_mode=speed_norm,
+                            status="failed",
+                            elapsed_s=elapsed_s,
+                            ttft_ms=ttft_holder[0] if ttft_holder else 0,
+                            iterations=len(tool_trace),
+                            tool_trace=tool_trace,
+                            usage=usage_totals,
+                            attachment_bytes=attachment_bytes,
+                        )
+                    except Exception:
+                        pass
                     loop.call_soon_threadsafe(
                         q.put_nowait,
                         {

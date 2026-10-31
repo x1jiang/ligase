@@ -30,6 +30,7 @@
     studio: "Research Studio | Ligase · Biomedical & NIAGADS Co-Scientist",
     mindmap: "Capabilities Mindmap | Ligase · Biomedical & NIAGADS Co-Scientist",
     "niagads-api": "NIAGADS Open Access API | Ligase · Biomedical & NIAGADS Co-Scientist",
+    usage: "Usage & Volume Ledger | Ligase · Biomedical & NIAGADS Co-Scientist",
   };
 
   const OA_PRESETS = [
@@ -52,11 +53,13 @@
     threads: [],
     activeThreadId: null,
     profile: "ad1",
+    speedMode: "fast", // "fast" | "deep"
     mode: "direct", // "direct" | "plan"
     maxIterations: 10,
     pendingUploads: [], // [{name, token, size_bytes}]
     activeRunId: null,
     abortController: null,
+    fullMetaLoaded: false,
     // Mindmap & Explorer render flags
     mmRendered: false,
     oaRendered: false,
@@ -66,6 +69,14 @@
     mmZoom: 1.0,
     mmCollapsed: new Set(),
     mmSelectedId: "mm_oa_variants",
+    // Usage & Volume Dashboard state
+    usageDays: "all",
+    usageData: null,
+    usageLedgerType: "all",
+    usageLedgerDomain: "",
+    usageLedgerSearch: "",
+    usageSortCol: "ts",
+    usageSortDir: "desc",
   };
 
   // ── DOM Elements ──────────────────────────────────────────────────────────
@@ -78,9 +89,12 @@
     threadList: document.getElementById("thread-list"),
     portalTablist: document.getElementById("portal-tablist"),
     studioProfileGroup: document.getElementById("studio-profile-group"),
+    studioSpeedGroup: document.getElementById("studio-speed-group"),
     studioModeGroup: document.getElementById("studio-mode-group"),
     profileAd1Btn: document.getElementById("profile-ad1-btn"),
     profileA1Btn: document.getElementById("profile-a1-btn"),
+    speedFastBtn: document.getElementById("speed-fast-btn"),
+    speedDeepBtn: document.getElementById("speed-deep-btn"),
     modeDirectBtn: document.getElementById("mode-direct-btn"),
     modePlanBtn: document.getElementById("mode-plan-btn"),
     statusDot: document.getElementById("status-dot"),
@@ -88,6 +102,7 @@
     panelStudio: document.getElementById("panel-studio"),
     panelMindmap: document.getElementById("panel-mindmap"),
     panelNiagadsApi: document.getElementById("panel-niagads-api"),
+    panelUsage: document.getElementById("panel-usage"),
     canvas: document.getElementById("canvas"),
     welcomeView: document.getElementById("welcome-view"),
     heroEyebrow: document.getElementById("hero-eyebrow"),
@@ -148,6 +163,48 @@
     oaSendStudioBtn: document.getElementById("oa-send-studio-btn"),
     oaCopyJsonBtn: document.getElementById("oa-copy-json-btn"),
     oaEndpointsTbody: document.getElementById("oa-endpoints-tbody"),
+    // Usage & Volume Dashboard elements
+    usageWindowSub: document.getElementById("usage-window-sub"),
+    usageRangeGroup: document.getElementById("usage-range-group"),
+    usageRefreshBtn: document.getElementById("usage-refresh-btn"),
+    usageExportDropdown: document.getElementById("usage-export-dropdown"),
+    usagePrintPdfBtn: document.getElementById("usage-print-pdf-btn"),
+    usageExportCsvLink: document.getElementById("usage-export-csv-link"),
+    usageExportJsonLink: document.getElementById("usage-export-json-link"),
+    usageExportMdLink: document.getElementById("usage-export-md-link"),
+    usagePulseGrid: document.getElementById("usage-pulse-grid"),
+    usageBriefList: document.getElementById("usage-brief-list"),
+    usageTileWall: document.getElementById("usage-tile-wall"),
+    usageTileCaption: document.getElementById("usage-tile-caption"),
+    usageSpendTotal: document.getElementById("usage-spend-total"),
+    usageSplitModel: document.getElementById("usage-split-model"),
+    usageSplitCloud: document.getElementById("usage-split-cloud"),
+    usageModelPct: document.getElementById("usage-model-pct"),
+    usageCloudPct: document.getElementById("usage-cloud-pct"),
+    usageCostKpis: document.getElementById("usage-cost-kpis"),
+    usagePricingNote: document.getElementById("usage-pricing-note"),
+    usageVolumeStrip: document.getElementById("usage-volume-strip"),
+    svgDailyVolume: document.getElementById("svg-daily-volume"),
+    svgCumulativeSpend: document.getElementById("svg-cumulative-spend"),
+    svgLatencyScatter: document.getElementById("svg-latency-scatter"),
+    svgArrivalHeatmap: document.getElementById("svg-arrival-heatmap"),
+    usageHeatmapSub: document.getElementById("usage-heatmap-sub"),
+    usageToolSub: document.getElementById("usage-tool-sub"),
+    usageToolBand: document.getElementById("usage-tool-band"),
+    usageToolList: document.getElementById("usage-tool-list"),
+    usageFunnelList: document.getElementById("usage-funnel-list"),
+    usageDomainBars: document.getElementById("usage-domain-bars"),
+    usageClearDomainBtn: document.getElementById("usage-clear-domain-btn"),
+    usageQualityDl: document.getElementById("usage-quality-dl"),
+    usageSavingsGrid: document.getElementById("usage-savings-grid"),
+    usageSavingsNote: document.getElementById("usage-savings-note"),
+    usageLedgerCount: document.getElementById("usage-ledger-count"),
+    usageTypeFilterGroup: document.getElementById("usage-type-filter-group"),
+    usageLedgerSearch: document.getElementById("usage-ledger-search"),
+    usageLedgerTable: document.getElementById("usage-ledger-table"),
+    usageLedgerTbody: document.getElementById("usage-ledger-tbody"),
+    usageWorkspacesTbody: document.getElementById("usage-workspaces-tbody"),
+    usageTooltip: document.getElementById("usage-tooltip"),
   };
 
   // ── API Helper ────────────────────────────────────────────────────────────
@@ -210,10 +267,11 @@
   function formatInlineMath(expr) {
     let m = escapeHtml(expr.trim());
     m = m.replace(/\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '<span class="math-rm">$1</span>');
+    m = m.replace(/(<\/span>)\{(<span class="math-rm">[^{}<]*<\/span>|[^{}]+)\}/g, "$1<sub>$2</sub>");
     m = m.replace(/\\([A-Za-z]+)/g, (full, cmd) => GREEK_MAP[cmd] || cmd);
     m = m.replace(/\\([%&_# ])/g, (_, ch) => (ch === " " ? "\u00a0" : ch));
-    m = m.replace(/_\{([^{}]+)\}/g, "<sub>$1</sub>");
-    m = m.replace(/\^\{([^{}]+)\}/g, "<sup>$1</sup>");
+    m = m.replace(/_\{(<span class="math-rm">[^{}<]*<\/span>|[^{}]+)\}/g, "<sub>$1</sub>");
+    m = m.replace(/\^\{(<span class="math-rm">[^{}<]*<\/span>|[^{}]+)\}/g, "<sup>$1</sup>");
     m = m.replace(/_([A-Za-z0-9]+)/g, "<sub>$1</sub>");
     m = m.replace(/\^([A-Za-z0-9+-]+)/g, "<sup>$1</sup>");
     return `<span class="math-inline">${m}</span>`;
@@ -227,8 +285,8 @@
       codeSpans.push(`<code>${escapeHtml(code)}</code>`);
       return `\u0000CODE${idx}\u0000`;
     });
-    s = s.replace(/\\\((.+?)\\\)|\$(?!\s)([^$\n]+?)(?<!\s)\$/g, (full, p1, p2) => {
-      const expr = p1 ?? p2 ?? "";
+    s = s.replace(/\\\[(.+?)\\\]|\$\$([^$\n]+?)\$\$|\\\((.+?)\\\)|\$(?!\s)([^$\n]+?)(?<!\s)\$/g, (full, d1, d2, p1, p2) => {
+      const expr = d1 ?? d2 ?? p1 ?? p2 ?? "";
       if (!expr || /^\d+(?:[.,]\d+)?$/.test(expr.trim())) return full;
       const idx = mathSpans.length;
       mathSpans.push(formatInlineMath(expr));
@@ -383,45 +441,74 @@
     return out.join("\n");
   }
 
-  // ── Accessible Multi-Tab Navigation ───────────────────────────────────────
+  // ── Accessible Multi-Tab Navigation (with Same-Document View Transitions) ──
+  function runMaybeViewTransition(mutateDom) {
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduceMotion && typeof document.startViewTransition === "function") {
+      try {
+        document.startViewTransition(mutateDom);
+        return;
+      } catch {}
+    }
+    mutateDom();
+  }
+
   async function switchPortalTab(tabId, { focusTab = false, updateHash = true } = {}) {
-    const valid = tabId === "mindmap" || tabId === "niagads-api" ? tabId : "studio";
+    const valid =
+      tabId === "mindmap" || tabId === "niagads-api" || tabId === "usage" ? tabId : "studio";
+    const changed = state.activeTab !== valid;
     state.activeTab = valid;
 
-    const tabButtons = Array.from(el.portalTablist.querySelectorAll('[role="tab"]'));
-    for (const btn of tabButtons) {
-      const isMatch = btn.dataset.tab === valid;
-      btn.setAttribute("aria-selected", isMatch ? "true" : "false");
-      if (isMatch) {
-        btn.removeAttribute("tabindex");
-      } else {
-        btn.setAttribute("tabindex", "-1");
+    const applyTabVisibility = () => {
+      const tabButtons = Array.from(el.portalTablist.querySelectorAll('[role="tab"]'));
+      for (const btn of tabButtons) {
+        const isMatch = btn.dataset.tab === valid;
+        btn.setAttribute("aria-selected", isMatch ? "true" : "false");
+        if (isMatch) {
+          btn.removeAttribute("tabindex");
+        } else {
+          btn.setAttribute("tabindex", "-1");
+        }
+        const li = btn.closest(".portal-tab-item");
+        if (li) li.classList.toggle("active", isMatch);
+        if (isMatch && focusTab) btn.focus();
       }
-      const li = btn.closest(".portal-tab-item");
-      if (li) li.classList.toggle("active", isMatch);
-      if (isMatch && focusTab) btn.focus();
-    }
 
-    el.panelStudio.hidden = valid !== "studio";
-    el.panelMindmap.hidden = valid !== "mindmap";
-    el.panelNiagadsApi.hidden = valid !== "niagads-api";
+      el.panelStudio.hidden = valid !== "studio";
+      el.panelMindmap.hidden = valid !== "mindmap";
+      el.panelNiagadsApi.hidden = valid !== "niagads-api";
+      el.panelUsage.hidden = valid !== "usage";
 
-    // Studio-specific topbar segmented switches
-    const isStudio = valid === "studio";
-    el.studioProfileGroup.hidden = !isStudio;
-    el.studioModeGroup.hidden = !isStudio;
+      // Studio-specific topbar segmented switches
+      const isStudio = valid === "studio";
+      el.studioProfileGroup.hidden = !isStudio;
+      el.studioSpeedGroup.hidden = !isStudio;
+      el.studioModeGroup.hidden = !isStudio;
 
-    // Sidebar view shortcut active highlight
-    for (const sc of document.querySelectorAll("[data-goto-tab]")) {
-      if (sc.classList.contains("ghost-footer-btn")) {
-        sc.classList.toggle("active", sc.dataset.gotoTab === valid);
+      // Sidebar view shortcut active highlight
+      for (const sc of document.querySelectorAll("[data-goto-tab]")) {
+        if (sc.classList.contains("ghost-footer-btn")) {
+          sc.classList.toggle("active", sc.dataset.gotoTab === valid);
+        }
       }
+    };
+
+    if (changed) {
+      runMaybeViewTransition(applyTabVisibility);
+    } else {
+      applyTabVisibility();
     }
 
     document.title = TAB_TITLES[valid] || TAB_TITLES.studio;
     if (updateHash) {
       try {
-        history.replaceState(null, "", valid === "studio" ? window.location.pathname : `#${valid}`);
+        const basePath =
+          window.location.pathname === "/usage" || window.location.pathname === "/admin"
+            ? "/"
+            : window.location.pathname;
+        history.replaceState(null, "", valid === "studio" ? basePath : `${basePath}#${valid}`);
       } catch {}
     }
     el.sidebar.classList.remove("open");
@@ -431,6 +518,8 @@
       requestAnimationFrame(() => drawMindmapConnectors());
     } else if (valid === "niagads-api") {
       await ensureOaCatalogLoaded();
+    } else if (valid === "usage") {
+      await ensureUsageLoaded();
     }
   }
 
@@ -1029,6 +1118,7 @@
       `;
       el.oaResultMarkdown.innerHTML = renderMarkdown(res.summary_markdown || "");
       el.oaResultJson.textContent = JSON.stringify(res.raw, null, 2);
+      state.usageData = null;
     } catch (err) {
       el.oaResultMeta.innerHTML = `<span class="oa-status-pill staged" style="color:var(--danger)">✗ Query Error</span>`;
       el.oaResultMarkdown.innerHTML = `<p style="color:var(--danger)">${escapeHtml(err.message)}</p>`;
@@ -1081,14 +1171,31 @@
     }
   }
 
+  function syncWorkflowHint() {
+    if (state.mode === "plan") {
+      el.workflowHint.textContent =
+        "Plan-then-Approve · review & edit numbered methodology before tools execute";
+    } else if (state.speedMode === "deep") {
+      el.workflowHint.textContent =
+        "🔬 Deep exploration · multi-round reasoning + full Biomni & NIAGADS tool suite";
+    } else {
+      el.workflowHint.textContent =
+        "⚡ Fast execution · parallel <350 ms pre-grounding + single-pass synthesis & report";
+    }
+  }
+
+  function setSpeedMode(speed) {
+    state.speedMode = speed === "deep" ? "deep" : "fast";
+    el.speedFastBtn.classList.toggle("active", state.speedMode === "fast");
+    el.speedDeepBtn.classList.toggle("active", state.speedMode === "deep");
+    syncWorkflowHint();
+  }
+
   function setMode(mode) {
     state.mode = mode === "plan" ? "plan" : "direct";
     el.modeDirectBtn.classList.toggle("active", state.mode === "direct");
     el.modePlanBtn.classList.toggle("active", state.mode === "plan");
-    el.workflowHint.textContent =
-      state.mode === "plan"
-        ? "Plan-then-Approve · review & edit numbered methodology before tools execute"
-        : "Direct execution · live NIAGADS API + tool trace & downloadable Markdown report";
+    syncWorkflowHint();
     el.sendBtn.textContent = state.mode === "plan" ? "Propose Plan ↵" : "Run Study ↵";
   }
 
@@ -1623,6 +1730,7 @@
           thread_id: state.activeThreadId,
           prompt,
           profile: state.profile,
+          speed_mode: state.speedMode,
           max_iterations: state.maxIterations,
           attachments: attachments.map((a) => a.token),
           approved_plan: approvedPlan,
@@ -1724,8 +1832,10 @@
             const finalMd = payload.content || streamedMarkdown;
             mdContainer.innerHTML = renderMarkdown(finalMd);
             const toolCount = (payload.tool_trace || []).length;
-            statusRight.textContent = `${payload.elapsed_s}s · ${payload.iterations} round${payload.iterations === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}`;
+            const ttftBadge = payload.ttft_ms ? ` · TTFT ${payload.ttft_ms} ms` : "";
+            statusRight.textContent = `${payload.elapsed_s}s${ttftBadge} · ${payload.iterations} round${payload.iterations === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}`;
             card.appendChild(buildArtifactBar(finalMd, payload));
+            state.usageData = null;
             await refreshThreads();
             scrollCanvasToBottom();
           } else if (eventName === "run_cancelled") {
@@ -1800,9 +1910,760 @@
     handleSubmitPrompt(el.chatInput.value);
   });
 
+  // ── Usage & Volume Executive Ledger (PPTX-Style Telemetry Dashboard) ──────
+  const numFmt = new Intl.NumberFormat("en-US");
+  const compactFmt = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+  const TOOL_COLORS = ["#0f766e", "#3b82f6", "#8b5cf6", "#d97706", "#ec4899", "#10b981", "#6366f1"];
+  const DOMAIN_COLORS = {
+    niagads_open_access: "#0f766e",
+    niagads_v2f: "#4f46e5",
+    adsp_ancestry: "#0284c7",
+    psp_tauopathy: "#d97706",
+    neuro_proteomics: "#7c3aed",
+    pharmacology: "#059669",
+    bioinformatics: "#e11d48",
+  };
+
+  function fmtUsd(val) {
+    const n = Number(val || 0);
+    if (n === 0) return "$0.0000";
+    if (n < 0.01) return `$${n.toFixed(4)}`;
+    return `$${n.toFixed(2)}`;
+  }
+
+  function fmtBytes(bytes) {
+    const b = Number(bytes || 0);
+    if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+    if (b >= 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${b} B`;
+  }
+
+  function showUsageTip(ev, htmlContent) {
+    if (!el.usageTooltip) return;
+    el.usageTooltip.innerHTML = htmlContent;
+    el.usageTooltip.hidden = false;
+    moveUsageTip(ev);
+  }
+
+  function moveUsageTip(ev) {
+    if (!el.usageTooltip || el.usageTooltip.hidden) return;
+    const x = Math.min(window.innerWidth - 160, Math.max(160, ev.clientX));
+    const y = Math.max(56, ev.clientY);
+    el.usageTooltip.style.setProperty("--tip-x", `${x}px`);
+    el.usageTooltip.style.setProperty("--tip-y", `${y}px`);
+  }
+
+  function hideUsageTip() {
+    if (el.usageTooltip) el.usageTooltip.hidden = true;
+  }
+
+  function syncUsageExportLinks() {
+    const d = encodeURIComponent(state.usageDays || "all");
+    if (el.usageExportCsvLink) el.usageExportCsvLink.href = `/api/usage/export.csv?days=${d}`;
+    if (el.usageExportJsonLink) el.usageExportJsonLink.href = `/api/usage/export.json?days=${d}`;
+    if (el.usageExportMdLink) el.usageExportMdLink.href = `/api/usage/export.md?days=${d}`;
+  }
+
+  async function ensureUsageLoaded(force = false) {
+    if (!force && state.usageData && state.usageData.window?.range === state.usageDays) {
+      renderUsageDashboard(state.usageData);
+      return;
+    }
+    await loadUsageDashboard(state.usageDays);
+  }
+
+  async function loadUsageDashboard(days = state.usageDays, { priority = "auto" } = {}) {
+    state.usageDays = days || "all";
+    syncUsageExportLinks();
+    for (const btn of el.usageRangeGroup.querySelectorAll("[data-usage-days]")) {
+      btn.classList.toggle("active", btn.dataset.usageDays === state.usageDays);
+    }
+    try {
+      const data = await apiFetch(`/api/usage?days=${encodeURIComponent(state.usageDays)}`, { priority });
+      state.usageData = data;
+      if (state.activeTab === "usage") {
+        renderUsageDashboard(data);
+      }
+    } catch (err) {
+      if (state.activeTab === "usage" && el.usageBriefList) {
+        el.usageBriefList.innerHTML = `<li style="color:var(--danger)">Failed to load telemetry: ${escapeHtml(err.message)}</li>`;
+      }
+    }
+  }
+
+  function buildSparklineSvg(points, priorAvg) {
+    const vals = points && points.length ? points : [0, 0, 0, 0, 0, 0, 0];
+    const maxV = Math.max(1e-6, ...vals, Number(priorAvg || 0) * 1.15);
+    const w = 86;
+    const h = 36;
+    const pad = 4;
+    const coords = vals.map((v, idx) => {
+      const x = pad + (idx / Math.max(1, vals.length - 1)) * (w - pad * 2);
+      const y = h - pad - (Number(v) / maxV) * (h - pad * 2);
+      return [x.toFixed(1), y.toFixed(1)];
+    });
+    const linePts = coords.map(([x, y]) => `${x},${y}`).join(" ");
+    const areaPts = `${pad},${h - pad} ${linePts} ${w - pad},${h - pad}`;
+    const avgY = (h - pad - (Math.min(maxV, Number(priorAvg || 0)) / maxV) * (h - pad * 2)).toFixed(1);
+    return `
+      <svg class="pulse-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+        <polygon points="${areaPts}" fill="currentColor" opacity="0.12" style="color:var(--brand-primary)"></polygon>
+        <line x1="${pad}" y1="${avgY}" x2="${w - pad}" y2="${avgY}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="2.5 2.5" opacity="0.6"></line>
+        <polyline points="${linePts}" fill="none" stroke="var(--brand-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      </svg>
+    `;
+  }
+
+  function renderUsageDashboard(data) {
+    if (!data) return;
+    const win = data.window || {};
+    const vol = data.volume || {};
+    const cost = data.cost || {};
+    const qual = data.quality || {};
+    const sav = data.savings || {};
+
+    el.usageWindowSub.innerHTML =
+      `Window: <strong>${escapeHtml(win.label || "All")}</strong> · Active Engine: <code>${escapeHtml(win.model || "gpt-6-luna")}</code> · ` +
+      `Refreshed <code>${escapeHtml(win.generated_at_iso || "")}</code>`;
+
+    // 1. 7-Day Pulse Sparklines
+    el.usagePulseGrid.innerHTML = (data.pulse || [])
+      .map((c) => {
+        const sign = c.delta_pct > 0 ? "+" : "";
+        return `
+          <div class="pulse-card">
+            <div>
+              <div class="pulse-label">${escapeHtml(c.label)}</div>
+              <div class="pulse-val-row">
+                <span class="pulse-val">${escapeHtml(c.display)}</span>
+                <span class="pulse-delta ${escapeHtml(c.delta_dir)}">${sign}${escapeHtml(c.delta_pct)}%</span>
+              </div>
+              <div class="pulse-sub">${escapeHtml(c.sub)}</div>
+            </div>
+            ${buildSparklineSvg(c.sparkline, c.prior_avg)}
+          </div>
+        `;
+      })
+      .join("");
+
+    // 2. "In brief" Executive Summary
+    el.usageBriefList.innerHTML = (data.brief || []).map((b) => `<li>${escapeHtml(b)}</li>`).join("");
+
+    // 3. Hero Tile Wall + Total Spend Split
+    const tiles = data.tiles || [];
+    el.usageTileCaption.textContent = `${numFmt.format(tiles.length)} recent request${tiles.length === 1 ? "" : "s"} · hover any tile to inspect latency, tools & cost`;
+    el.usageTileWall.innerHTML = "";
+    if (!tiles.length) {
+      el.usageTileWall.innerHTML = `<span class="setting-desc">No requests recorded yet — run a study or live NIAGADS query to populate the volume wall.</span>`;
+    } else {
+      for (const t of tiles) {
+        const tile = document.createElement("span");
+        tile.className = `usage-tile lvl-${t.level}`;
+        tile.setAttribute("role", "listitem");
+        tile.addEventListener("pointerenter", (ev) => {
+          showUsageTip(
+            ev,
+            `<strong>${escapeHtml(t.title)}</strong><br>` +
+              `${escapeHtml(t.domain_label)} · <code>${escapeHtml(t.event_type)}</code><br>` +
+              `Latency: ${(t.elapsed_ms / 1000).toFixed(2)}s · Tools: ${t.tool_count} · Tokens: ${numFmt.format(t.total_tokens)}<br>` +
+              `Cost: ${fmtUsd(t.total_cost_usd)} · ${escapeHtml(t.ts_iso)}`
+          );
+        });
+        tile.addEventListener("pointermove", moveUsageTip);
+        tile.addEventListener("pointerleave", hideUsageTip);
+        el.usageTileWall.appendChild(tile);
+      }
+    }
+
+    el.usageSpendTotal.textContent = fmtUsd(cost.total_usd);
+    const mPct = cost.total_usd > 0 ? Math.max(4, cost.model_pct) : 50;
+    const cPct = cost.total_usd > 0 ? Math.max(4, 100 - mPct) : 50;
+    el.usageSplitModel.style.width = `${mPct}%`;
+    el.usageSplitCloud.style.width = `${cPct}%`;
+    el.usageModelPct.textContent = `${cost.model_pct || 0}%`;
+    el.usageCloudPct.textContent = `${cost.cloud_pct || 0}%`;
+    el.usageCostKpis.innerHTML = `
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Model Token Spend</div>
+        <div class="mini-kpi-val">${fmtUsd(cost.model_usd)}</div>
+      </div>
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Cloud Run Compute</div>
+        <div class="mini-kpi-val">${fmtUsd(cost.cloud_usd)}</div>
+      </div>
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Avg Cost / Study</div>
+        <div class="mini-kpi-val">${fmtUsd(cost.avg_per_study_usd)}</div>
+      </div>
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Prompt Cache Hit</div>
+        <div class="mini-kpi-val">${escapeHtml(cost.cache_hit_pct || 0)}%</div>
+      </div>
+    `;
+    el.usagePricingNote.textContent = cost.pricing_note || "";
+
+    // 4. Four-Card Volume Strip
+    const pk = vol.peak_day || { date: "—", total_events: 0, total_tokens: 0 };
+    el.usageVolumeStrip.innerHTML = `
+      <div class="vol-card">
+        <div class="vol-card-lbl">Genomic &amp; Report Volume</div>
+        <div class="vol-card-val">${fmtBytes(vol.bytes_processed)}</div>
+        <div class="vol-card-sub">${numFmt.format(vol.completed_studies_count || 0)} reports · ${numFmt.format(vol.api_queries_count || 0)} live API payloads · ${numFmt.format(vol.uploads_count || 0)} uploads</div>
+      </div>
+      <div class="vol-card">
+        <div class="vol-card-lbl">Model Token Volume</div>
+        <div class="vol-card-val">${compactFmt.format(vol.total_tokens || 0)}</div>
+        <div class="vol-card-sub">In ${compactFmt.format(vol.input_tokens || 0)} · Out ${compactFmt.format(vol.output_tokens || 0)} · Cached ${compactFmt.format(vol.cached_tokens || 0)}</div>
+      </div>
+      <div class="vol-card">
+        <div class="vol-card-lbl">Workspaces &amp; Threads</div>
+        <div class="vol-card-val">${numFmt.format(vol.unique_workspaces || 0)}</div>
+        <div class="vol-card-sub">${numFmt.format(vol.threads_count || 0)} saved threads · ${escapeHtml(vol.avg_per_workspace || 0)} req / workspace</div>
+      </div>
+      <div class="vol-card">
+        <div class="vol-card-lbl">Peak Activity Day</div>
+        <div class="vol-card-val">${escapeHtml(pk.date)}</div>
+        <div class="vol-card-sub">${numFmt.format(pk.total_events || 0)} requests · ${compactFmt.format(pk.total_tokens || 0)} tokens</div>
+      </div>
+    `;
+
+    // 5. Interactive SVG Charts
+    renderDailyVolumeChart(data.timeline || []);
+    renderCumulativeSpendChart(data.timeline || []);
+    renderLatencyScatterChart(data.scatter || []);
+    renderArrivalHeatmapChart(data.heatmap || {});
+
+    // 6. Grounded Tool Mix & Funnel
+    const tools = data.tool_mix?.tools || [];
+    const totTools = data.tool_mix?.total_calls || 0;
+    el.usageToolSub.textContent = `${numFmt.format(totTools)} grounded tool & live endpoint call${totTools === 1 ? "" : "s"} in window`;
+    el.usageToolBand.innerHTML = tools.length
+      ? tools
+          .map(
+            (t) =>
+              `<span style="width:${Math.max(2, t.pct)}%;background:${TOOL_COLORS[t.color_idx % TOOL_COLORS.length]}" title="${escapeHtml(t.name)}: ${t.count} (${t.pct}%)"></span>`
+          )
+          .join("")
+      : `<span style="width:100%;background:var(--border-subtle)"></span>`;
+
+    el.usageToolList.innerHTML = tools.length
+      ? tools
+          .map(
+            (t) => `
+          <div class="tool-mix-row">
+            <span class="tool-mix-name">
+              <i class="legend-dot" style="background:${TOOL_COLORS[t.color_idx % TOOL_COLORS.length]}"></i>
+              ${escapeHtml(t.name)}
+            </span>
+            <span><strong>${numFmt.format(t.count)}</strong> (${t.pct}%)</span>
+            <span style="color:var(--text-muted)">${numFmt.format(t.median_ms)} ms med</span>
+          </div>
+        `
+          )
+          .join("")
+      : `<div class="setting-desc">No tool calls recorded in this window yet.</div>`;
+
+    el.usageFunnelList.innerHTML = (data.funnel || [])
+      .map(
+        (f) => `
+        <div class="funnel-row">
+          <div class="funnel-top">
+            <span>${escapeHtml(f.label)}</span>
+            <span><strong>${numFmt.format(f.count)}</strong> · ${f.pct_of_top}%</span>
+          </div>
+          <div class="funnel-track">
+            <div class="funnel-fill" style="width:${Math.max(2, f.pct_of_top)}%"></div>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+
+    // 7. Biomedical Domains & Quality DL
+    renderDomainBars(data.domains || []);
+    el.usageQualityDl.innerHTML = `
+      <div class="quality-item">
+        <dt>Median Study Runtime</dt>
+        <dd>${qual.median_elapsed_s || 0}s <span style="font-size:0.72rem;color:var(--text-muted)">(p90 ${qual.p90_elapsed_s || 0}s)</span></dd>
+      </div>
+      <div class="quality-item">
+        <dt>Median First-Event TTFT</dt>
+        <dd>${numFmt.format(qual.median_ttft_ms || 0)} ms</dd>
+      </div>
+      <div class="quality-item">
+        <dt>Study Completion Rate</dt>
+        <dd>${qual.completion_rate_pct ?? 100}%</dd>
+        <div class="quality-meter-track"><div class="quality-meter-fill" style="width:${qual.completion_rate_pct ?? 100}%"></div></div>
+      </div>
+      <div class="quality-item">
+        <dt>Exact Token Telemetry</dt>
+        <dd>${qual.exact_token_pct ?? 100}%</dd>
+        <div class="quality-meter-track"><div class="quality-meter-fill" style="width:${qual.exact_token_pct ?? 100}%"></div></div>
+      </div>
+      <div class="quality-item">
+        <dt>⚡ Fast Mode Share</dt>
+        <dd>${qual.fast_mode_pct ?? 100}%</dd>
+      </div>
+      <div class="quality-item">
+        <dt>Avg Tools / Study</dt>
+        <dd>${qual.avg_tools_per_study || 0}</dd>
+      </div>
+    `;
+
+    // 8. Estimated Researcher Time Saved
+    el.usageSavingsGrid.innerHTML = `
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Researcher Hours Saved</div>
+        <div class="mini-kpi-val">${sav.hours_saved || 0} hrs <span style="font-size:0.74rem;color:var(--text-muted)">(${sav.minutes_saved || 0} min)</span></div>
+      </div>
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Estimated Research Value</div>
+        <div class="mini-kpi-val">$${Number(sav.value_usd || 0).toFixed(2)}</div>
+      </div>
+      <div class="mini-kpi">
+        <div class="mini-kpi-lbl">Value / Compute Spend Multiple</div>
+        <div class="mini-kpi-val">${sav.net_roi_multiple ? `${sav.net_roi_multiple}×` : "—"}</div>
+      </div>
+    `;
+    el.usageSavingsNote.textContent = sav.assumptions_note || "";
+
+    // 9. Ledger & Workspaces Tables
+    renderUsageLedgerTable();
+    renderWorkspacesTable(data.workspaces || []);
+  }
+
+  function renderDomainBars(domains) {
+    el.usageClearDomainBtn.hidden = !state.usageLedgerDomain;
+    el.usageDomainBars.innerHTML = "";
+    if (!domains.length) {
+      el.usageDomainBars.innerHTML = `<div class="setting-desc">No domain traffic in window.</div>`;
+      return;
+    }
+    for (const d of domains) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "domain-bar-btn" + (state.usageLedgerDomain === d.id ? " active" : "");
+      const fillCol = DOMAIN_COLORS[d.id] || "var(--brand-primary)";
+      btn.innerHTML = `
+        <div class="domain-bar-top">
+          <span>${escapeHtml(d.label)}</span>
+          <span>${numFmt.format(d.count)} (${d.pct}%) · ${d.avg_elapsed_s}s avg</span>
+        </div>
+        <div class="domain-track">
+          <div class="domain-fill" style="width:${Math.max(2, d.pct)}%;background:${fillCol}"></div>
+        </div>
+      `;
+      btn.addEventListener("click", () => {
+        state.usageLedgerDomain = state.usageLedgerDomain === d.id ? "" : d.id;
+        renderDomainBars(domains);
+        renderUsageLedgerTable();
+      });
+      el.usageDomainBars.appendChild(btn);
+    }
+  }
+
+  function renderDailyVolumeChart(timeline) {
+    const svg = el.svgDailyVolume;
+    const W = 540;
+    const H = 210;
+    const padL = 36;
+    const padR = 14;
+    const padT = 16;
+    const padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const rows = timeline.length ? timeline : [{ date: "Today", studies: 0, api_queries: 0, triage: 0, total_events: 0 }];
+    const maxV = Math.max(1, ...rows.map((r) => r.total_events || 0));
+
+    let markup = `
+      <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--border-strong)" stroke-width="1"/>
+      <text x="${padL - 6}" y="${padT + 8}" text-anchor="end" font-size="10" fill="var(--text-muted)">${maxV}</text>
+      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
+    `;
+    const step = plotW / rows.length;
+    const barW = Math.max(3, Math.min(26, step * 0.68));
+    rows.forEach((r, idx) => {
+      const x = padL + idx * step + (step - barW) / 2;
+      const totH = ((r.total_events || 0) / maxV) * plotH;
+      const studyH = ((r.studies || 0) / maxV) * plotH;
+      const yTop = padT + plotH - totH;
+      const yStudy = padT + plotH - studyH;
+      const apiFill = r.is_peak ? "#d97706" : "#6366f1";
+      const studyFill = r.is_peak ? "#b45309" : "#0f766e";
+      markup += `<g class="chart-bar-grp" data-idx="${idx}">`;
+      if (totH > studyH) {
+        markup += `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${(totH - studyH).toFixed(1)}" rx="2" fill="${apiFill}" opacity="0.82"/>`;
+      }
+      if (studyH > 0) {
+        markup += `<rect x="${x.toFixed(1)}" y="${yStudy.toFixed(1)}" width="${barW.toFixed(1)}" height="${studyH.toFixed(1)}" rx="2" fill="${studyFill}"/>`;
+      }
+      markup += `<rect x="${(padL + idx * step).toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${plotH}" fill="transparent"/>`;
+      markup += `</g>`;
+      if (idx === 0 || idx === rows.length - 1 || idx === Math.floor(rows.length / 2)) {
+        markup += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(String(r.date).slice(5))}</text>`;
+      }
+    });
+    svg.innerHTML = markup;
+    for (const grp of svg.querySelectorAll(".chart-bar-grp")) {
+      const r = rows[Number(grp.dataset.idx)];
+      grp.addEventListener("pointerenter", (ev) => {
+        showUsageTip(
+          ev,
+          `<strong>${escapeHtml(r.date)}</strong>${r.is_peak ? " · 🔥 Peak Day" : ""}<br>` +
+            `Agent studies: <strong>${r.studies}</strong> · NIAGADS v2.0 API: <strong>${r.api_queries}</strong><br>` +
+            `Tokens: ${numFmt.format(r.total_tokens || 0)} · Spend: ${fmtUsd(r.spend_usd)}`
+        );
+      });
+      grp.addEventListener("pointermove", moveUsageTip);
+      grp.addEventListener("pointerleave", hideUsageTip);
+    }
+  }
+
+  function renderCumulativeSpendChart(timeline) {
+    const svg = el.svgCumulativeSpend;
+    const W = 540;
+    const H = 210;
+    const padL = 48;
+    const padR = 16;
+    const padT = 16;
+    const padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const rows = timeline.length ? timeline : [{ date: "Today", cumulative_spend_usd: 0, cumulative_tokens: 0 }];
+    const maxS = Math.max(0.0001, ...rows.map((r) => Number(r.cumulative_spend_usd || 0)));
+
+    const pts = rows.map((r, idx) => {
+      const x = padL + (idx / Math.max(1, rows.length - 1)) * plotW;
+      const y = padT + plotH - (Number(r.cumulative_spend_usd || 0) / maxS) * plotH;
+      return { x, y, r };
+    });
+    const lineStr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const areaStr = `${padL},${padT + plotH} ${lineStr} ${padL + plotW},${padT + plotH}`;
+
+    let markup = `
+      <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--border-strong)" stroke-width="1"/>
+      <text x="${padL - 6}" y="${padT + 8}" text-anchor="end" font-size="10" fill="var(--text-muted)">${fmtUsd(maxS)}</text>
+      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" font-size="10" fill="var(--text-muted)">$0</text>
+      <polygon points="${areaStr}" fill="#0f766e" opacity="0.14"/>
+      <polyline points="${lineStr}" fill="none" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+    pts.forEach((p, idx) => {
+      markup += `<circle class="cum-pt" data-idx="${idx}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="#0f766e" opacity="${rows.length > 35 ? "0" : "0.9"}"/>`;
+      if (idx === 0 || idx === pts.length - 1) {
+        markup += `<text x="${p.x.toFixed(1)}" y="${H - 8}" text-anchor="${idx === 0 ? "start" : "end"}" font-size="10" fill="var(--text-muted)">${escapeHtml(String(p.r.date).slice(5))}</text>`;
+      }
+    });
+    svg.innerHTML = markup;
+    for (const c of svg.querySelectorAll(".cum-pt")) {
+      const r = rows[Number(c.dataset.idx)];
+      c.addEventListener("pointerenter", (ev) => {
+        showUsageTip(
+          ev,
+          `<strong>${escapeHtml(r.date)}</strong><br>` +
+            `Cumulative Spend: <strong>${fmtUsd(r.cumulative_spend_usd)}</strong><br>` +
+            `Cumulative Tokens: <strong>${numFmt.format(r.cumulative_tokens || 0)}</strong>`
+        );
+      });
+      c.addEventListener("pointermove", moveUsageTip);
+      c.addEventListener("pointerleave", hideUsageTip);
+    }
+  }
+
+  function renderLatencyScatterChart(scatter) {
+    const svg = el.svgLatencyScatter;
+    const W = 540;
+    const H = 210;
+    const padL = 42;
+    const padR = 18;
+    const padT = 16;
+    const padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    if (!scatter.length) {
+      svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="12" fill="var(--text-muted)">Run a study in Research Studio to plot Latency vs. Grounded Tool Calls</text>`;
+      return;
+    }
+
+    const maxTools = Math.max(4, ...scatter.map((s) => s.tool_count || 0));
+    const maxSec = Math.max(5, ...scatter.map((s) => s.elapsed_s || 0.5));
+    let markup = `
+      <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--border-strong)" stroke-width="1"/>
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="var(--border-strong)" stroke-width="1"/>
+      <text x="${padL - 6}" y="${padT + 8}" text-anchor="end" font-size="10" fill="var(--text-muted)">${maxSec.toFixed(0)}s</text>
+      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" font-size="10" fill="var(--text-muted)">0s</text>
+      <text x="${padL}" y="${H - 8}" font-size="10" fill="var(--text-muted)">0 tools</text>
+      <text x="${W - padR}" y="${H - 8}" text-anchor="end" font-size="10" fill="var(--text-muted)">${maxTools} tools</text>
+    `;
+
+    scatter.forEach((pt, idx) => {
+      const x = padL + ((pt.tool_count || 0) / maxTools) * plotW;
+      const y = padT + plotH - (Math.min(maxSec, pt.elapsed_s || 0) / maxSec) * plotH;
+      const col = DOMAIN_COLORS[pt.domain] || "#0f766e";
+      const radius = pt.speed_mode === "fast" ? 5.2 : 6.4;
+      markup += `<circle class="scat-pt" data-idx="${idx}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius}" fill="${col}" fill-opacity="0.82" stroke="#ffffff" stroke-width="1.2" style="cursor:pointer"/>`;
+    });
+    svg.innerHTML = markup;
+    for (const c of svg.querySelectorAll(".scat-pt")) {
+      const pt = scatter[Number(c.dataset.idx)];
+      c.addEventListener("pointerenter", (ev) => {
+        showUsageTip(
+          ev,
+          `<strong>${escapeHtml(pt.title)}</strong><br>` +
+            `${escapeHtml(pt.domain_label)} · <code>${escapeHtml(pt.speed_mode)}</code><br>` +
+            `Latency: <strong>${pt.elapsed_s}s</strong> (TTFT ${pt.ttft_ms} ms) · Tools: <strong>${pt.tool_count}</strong><br>` +
+            `Tokens: ${numFmt.format(pt.total_tokens)} · Cost: ${fmtUsd(pt.cost_usd)}`
+        );
+      });
+      c.addEventListener("pointermove", moveUsageTip);
+      c.addEventListener("pointerleave", hideUsageTip);
+    }
+  }
+
+  function renderArrivalHeatmapChart(heatmap) {
+    const svg = el.svgArrivalHeatmap;
+    const days = heatmap.weekday_labels || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const grid = heatmap.grid || Array.from({ length: 7 }, () => Array(24).fill(0));
+    const maxC = Math.max(1, heatmap.max_count || 1);
+    el.usageHeatmapSub.textContent = `Weekday × UTC hour · Peak slot: ${heatmap.peak_slot || "—"}`;
+
+    const W = 540;
+    const H = 210;
+    const padL = 38;
+    const padR = 12;
+    const padT = 12;
+    const padB = 26;
+    const cellW = (W - padL - padR) / 24;
+    const cellH = (H - padT - padB) / 7;
+
+    let markup = "";
+    for (let d = 0; d < 7; d++) {
+      const y = padT + d * cellH;
+      markup += `<text x="${padL - 6}" y="${(y + cellH * 0.72).toFixed(1)}" text-anchor="end" font-size="9.5" fill="var(--text-muted)">${days[d]}</text>`;
+      for (let h = 0; h < 24; h++) {
+        const cnt = grid[d]?.[h] || 0;
+        const x = padL + h * cellW;
+        const alpha = cnt === 0 ? 0.08 : 0.22 + 0.78 * (cnt / maxC);
+        const fill = cnt === 0 ? "var(--border-strong)" : "#0f766e";
+        markup += `<rect class="hm-cell" data-d="${d}" data-h="${h}" data-cnt="${cnt}" x="${(x + 1).toFixed(1)}" y="${(y + 1).toFixed(1)}" width="${(cellW - 2).toFixed(1)}" height="${(cellH - 2).toFixed(1)}" rx="2.5" fill="${fill}" fill-opacity="${alpha.toFixed(2)}"/>`;
+      }
+    }
+    for (const hr of [0, 6, 12, 18, 23]) {
+      const hx = padL + hr * cellW + cellW / 2;
+      markup += `<text x="${hx.toFixed(1)}" y="${H - 7}" text-anchor="middle" font-size="9.5" fill="var(--text-muted)">${String(hr).padStart(2, "0")}h</text>`;
+    }
+    svg.innerHTML = markup;
+    for (const r of svg.querySelectorAll(".hm-cell")) {
+      r.addEventListener("pointerenter", (ev) => {
+        const dName = days[Number(r.dataset.d)];
+        const hh = String(r.dataset.h).padStart(2, "0");
+        showUsageTip(ev, `<strong>${dName} ${hh}:00 UTC</strong><br>${r.dataset.cnt} request(s)`);
+      });
+      r.addEventListener("pointermove", moveUsageTip);
+      r.addEventListener("pointerleave", hideUsageTip);
+    }
+  }
+
+  function renderUsageLedgerTable() {
+    const allRows = state.usageData?.ledger || [];
+    const q = state.usageLedgerSearch.trim().toLowerCase();
+    const filtered = allRows.filter((r) => {
+      if (state.usageLedgerType !== "all" && r.event_type !== state.usageLedgerType) return false;
+      if (state.usageLedgerDomain && r.domain !== state.usageLedgerDomain) return false;
+      if (!q) return true;
+      const hay = `${r.title} ${r.domain_label} ${r.workspace_label} ${r.event_type} ${r.id}`.toLowerCase();
+      return hay.includes(q);
+    });
+
+    const col = state.usageSortCol;
+    const dir = state.usageSortDir === "asc" ? 1 : -1;
+    filtered.sort((a, b) => ((Number(a[col]) || 0) - (Number(b[col]) || 0)) * dir);
+
+    el.usageLedgerCount.textContent =
+      `Showing ${numFmt.format(filtered.length)} of ${numFmt.format(allRows.length)} recorded requests` +
+      (state.usageLedgerDomain ? ` · Domain filter active` : "");
+
+    if (!filtered.length) {
+      el.usageLedgerTbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--text-muted)">No matching requests in this filter/window.</td></tr>`;
+      return;
+    }
+
+    const typeLabels = {
+      study_run: "Study",
+      niagads_api: "NIAGADS v2.0",
+      plan_triage: "Plan/Triage",
+      file_upload: "Upload",
+    };
+
+    el.usageLedgerTbody.innerHTML = filtered
+      .slice(0, 120)
+      .map((r) => {
+        const latStr = r.elapsed_ms >= 1000 ? `${(r.elapsed_ms / 1000).toFixed(2)}s` : `${r.elapsed_ms} ms`;
+        const modeBadge = r.event_type === "study_run" ? (r.speed_mode === "deep" ? "🔬 Deep" : "⚡ Fast") : "REST";
+        const repHtml = r.report_url
+          ? `<a href="${escapeHtml(r.report_url)}" class="link-btn" download>⬇ .md</a>`
+          : `<span style="color:var(--text-muted)">—</span>`;
+        return `
+          <tr>
+            <td>${escapeHtml(r.ts_iso.replace(" UTC", ""))}</td>
+            <td><span class="ledger-type-pill ${escapeHtml(r.event_type)}">${escapeHtml(typeLabels[r.event_type] || r.event_type)}</span></td>
+            <td><strong>${escapeHtml(r.title)}</strong></td>
+            <td>${escapeHtml(r.domain_label)}</td>
+            <td>${escapeHtml(modeBadge)}</td>
+            <td>${escapeHtml(latStr)}</td>
+            <td>${numFmt.format(r.tool_count || 0)}</td>
+            <td>${numFmt.format(r.total_tokens || 0)}</td>
+            <td>${fmtUsd(r.total_cost_usd)}</td>
+            <td>${repHtml}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function renderWorkspacesTable(workspaces) {
+    if (!workspaces.length) {
+      el.usageWorkspacesTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No active workspaces in this window.</td></tr>`;
+      return;
+    }
+    el.usageWorkspacesTbody.innerHTML = workspaces
+      .map(
+        (w) => `
+        <tr>
+          <td><strong>${escapeHtml(w.workspace_label)}</strong></td>
+          <td>${numFmt.format(w.studies)}</td>
+          <td>${numFmt.format(w.api_queries)}</td>
+          <td>${numFmt.format(w.tool_calls)}</td>
+          <td>${numFmt.format(w.total_tokens)}</td>
+          <td>${fmtUsd(w.spend_usd)}</td>
+          <td>${escapeHtml(w.last_seen_iso)}</td>
+        </tr>
+      `
+      )
+      .join("");
+  }
+
+  function exportSvgAsPng(svgId, filename) {
+    const svgEl = document.getElementById(svgId);
+    if (!svgEl) return;
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const resolvedText = getComputedStyle(document.documentElement).getPropertyValue("--text-muted").trim() || "#64748b";
+    const resolvedBorder = getComputedStyle(document.documentElement).getPropertyValue("--border-strong").trim() || "#cbd5e1";
+    const serialized = new XMLSerializer()
+      .serializeToString(clone)
+      .replace(/var\(--text-muted\)/g, resolvedText)
+      .replace(/var\(--border-strong\)/g, resolvedBorder)
+      .replace(/var\(--brand-primary\)/g, "#0f766e");
+
+    const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1080;
+      canvas.height = 420;
+      const ctx = canvas.getContext("2d");
+      const isDark = document.querySelector('meta[name="color-scheme"]')?.content === "dark";
+      ctx.fillStyle = isDark ? "#141e29" : "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const a = document.createElement("a");
+      a.download = filename || "ligase_chart.png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    img.src = url;
+  }
+
+  // Usage Dashboard Event Listeners
+  el.usageRangeGroup.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-usage-days]");
+    if (!btn) return;
+    loadUsageDashboard(btn.dataset.usageDays);
+  });
+
+  el.usageRefreshBtn.addEventListener("click", () => {
+    loadUsageDashboard(state.usageDays);
+  });
+
+  el.usagePrintPdfBtn.addEventListener("click", () => {
+    el.usageExportDropdown.open = false;
+    window.print();
+  });
+
+  el.usageClearDomainBtn.addEventListener("click", () => {
+    state.usageLedgerDomain = "";
+    renderDomainBars(state.usageData?.domains || []);
+    renderUsageLedgerTable();
+  });
+
+  el.usageTypeFilterGroup.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-ledger-type]");
+    if (!btn) return;
+    state.usageLedgerType = btn.dataset.ledgerType;
+    for (const b of el.usageTypeFilterGroup.querySelectorAll("[data-ledger-type]")) {
+      b.classList.toggle("active", b === btn);
+    }
+    renderUsageLedgerTable();
+  });
+
+  el.usageLedgerSearch.addEventListener("input", () => {
+    state.usageLedgerSearch = el.usageLedgerSearch.value;
+    renderUsageLedgerTable();
+  });
+
+  for (const sortBtn of el.usageLedgerTable.querySelectorAll("[data-sort-col]")) {
+    sortBtn.addEventListener("click", () => {
+      const col = sortBtn.dataset.sortCol;
+      if (state.usageSortCol === col) {
+        state.usageSortDir = state.usageSortDir === "desc" ? "asc" : "desc";
+      } else {
+        state.usageSortCol = col;
+        state.usageSortDir = "desc";
+      }
+      renderUsageLedgerTable();
+    });
+  }
+
+  for (const pngBtn of document.querySelectorAll("[data-export-svg]")) {
+    pngBtn.addEventListener("click", () => {
+      exportSvgAsPng(pngBtn.dataset.exportSvg, pngBtn.dataset.exportName);
+    });
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (
+      state.activeTab === "usage" &&
+      (ev.key === "r" || ev.key === "R") &&
+      !ev.metaKey &&
+      !ev.ctrlKey &&
+      !ev.altKey &&
+      !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName || "")
+    ) {
+      ev.preventDefault();
+      loadUsageDashboard(state.usageDays);
+    }
+  });
+
   // ── Dialog Controls & Light-Dismiss Fallback ──────────────────────────────
-  el.openCatalogBtn.addEventListener("click", () => el.catalogDialog.showModal());
-  el.inspectCatalogInline.addEventListener("click", () => el.catalogDialog.showModal());
+  async function ensureFullMetaLoaded() {
+    if (state.fullMetaLoaded && state.meta?.tools?.length) return;
+    try {
+      const fullMeta = await apiFetch("/api/meta", { priority: "low" });
+      applyMetaState(fullMeta, { full: true });
+    } catch {}
+  }
+
+  el.openCatalogBtn.addEventListener("click", async () => {
+    await ensureFullMetaLoaded();
+    el.catalogDialog.showModal();
+  });
+  el.inspectCatalogInline.addEventListener("click", async () => {
+    await ensureFullMetaLoaded();
+    el.catalogDialog.showModal();
+  });
   el.openSettingsBtn.addEventListener("click", () => el.settingsDialog.showModal());
 
   for (const dlg of [el.catalogDialog, el.settingsDialog]) {
@@ -1864,6 +2725,8 @@
   // ── Header / Sidebar Controls ─────────────────────────────────────────────
   el.profileAd1Btn.addEventListener("click", () => setProfile("ad1"));
   el.profileA1Btn.addEventListener("click", () => setProfile("a1"));
+  el.speedFastBtn.addEventListener("click", () => setSpeedMode("fast"));
+  el.speedDeepBtn.addEventListener("click", () => setSpeedMode("deep"));
   el.modeDirectBtn.addEventListener("click", () => setMode("direct"));
   el.modePlanBtn.addEventListener("click", () => setMode("plan"));
   el.newStudyBtn.addEventListener("click", startFreshStudy);
@@ -1873,7 +2736,7 @@
     state.maxIterations = Number(el.maxIterSelect.value) || 10;
   });
 
-  // ── Boot (Zero-Waterfall SSR Hydration + Low-Priority Background Sync) ────
+  // ── Boot (Ultra-Lean SSR Hydration + Idle Low-Priority Background Sync) ───
   function readServerBootstrap() {
     const node = document.getElementById("ligase-bootstrap");
     if (!node || !node.textContent) return null;
@@ -1884,45 +2747,80 @@
     }
   }
 
-  function applyMetaState(meta) {
-    state.meta = meta;
+  function applyMetaState(meta, { full = false } = {}) {
+    state.meta = { ...(state.meta || {}), ...meta };
+    if (full || meta.tools?.length) {
+      state.fullMetaLoaded = true;
+    }
     if (meta.niagads?.open_access) {
       state.oaCatalog = meta.niagads.open_access;
     }
-    el.appVersion.textContent = `v${meta.version}`;
-    el.modelBadgeText.textContent = meta.model;
-    el.statusDot.classList.toggle("offline", !meta.ready);
-    el.diagnosticsSummary.textContent = `Model: ${meta.model} · Engine: Ligase v${meta.version} · Sandbox: ${meta.sandbox_mode} · Ready: ${meta.ready ? "Yes" : "Missing API Key"}`;
+    el.appVersion.textContent = `v${state.meta.version}`;
+    el.modelBadgeText.textContent = state.meta.model;
+    el.statusDot.classList.toggle("offline", !state.meta.ready);
+    el.diagnosticsSummary.textContent = `Model: ${state.meta.model} · Engine: Ligase v${state.meta.version} · Sandbox: ${state.meta.sandbox_mode} · Ready: ${state.meta.ready ? "Yes" : "Missing API Key"}`;
     renderStarters();
-    renderCatalogDialog();
+    if (state.meta.tools?.length) {
+      renderCatalogDialog();
+    }
+  }
+
+  function scheduleIdlePrefetch() {
+    const runIdle =
+      typeof window.requestIdleCallback === "function"
+        ? (cb) => window.requestIdleCallback(cb, { timeout: 1200 })
+        : (cb) => setTimeout(cb, 180);
+
+    runIdle(async () => {
+      try {
+        if (!state.fullMetaLoaded) {
+          await ensureFullMetaLoaded();
+        }
+        if (!state.mindmap) {
+          state.mindmap = await apiFetch("/api/mindmap", { priority: "low" });
+        }
+        if (!state.usageData) {
+          await loadUsageDashboard(state.usageDays, { priority: "low" });
+        }
+      } catch {}
+    });
   }
 
   async function boot() {
     syncThemeButtons();
+    syncWorkflowHint();
+    syncUsageExportLinks();
+
     const bootstrap = readServerBootstrap();
     if (bootstrap?.mindmap) {
       state.mindmap = bootstrap.mindmap;
     }
-    if (bootstrap?.meta) {
-      applyMetaState(bootstrap.meta);
+    if (bootstrap?.boot) {
+      applyMetaState(bootstrap.boot, { full: false });
+    } else if (bootstrap?.meta) {
+      applyMetaState(bootstrap.meta, { full: true });
     } else {
       try {
         const meta = await apiFetch("/api/meta");
-        applyMetaState(meta);
+        applyMetaState(meta, { full: true });
       } catch (err) {
         el.statusDot.classList.add("offline");
         el.diagnosticsSummary.textContent = `Could not reach backend: ${err.message}`;
       }
     }
 
-    // Honor initial URL hash (#mindmap or #niagads-api) immediately without waiting on /api/threads
+    // Honor initial pathname (/usage, /admin) or URL hash (#mindmap, #niagads-api, #usage)
+    const pathLower = (window.location.pathname || "").toLowerCase();
     const hashTab = (window.location.hash || "").replace(/^#/, "").trim();
-    if (hashTab === "mindmap" || hashTab === "niagads-api") {
+    if (pathLower === "/usage" || pathLower === "/admin" || hashTab === "usage") {
+      switchPortalTab("usage", { updateHash: false });
+    } else if (hashTab === "mindmap" || hashTab === "niagads-api") {
       switchPortalTab(hashTab, { updateHash: false });
     }
 
-    // Fetch saved study threads in the background at low priority
+    // Fetch saved study threads and warm secondary tab payloads at low priority
     refreshThreads();
+    scheduleIdlePrefetch();
   }
 
   boot();

@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 # Ensure paths are set
 pkg_dir = Path(__file__).resolve().parent
@@ -51,6 +51,59 @@ from ligase.local_harness import (
 )
 
 
+_PERSISTENT_LOOP: Optional[asyncio.AbstractEventLoop] = None
+_PERSISTENT_LOOP_LOCK = threading.Lock()
+_SHARED_ASYNC_CLIENTS: Dict[Tuple[str, str, int], Any] = {}
+_DOMAIN_TOOLS_CACHE: Dict[Tuple[Tuple[str, ...], str], List[Any]] = {}
+_SYSTEM_PROMPT_CACHE: Dict[Tuple[str, bool, bool, str], str] = {}
+
+WEB_FAST_TOOLS = frozenset(
+    {
+        "niagads_open_access_api",
+        "query_niagads",
+        "lookup_compound",
+        "transcribe_translate",
+        "run_python",
+        "query_uniprot",
+        "query_ensembl",
+        "query_clinvar",
+        "query_gwas_catalog",
+        "query_opentarget",
+        "calculate_physicochemical_properties",
+    }
+)
+
+FAST_EXECUTION_DIRECTIVE = (
+    "### FAST EXECUTION PROTOCOL\n"
+    "1. If `[Pre-Grounded Verified Evidence]` is already present in the prompt, synthesize directly from those ground-truth records without re-calling tools for the same targets.\n"
+    "2. If additional database lookups or Python calculations are needed, issue ALL required tool calls in parallel in a single turn.\n"
+    "3. Immediately after tool results return, write a complete, quantitative, publication-grade Markdown synthesis (with comparison tables where appropriate). Never run redundant verification loops."
+)
+
+
+def _get_persistent_agent_loop() -> asyncio.AbstractEventLoop:
+    """Return a long-lived background asyncio event loop so AsyncOpenAI httpx pools stay warm across runs."""
+    global _PERSISTENT_LOOP
+    with _PERSISTENT_LOOP_LOCK:
+        if _PERSISTENT_LOOP is not None and _PERSISTENT_LOOP.is_running():
+            return _PERSISTENT_LOOP
+        ready = threading.Event()
+        holder: List[asyncio.AbstractEventLoop] = []
+
+        def _loop_runner() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            holder.append(loop)
+            ready.set()
+            loop.run_forever()
+
+        t = threading.Thread(target=_loop_runner, name="ligase-agent-loop", daemon=True)
+        t.start()
+        ready.wait(timeout=5.0)
+        _PERSISTENT_LOOP = holder[0]
+        return _PERSISTENT_LOOP
+
+
 class LigaseAgent:
     """
     Ligase Agent with ClawAgents high-performance backbone.
@@ -78,7 +131,7 @@ class LigaseAgent:
         self.trajectory_history: List[Dict[str, Any]] = []
 
     def go(self, prompt: str) -> str:
-        """Run a biomedical research task synchronously."""
+        """Run a biomedical research task synchronously on a warm persistent event loop."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -89,8 +142,10 @@ class LigaseAgent:
 
             nest_asyncio.apply()
             return loop.run_until_complete(self.go_async(prompt))
-        else:
-            return asyncio.run(self.go_async(prompt))
+
+        bg_loop = _get_persistent_agent_loop()
+        fut = asyncio.run_coroutine_threadsafe(self.go_async(prompt), bg_loop)
+        return fut.result()
 
     async def go_async(self, prompt: str) -> str:
         """Run a biomedical research task asynchronously."""
@@ -197,6 +252,8 @@ def create_agent(
     streaming: bool = False,
     max_iterations: int = 30,
     sandbox_enabled: bool = True,
+    speed_mode: str = "standard",
+    reasoning_effort: Optional[str] = None,
 ) -> LigaseAgent:
     """
     Factory to create a Ligase Agent.
@@ -212,9 +269,18 @@ def create_agent(
         streaming: Stream responses
         max_iterations: Max tool rounds
         sandbox_enabled: Run execution tools inside OS sandbox (seatbelt / bwrap)
+        speed_mode: "fast" (low-latency pre-grounded web mode), "deep", or "standard"
+        reasoning_effort: Optional explicit reasoning effort ("none"|"low"|"medium"|"high")
     """
+    speed_norm = (speed_mode or "standard").strip().lower()
+    if speed_norm not in ("fast", "deep", "standard"):
+        speed_norm = "standard"
+
     if modules is None:
-        modules = ["database", "literature", "genomics", "pharmacology", "biochemistry", "molecular_biology"]
+        if speed_norm == "fast":
+            modules = ["database", "literature", "pharmacology", "biochemistry"]
+        else:
+            modules = ["database", "literature", "genomics", "pharmacology", "biochemistry", "molecular_biology"]
 
     max_iterations = max(1, int(max_iterations))
     workspace_path = Path(data_path).expanduser().resolve()
@@ -231,59 +297,108 @@ def create_agent(
     if gemma_local:
         max_iterations = cap_gemma_iterations(max_iterations)
 
-    # Bridge domain tools into ClawAgents (keep focused lookup/code surface unless full tools requested)
-    domain_tools = attach_gemma_tools(get_biomni_claw_tools(modules=modules))
-    domain_tools = select_local_domain_tools(domain_tools)
-    if gemma_local:
-        domain_tools = select_gemma_domain_tools(domain_tools)
-
-    # Build system instructions
-    if compact_local:
-        instruction_parts = [
-            "You are Ligase, a biomedical research agent.",
-            "Answer from established knowledge when you can. Prefer a short, exact final answer.",
-            local_system_addendum(is_ad_specialized=is_ad_specialized),
-        ]
+    # Cached domain tool loading & pruning
+    mod_key = (tuple(modules), "gemma" if gemma_local else speed_norm)
+    domain_tools = _DOMAIN_TOOLS_CACHE.get(mod_key)
+    if domain_tools is None:
+        raw_tools = attach_gemma_tools(get_biomni_claw_tools(modules=modules, lazy=True))
+        selected = select_local_domain_tools(raw_tools)
         if gemma_local:
-            instruction_parts.append(GEMMA_OPERATING_RULES)
-    else:
-        instruction_parts = [
-            "You are Ligase, a state-of-the-art biomedical and life sciences AI research agent.",
-            "You possess deep expertise in genomics, bioinformatics, structural biology, pharmacology, and clinical research.",
-            "You have access to specialized biomedical database and analysis tools, as well as a sandboxed terminal for code execution.",
-            "Solve problems rigorously, retrieve ground-truth data, and provide precise, evidence-backed scientific conclusions.",
-        ]
-        dl_layer = BiomniDataLakeLayer(data_path=str(workspace_path), commercial_mode=commercial_mode)
-        dl_text = dl_layer.inject(None)
-        if dl_text:
-            instruction_parts.append(dl_text)
+            selected = select_gemma_domain_tools(selected)
+        elif speed_norm == "fast":
+            fast_subset = [t for t in selected if getattr(t, "name", "") in WEB_FAST_TOOLS]
+            selected = fast_subset or selected
+        domain_tools = list(selected)
+        _DOMAIN_TOOLS_CACHE[mod_key] = domain_tools
 
-        kh_layer = BiomniKnowHowLayer(commercial_mode=commercial_mode)
-        kh_text = kh_layer.inject(None)
-        if kh_text:
-            instruction_parts.append(kh_text)
+    # Cached system instruction construction
+    prompt_cache_key = (
+        "gemma" if gemma_local else ("local" if compact_local else speed_norm),
+        bool(is_ad_specialized),
+        bool(commercial_mode),
+        str(workspace_path) if speed_norm != "fast" else "fast_web",
+    )
+    system_instruction = _SYSTEM_PROMPT_CACHE.get(prompt_cache_key)
+    if system_instruction is None:
+        if compact_local:
+            instruction_parts = [
+                "You are Ligase, a biomedical research agent.",
+                "Answer from established knowledge when you can. Prefer a short, exact final answer.",
+                local_system_addendum(is_ad_specialized=is_ad_specialized),
+            ]
+            if gemma_local:
+                instruction_parts.append(GEMMA_OPERATING_RULES)
+        elif speed_norm == "fast":
+            instruction_parts = [
+                "You are Ligase, a high-speed quantitative biomedical and Alzheimer's genomics AI co-scientist.",
+                "You combine live NIAGADS Open Access v2.0 REST records, curated NIAGADS multi-omics cohorts, UniProt/Ensembl/NCBI/PubChem databases, and sandboxed Python bioinformatics.",
+                FAST_EXECUTION_DIRECTIVE,
+            ]
+            if is_ad_specialized:
+                ad_layer = BiomniADLayer()
+                ad_text = ad_layer.inject(None)
+                if ad_text:
+                    instruction_parts.append(ad_text)
+        else:
+            instruction_parts = [
+                "You are Ligase, a state-of-the-art biomedical and life sciences AI research agent.",
+                "You possess deep expertise in genomics, bioinformatics, structural biology, pharmacology, and clinical research.",
+                "You have access to specialized biomedical database and analysis tools, as well as a sandboxed terminal for code execution.",
+                "Solve problems rigorously, retrieve ground-truth data, and provide precise, evidence-backed scientific conclusions.",
+            ]
+            dl_layer = BiomniDataLakeLayer(data_path=str(workspace_path), commercial_mode=commercial_mode)
+            dl_text = dl_layer.inject(None)
+            if dl_text:
+                instruction_parts.append(dl_text)
 
-        if is_ad_specialized:
-            ad_layer = BiomniADLayer()
-            ad_text = ad_layer.inject(None)
-            if ad_text:
-                instruction_parts.append(ad_text)
+            kh_layer = BiomniKnowHowLayer(commercial_mode=commercial_mode)
+            kh_text = kh_layer.inject(None)
+            if kh_text:
+                instruction_parts.append(kh_text)
 
-    system_instruction = "\n\n".join(instruction_parts)
+            if is_ad_specialized:
+                ad_layer = BiomniADLayer()
+                ad_text = ad_layer.inject(None)
+                if ad_text:
+                    instruction_parts.append(ad_text)
+
+        system_instruction = "\n\n".join(instruction_parts)
+        _SYSTEM_PROMPT_CACHE[prompt_cache_key] = system_instruction
+
+    resolved_key = api_key or os.getenv("OPENAI_API_KEY")
+    resolved_effort = reasoning_effort or (os.getenv("LIGASE_REASONING_EFFORT") or "").strip() or None
+    if resolved_effort is None and not compact_local:
+        model_l = (model or "").strip().lower()
+        if model_l.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+            if speed_norm == "fast":
+                resolved_effort = "low"
+            elif speed_norm == "deep":
+                resolved_effort = "medium"
+
+    enable_fast_tier = os.getenv("LIGASE_OPENAI_FAST_TIER", "").strip().lower() in ("1", "true", "yes", "on")
 
     create_kwargs: Dict[str, Any] = {
         "model": model,
-        "api_key": api_key or os.getenv("OPENAI_API_KEY"),
+        "api_key": resolved_key,
         "base_url": resolved_base_url,
         "instruction": system_instruction,
         "tools": domain_tools,
+        "skills": [],
+        "memory": [],
         "streaming": streaming,
         "max_iterations": max_iterations,
         "workspace": str(workspace_path),
         "allow_full_access": not bool(sandbox_enabled),
         "tool_discovery": False,
+        "trajectory": False,
+        "rethink": False,
         "learn": False,
     }
+    if resolved_effort:
+        create_kwargs["reasoning_effort"] = resolved_effort
+    if enable_fast_tier:
+        create_kwargs["fast_mode"] = True
+
     if compact_local:
         create_kwargs.update(
             {
@@ -295,10 +410,27 @@ def create_agent(
                 "rethink": True,
                 "tool_discovery": False,
                 "memory": [],
+                "skills": [],
             }
         )
 
     claw_agent = create_claw_agent(**create_kwargs)
+
+    # Reuse persistent AsyncOpenAI HTTP/TLS connection pool across runs on the persistent agent loop
+    try:
+        llm_obj = getattr(claw_agent, "llm", None)
+        cur_client = getattr(llm_obj, "client", None)
+        if llm_obj is not None and cur_client is not None and type(cur_client).__name__ == "AsyncOpenAI":
+            bg_loop = _get_persistent_agent_loop()
+            pool_key = (resolved_key or "", resolved_base_url or "", id(bg_loop))
+            shared_client = _SHARED_ASYNC_CLIENTS.get(pool_key)
+            if shared_client is None:
+                _SHARED_ASYNC_CLIENTS[pool_key] = cur_client
+            else:
+                llm_obj.client = shared_client
+    except Exception:
+        pass
+
     try:
         import clawagents.graph.completion_handler as _ch
 
@@ -309,6 +441,13 @@ def create_agent(
         apply_gemma_tool_surface(claw_agent, domain_tools)
     elif compact_local:
         apply_local_tool_surface(claw_agent, domain_tools)
+    elif speed_norm == "fast":
+        registry = getattr(claw_agent, "tools", None)
+        if registry is not None and hasattr(registry, "list_registered") and hasattr(registry, "set_active_tools"):
+            wanted = set(WEB_FAST_TOOLS) | {"read_file", "retrieve_tool_result"}
+            active = {t.name for t in registry.list_registered() if t.name in wanted}
+            if active:
+                registry.set_active_tools(active)
     elif not os.getenv("TAVILY_API_KEY"):
         registry = getattr(claw_agent, "tools", None)
         if registry is not None and hasattr(registry, "list_registered") and hasattr(registry, "set_active_tools"):

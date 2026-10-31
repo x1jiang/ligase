@@ -66,7 +66,7 @@ ligase example apoe4
 | Command | What it does |
 |---|---|
 | `ligase` | Interactive prompt: type questions, `examples`, `exit` |
-| `ligase ui` | Launch the 3-tab Ligase Web Portal (`Research Studio`, `Capabilities Mindmap`, and live `NIAGADS Open Access API v2.0` explorer) |
+| `ligase ui` | Launch the 4-tab Ligase Web Portal (`Research Studio` with `⚡ Fast` / `🔬 Deep` modes, `Capabilities Mindmap`, live `NIAGADS Open Access API v2.0` explorer, and `Usage & Volume` `/usage` telemetry ledger) |
 | `ligase run "<question>"` | One study; prints tool calls live and the answer |
 | `ligase examples` | List ready-made studies |
 | `ligase example <name>` | Run one: `apoe4`, `imatinib`, `dna`, `niagads`, `adsp`, `psp`, `niagads_live` |

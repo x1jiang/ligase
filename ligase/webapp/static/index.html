@@ -28,7 +28,7 @@
     [hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.3.3">
+  <link rel="stylesheet" href="/static/styles.css?v=0.4.0">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.3.3</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.4.0</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -70,6 +70,9 @@
         </button>
         <button type="button" class="ghost-footer-btn" data-goto-tab="niagads-api">
           <span aria-hidden="true">🌐</span> NIAGADS Open Access API
+        </button>
+        <button type="button" class="ghost-footer-btn" data-goto-tab="usage">
+          <span aria-hidden="true">📊</span> Usage &amp; Volume
         </button>
       </div>
 
@@ -137,6 +140,20 @@
                 <span aria-hidden="true">🌐</span> NIAGADS Open Access API
               </button>
             </li>
+            <li role="presentation" class="portal-tab-item">
+              <button
+                type="button"
+                role="tab"
+                id="tab-usage"
+                class="portal-tab-btn"
+                aria-selected="false"
+                aria-controls="panel-usage"
+                tabindex="-1"
+                data-tab="usage"
+              >
+                <span aria-hidden="true">📊</span> Usage &amp; Volume
+              </button>
+            </li>
           </ul>
         </div>
 
@@ -149,12 +166,20 @@
               A1 · Biomedical
             </button>
           </div>
+          <div class="segmented compact" id="studio-speed-group" role="group" aria-label="Execution speed mode">
+            <button type="button" class="seg-btn active" data-speed="fast" id="speed-fast-btn" title="Parallel pre-grounding (<350 ms) + low-latency single-pass synthesis">
+              ⚡ Fast
+            </button>
+            <button type="button" class="seg-btn" data-speed="deep" id="speed-deep-btn" title="Multi-round deep reasoning and extended tool exploration">
+              🔬 Deep
+            </button>
+          </div>
           <div class="segmented compact" id="studio-mode-group" role="group" aria-label="Execution workflow">
             <button type="button" class="seg-btn active" data-mode="direct" id="mode-direct-btn">
-              ⚡ Direct
+              Direct
             </button>
             <button type="button" class="seg-btn" data-mode="plan" id="mode-plan-btn">
-              📋 Plan &amp; Approve
+              📋 Plan
             </button>
           </div>
           <div class="engine-pill" id="engine-pill">
@@ -187,7 +212,10 @@
                   <span aria-hidden="true">🧠</span> View Interactive Capabilities Mindmap (6 Pillars · 32 Components)
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
-                  <span aria-hidden="true">🌐</span> Open Live NIAGADS Open Access API v2.0 Console
+                  <span aria-hidden="true">🌐</span> Live NIAGADS Open Access API v2.0
+                </button>
+                <button type="button" class="hero-pill-btn secondary" data-goto-tab="usage">
+                  <span aria-hidden="true">📊</span> Usage &amp; Volume Ledger
                 </button>
               </div>
             </div>
@@ -475,6 +503,299 @@
           </div>
         </div>
       </div>
+
+      <!-- TAB PANEL 4: Usage, Volume & Cost Telemetry Ledger -->
+      <div
+        class="tab-panel usage-panel"
+        id="panel-usage"
+        role="tabpanel"
+        aria-labelledby="tab-usage"
+        hidden
+      >
+        <div class="portal-page-scroll usage-page-scroll">
+          <div class="page-banner usage-header-banner">
+            <div>
+              <div class="hero-eyebrow">USAGE · VOLUME · LATENCY · COST TELEMETRY</div>
+              <h2 class="page-heading">Usage &amp; Volume Ledger</h2>
+              <p class="page-lead" id="usage-window-sub">
+                Real-time audit of Research Studio runs, live NIAGADS Open Access v2.0 queries, grounded tool traces, token volume, and Cloud Run compute spend.
+              </p>
+            </div>
+
+            <div class="usage-toolbar">
+              <div class="segmented compact" id="usage-range-group" role="group" aria-label="Telemetry time window">
+                <button type="button" class="seg-btn" data-usage-days="7">7d</button>
+                <button type="button" class="seg-btn" data-usage-days="30">30d</button>
+                <button type="button" class="seg-btn" data-usage-days="90">90d</button>
+                <button type="button" class="seg-btn active" data-usage-days="all">All</button>
+              </div>
+
+              <button type="button" class="tool-chip-btn usage-live-btn" id="usage-refresh-btn" title="Refresh telemetry (shortcut: R)">
+                <span class="usage-live-dot" aria-hidden="true"></span>
+                <span>Refresh</span>
+                <kbd>R</kbd>
+              </button>
+
+              <details class="usage-export-dropdown" id="usage-export-dropdown">
+                <summary class="tool-chip-btn">⬇ Export ▾</summary>
+                <div class="usage-export-menu" role="menu">
+                  <button type="button" role="menuitem" id="usage-print-pdf-btn">🖨️ Print / Save as PDF</button>
+                  <a role="menuitem" id="usage-export-csv-link" href="/api/usage/export.csv?days=all" download>📦 CSV Bundle (.zip)</a>
+                  <a role="menuitem" id="usage-export-json-link" href="/api/usage/export.json?days=all" download>🧾 JSON Snapshot (.json)</a>
+                  <a role="menuitem" id="usage-export-md-link" href="/api/usage/export.md?days=all" download>📝 Executive Report (.md)</a>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- 1. 7-Day Pulse Sparkline Strip -->
+          <section class="usage-section" aria-label="Seven-day pulse metrics">
+            <div class="usage-pulse-grid" id="usage-pulse-grid"></div>
+          </section>
+
+          <!-- 2. Auto-Written Executive "In brief" Card -->
+          <section class="usage-section usage-brief-card" aria-label="Executive summary in brief">
+            <div class="usage-brief-head">
+              <span class="usage-kicker">IN BRIEF</span>
+              <span class="usage-provenance">Computed live from SQLite telemetry on every refresh · zero hand-typed figures</span>
+            </div>
+            <ul class="usage-brief-list" id="usage-brief-list"></ul>
+          </section>
+
+          <!-- 3. Hero Split: Study & API Volume Tile Wall + Total Spend Ledger -->
+          <section class="usage-hero-split" aria-label="Volume tile wall and cost breakdown">
+            <div class="usage-card usage-tile-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Study &amp; Live API Volume Wall</h3>
+                  <div class="usage-card-sub" id="usage-tile-caption">Newest first · shaded by grounded tool calls &amp; token density</div>
+                </div>
+                <div class="usage-ramp-legend" aria-hidden="true">
+                  <span>Light</span>
+                  <i class="tile-swatch lvl-1"></i>
+                  <i class="tile-swatch lvl-2"></i>
+                  <i class="tile-swatch lvl-3"></i>
+                  <i class="tile-swatch lvl-4"></i>
+                  <span>4+ tools</span>
+                </div>
+              </div>
+              <div class="usage-tile-wall" id="usage-tile-wall" role="list" aria-label="Recent studies and API requests"></div>
+            </div>
+
+            <div class="usage-card usage-spend-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Total Tracked Spend</h3>
+                  <div class="usage-card-sub">Model tokens + Cloud Run compute</div>
+                </div>
+              </div>
+              <div class="usage-big-spend" id="usage-spend-total">$0.0000</div>
+              <div class="usage-split-bar" id="usage-cost-split-bar" aria-hidden="true">
+                <span class="split-model" id="usage-split-model" style="width: 65%"></span>
+                <span class="split-cloud" id="usage-split-cloud" style="width: 35%"></span>
+              </div>
+              <div class="usage-split-legend">
+                <span><i class="legend-dot dot-model"></i> Model tokens (<strong id="usage-model-pct">0%</strong>)</span>
+                <span><i class="legend-dot dot-cloud"></i> Cloud compute (<strong id="usage-cloud-pct">0%</strong>)</span>
+              </div>
+              <div class="usage-mini-kpis" id="usage-cost-kpis"></div>
+              <p class="usage-footnote" id="usage-pricing-note"></p>
+            </div>
+          </section>
+
+          <!-- 4. Four-Card Volume Strip -->
+          <section class="usage-volume-strip" id="usage-volume-strip" aria-label="Aggregate data and token volume"></section>
+
+          <!-- 5. 2x2 Interactive SVG Charts Grid -->
+          <section class="usage-charts-grid usage-deferred-block" aria-label="Volume, cost, latency, and arrival charts">
+            <article class="usage-card usage-chart-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Daily Request Volume</h3>
+                  <div class="usage-card-sub">Agent studies + live NIAGADS v2.0 API queries per UTC day (peak highlighted)</div>
+                </div>
+                <button type="button" class="tool-chip-btn usage-png-btn" data-export-svg="svg-daily-volume" data-export-name="ligase_daily_volume.png">⬇ PNG</button>
+              </div>
+              <div class="usage-svg-wrap">
+                <svg id="svg-daily-volume" viewBox="0 0 540 210" role="img" aria-label="Daily studies and API queries bar chart"></svg>
+              </div>
+            </article>
+
+            <article class="usage-card usage-chart-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Cumulative Spend &amp; Token Trajectory</h3>
+                  <div class="usage-card-sub">Running total spend (USD) and cumulative model tokens across window</div>
+                </div>
+                <button type="button" class="tool-chip-btn usage-png-btn" data-export-svg="svg-cumulative-spend" data-export-name="ligase_cumulative_spend.png">⬇ PNG</button>
+              </div>
+              <div class="usage-svg-wrap">
+                <svg id="svg-cumulative-spend" viewBox="0 0 540 210" role="img" aria-label="Cumulative spend trajectory area chart"></svg>
+              </div>
+            </article>
+
+            <article class="usage-card usage-chart-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Study Latency vs. Grounded Tool Calls</h3>
+                  <div class="usage-card-sub">One point per study coloured by biomedical domain (⚡ Fast vs 🔬 Deep)</div>
+                </div>
+                <button type="button" class="tool-chip-btn usage-png-btn" data-export-svg="svg-latency-scatter" data-export-name="ligase_latency_vs_tools.png">⬇ PNG</button>
+              </div>
+              <div class="usage-svg-wrap">
+                <svg id="svg-latency-scatter" viewBox="0 0 540 210" role="img" aria-label="Study latency versus grounded tool calls scatter plot"></svg>
+              </div>
+            </article>
+
+            <article class="usage-card usage-chart-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">When Requests Arrive</h3>
+                  <div class="usage-card-sub" id="usage-heatmap-sub">Weekday × UTC hour arrival density</div>
+                </div>
+                <button type="button" class="tool-chip-btn usage-png-btn" data-export-svg="svg-arrival-heatmap" data-export-name="ligase_arrival_heatmap.png">⬇ PNG</button>
+              </div>
+              <div class="usage-svg-wrap">
+                <svg id="svg-arrival-heatmap" viewBox="0 0 540 210" role="img" aria-label="Weekday by hour arrival heatmap"></svg>
+              </div>
+            </article>
+          </section>
+
+          <!-- 6. Grounded Tool Mix & Execution Funnel -->
+          <section class="usage-two-col usage-deferred-block" aria-label="Grounded tool mix and workflow funnel">
+            <article class="usage-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Grounded Tool &amp; Endpoint Execution Mix</h3>
+                  <div class="usage-card-sub" id="usage-tool-sub">Share of grounded database, API, and Python verification calls</div>
+                </div>
+              </div>
+              <div class="usage-tool-band" id="usage-tool-band" aria-hidden="true"></div>
+              <div class="usage-tool-list" id="usage-tool-list"></div>
+            </article>
+
+            <article class="usage-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Research Execution Funnel</h3>
+                  <div class="usage-card-sub">Conversion from portal &amp; API traffic to archived Markdown reports</div>
+                </div>
+              </div>
+              <div class="usage-funnel-list" id="usage-funnel-list"></div>
+            </article>
+          </section>
+
+          <!-- 7. Biomedical Research Domains & Telemetry Quality -->
+          <section class="usage-two-col usage-deferred-block" aria-label="Biomedical domains and execution quality">
+            <article class="usage-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Volume by Biomedical Domain</h3>
+                  <div class="usage-card-sub">Click any domain bar to filter the audit ledger below</div>
+                </div>
+                <button type="button" class="link-btn" id="usage-clear-domain-btn" hidden>Clear domain filter ✕</button>
+              </div>
+              <div class="usage-domain-bars" id="usage-domain-bars"></div>
+            </article>
+
+            <article class="usage-card">
+              <div class="usage-card-head">
+                <div>
+                  <h3 class="usage-card-title">Speed, Reliability &amp; Telemetry Quality</h3>
+                  <div class="usage-card-sub">Measured responsiveness and exact-token coverage</div>
+                </div>
+              </div>
+              <dl class="usage-quality-dl" id="usage-quality-dl"></dl>
+            </article>
+          </section>
+
+          <!-- 8. Estimated Researcher Time Saved -->
+          <section class="usage-card usage-savings-card usage-deferred-block" aria-label="Estimated researcher time saved">
+            <div class="usage-card-head">
+              <div>
+                <h3 class="usage-card-title">Estimated Researcher Time Saved</h3>
+                <div class="usage-card-sub">Transparent benchmark against manual GenomicsDB, FILER, Cohort &amp; PubChem synthesis</div>
+              </div>
+            </div>
+            <div class="usage-savings-grid" id="usage-savings-grid"></div>
+            <p class="usage-footnote" id="usage-savings-note"></p>
+          </section>
+
+          <!-- 9. Filterable & Sortable Audit Ledger + Workspaces -->
+          <section class="usage-card usage-ledger-card usage-deferred-block" aria-label="Studies and API requests audit ledger">
+            <div class="usage-ledger-toolbar">
+              <div>
+                <h3 class="usage-card-title">Studies &amp; Live API Audit Ledger</h3>
+                <div class="usage-card-sub" id="usage-ledger-count">Showing all recorded requests</div>
+              </div>
+
+              <div class="usage-ledger-controls">
+                <div class="segmented compact" id="usage-type-filter-group" role="group" aria-label="Filter ledger by request type">
+                  <button type="button" class="seg-btn active" data-ledger-type="all">All</button>
+                  <button type="button" class="seg-btn" data-ledger-type="study_run">Studies</button>
+                  <button type="button" class="seg-btn" data-ledger-type="niagads_api">NIAGADS v2.0</button>
+                  <button type="button" class="seg-btn" data-ledger-type="plan_triage">Plan/Triage</button>
+                </div>
+
+                <label for="usage-ledger-search" class="visually-hidden">Search studies and API targets</label>
+                <input
+                  id="usage-ledger-search"
+                  type="search"
+                  class="usage-search-input"
+                  placeholder="Filter by gene, rsID, cohort, or workspace…"
+                >
+              </div>
+            </div>
+
+            <div tabindex="0" role="region" aria-label="Studies and API requests audit ledger table" class="table-wrapper">
+              <table id="usage-ledger-table" class="usage-table">
+                <caption>Chronological audit ledger of Research Studio studies, live NIAGADS v2.0 API queries, and triage calls</caption>
+                <thead>
+                  <tr>
+                    <th scope="col"><button type="button" class="sort-th-btn" data-sort-col="ts">When (UTC) ▾</button></th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Study / API Target</th>
+                    <th scope="col">Biomedical Domain</th>
+                    <th scope="col">Mode</th>
+                    <th scope="col"><button type="button" class="sort-th-btn" data-sort-col="elapsed_ms">Latency</button></th>
+                    <th scope="col"><button type="button" class="sort-th-btn" data-sort-col="tool_count">Tools</button></th>
+                    <th scope="col"><button type="button" class="sort-th-btn" data-sort-col="total_tokens">Tokens</button></th>
+                    <th scope="col"><button type="button" class="sort-th-btn" data-sort-col="total_cost_usd">Cost</button></th>
+                    <th scope="col">Report</th>
+                  </tr>
+                </thead>
+                <tbody id="usage-ledger-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="usage-card usage-deferred-block" aria-label="Active researcher workspaces">
+            <div class="usage-card-head">
+              <div>
+                <h3 class="usage-card-title">Researcher Workspaces</h3>
+                <div class="usage-card-sub">Aggregated study volume, live NIAGADS lookups, tokens, and spend per browser workspace</div>
+              </div>
+            </div>
+            <div tabindex="0" role="region" aria-label="Researcher workspaces summary table" class="table-wrapper">
+              <table class="usage-table">
+                <caption>Summary of study volume and spend grouped by anonymized researcher workspace</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Workspace</th>
+                    <th scope="col">Agent Studies</th>
+                    <th scope="col">Live NIAGADS Queries</th>
+                    <th scope="col">Grounded Tool Calls</th>
+                    <th scope="col">Total Tokens</th>
+                    <th scope="col">Tracked Spend</th>
+                    <th scope="col">Last Active (UTC)</th>
+                  </tr>
+                </thead>
+                <tbody id="usage-workspaces-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -544,7 +865,10 @@
     </div>
   </dialog>
 
+  <!-- Shared Hover Tooltip for Usage & Volume Charts / Tile Wall -->
+  <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
+
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.3.3" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.4.0" defer fetchpriority="high"></script>
 </body>
 </html>

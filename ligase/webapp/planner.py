@@ -5,7 +5,27 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any, Dict, List, Optional, Tuple
+
+_CLIENT_CACHE_LOCK = threading.Lock()
+_CLIENT_CACHE: Dict[Tuple[str, str], Any] = {}
+
+
+def _get_cached_openai_client(api_key: Optional[str], base_url: Optional[str]) -> Any:
+    from openai import OpenAI
+
+    key_tuple = (api_key or "not-needed", base_url or "")
+    with _CLIENT_CACHE_LOCK:
+        cached = _CLIENT_CACHE.get(key_tuple)
+        if cached is not None:
+            return cached
+        client_kwargs: Dict[str, Any] = {"api_key": key_tuple[0]}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        client = OpenAI(**client_kwargs)
+        _CLIENT_CACHE[key_tuple] = client
+        return client
 
 NEEDS_PLAN_SENTINEL = "NEEDS_PLAN"
 
@@ -70,6 +90,40 @@ def _extract_json_object(raw: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _chat_complete_fast(client: Any, *, model: str, messages: List[Dict[str, str]], max_tokens: int) -> Any:
+    model_l = (model or "").lower()
+    if model_l.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+        try:
+            return client.chat.completions.create(
+                model=model,
+                messages=messages,  # type: ignore[arg-type]
+                max_completion_tokens=max_tokens,
+                reasoning_effort="low",
+            )
+        except Exception:
+            pass
+    return client.chat.completions.create(
+        model=model,
+        messages=messages,  # type: ignore[arg-type]
+        max_completion_tokens=max_tokens,
+    )
+
+
+def _accumulate_usage(target: Dict[str, int], resp: Any) -> None:
+    u = getattr(resp, "usage", None)
+    if u is None:
+        return
+    inp = int(getattr(u, "prompt_tokens", 0) or getattr(u, "input_tokens", 0) or 0)
+    out = int(getattr(u, "completion_tokens", 0) or getattr(u, "output_tokens", 0) or 0)
+    tot = int(getattr(u, "total_tokens", 0) or (inp + out))
+    details = getattr(u, "prompt_tokens_details", None)
+    cached = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+    target["input_tokens"] += inp
+    target["output_tokens"] += out
+    target["total_tokens"] += tot
+    target["cached_input_tokens"] += cached
+
+
 def _sync_triage_and_plan(
     *,
     prompt: str,
@@ -80,12 +134,8 @@ def _sync_triage_and_plan(
     base_url: Optional[str],
     revision_note: Optional[str] = None,
 ) -> Dict[str, Any]:
-    from openai import OpenAI
-
-    client_kwargs: Dict[str, Any] = {"api_key": api_key or "not-needed"}
-    if base_url:
-        client_kwargs["base_url"] = base_url
-    client = OpenAI(**client_kwargs)
+    client = _get_cached_openai_client(api_key, base_url)
+    usage_acc = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cached_input_tokens": 0}
 
     # If the user explicitly asked to revise an existing plan, skip triage.
     if not revision_note:
@@ -95,14 +145,16 @@ def _sync_triage_and_plan(
                 triage_msgs.append({"role": turn["role"], "content": turn["content"][:1200]})
         triage_msgs.append({"role": "user", "content": prompt})
         try:
-            t_resp = client.chat.completions.create(
+            t_resp = _chat_complete_fast(
+                client,
                 model=model,
-                messages=triage_msgs,  # type: ignore[arg-type]
-                max_completion_tokens=220,
+                messages=triage_msgs,
+                max_tokens=220,
             )
+            _accumulate_usage(usage_acc, t_resp)
             t_text = (t_resp.choices[0].message.content or "").strip()
             if t_text and NEEDS_PLAN_SENTINEL not in t_text:
-                return {"needs_plan": False, "direct_answer": t_text}
+                return {"needs_plan": False, "direct_answer": t_text, "usage": usage_acc}
         except Exception:
             pass
 
@@ -121,11 +173,13 @@ def _sync_triage_and_plan(
             plan_msgs.append({"role": turn["role"], "content": turn["content"][:1000]})
     plan_msgs.append({"role": "user", "content": user_payload})
 
-    resp = client.chat.completions.create(
+    resp = _chat_complete_fast(
+        client,
         model=model,
-        messages=plan_msgs,  # type: ignore[arg-type]
-        max_completion_tokens=700,
+        messages=plan_msgs,
+        max_tokens=700,
     )
+    _accumulate_usage(usage_acc, resp)
     raw = (resp.choices[0].message.content or "").strip()
     parsed = _extract_json_object(raw) or {}
 
@@ -157,6 +211,7 @@ def _sync_triage_and_plan(
         "tools": tools,
         "datasets": datasets,
         "plan_markdown": "\n".join(md_lines),
+        "usage": usage_acc,
     }
 
 

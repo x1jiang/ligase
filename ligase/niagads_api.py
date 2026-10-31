@@ -25,13 +25,16 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.3.3 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
-_DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "12.0"))
-_CACHE_TTL_S = 300.0
-_CACHE_MAX_SIZE = 256
+_UA = "Ligase/0.4.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
+_CACHE_TTL_S = 900.0
+_CACHE_MAX_SIZE = 512
 
 _CACHE_LOCK = threading.Lock()
 _CACHE: Dict[str, Tuple[float, Any]] = {}
+_ORIG_URLOPEN = urllib.request.urlopen
+_HTTPX_LOCK = threading.Lock()
+_HTTPX_CLIENTS: Dict[bool, Any] = {}
 
 _RSID_RE = re.compile(r"^rs\d+$", re.I)
 _ENSEMBL_GENE_RE = re.compile(r"^ENSG\d{8,}$", re.I)
@@ -262,6 +265,26 @@ def clear_niagads_api_cache() -> None:
         _CACHE.clear()
 
 
+def _get_httpx_client(verify_ssl: bool = True) -> Optional[Any]:
+    with _HTTPX_LOCK:
+        if verify_ssl in _HTTPX_CLIENTS:
+            return _HTTPX_CLIENTS[verify_ssl]
+        try:
+            import httpx
+
+            limits = httpx.Limits(max_keepalive_connections=16, max_connections=32, keepalive_expiry=60.0)
+            client = httpx.Client(
+                verify=verify_ssl,
+                follow_redirects=True,
+                limits=limits,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+            )
+            _HTTPX_CLIENTS[verify_ssl] = client
+            return client
+        except Exception:
+            return None
+
+
 def _http_get_json(url: str, timeout: float = _DEFAULT_TIMEOUT_S) -> Any:
     now = time.monotonic()
     with _CACHE_LOCK:
@@ -269,36 +292,66 @@ def _http_get_json(url: str, timeout: float = _DEFAULT_TIMEOUT_S) -> Any:
         if cached and (now - cached[0]) < _CACHE_TTL_S:
             return cached[1]
 
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": _UA,
-            "Accept": "application/json",
-        },
-    )
-    last_err: Optional[Exception] = None
     payload: Any = None
-    for ctx in _ssl_contexts():
-        try:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
-                payload = json.loads(raw)
+    last_err: Optional[Exception] = None
+
+    # Fast persistent keep-alive pool via httpx when urllib.request.urlopen is not monkeypatched in tests.
+    if urllib.request.urlopen is _ORIG_URLOPEN:
+        allow_insecure = os.getenv("LIGASE_INSECURE_SSL", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+        )
+        verify_modes = [True, False] if allow_insecure else [True]
+        for verify_ssl in verify_modes:
+            client = _get_httpx_client(verify_ssl=verify_ssl)
+            if client is None:
                 break
-        except ssl.SSLError as exc:
-            last_err = exc
-            continue
-        except urllib.error.HTTPError as exc:
-            body_preview = ""
             try:
-                body_preview = exc.read().decode("utf-8", errors="replace")[:400]
-            except Exception:
-                pass
-            raise RuntimeError(f"HTTP {exc.code} from {url}: {body_preview or exc.reason}") from exc
-        except urllib.error.URLError as exc:
-            last_err = exc
-            if "CERTIFICATE" not in str(exc).upper() and "SSL" not in str(exc).upper():
+                resp = client.get(url, timeout=timeout)
+                if resp.status_code >= 400:
+                    body_preview = (resp.text or "")[:400]
+                    raise RuntimeError(f"HTTP {resp.status_code} from {url}: {body_preview or resp.reason_phrase}")
+                payload = resp.json()
+                break
+            except RuntimeError:
                 raise
-            continue
+            except Exception as exc:
+                last_err = exc
+                if verify_ssl and ("SSL" in str(exc).upper() or "CERTIFICATE" in str(exc).upper()):
+                    continue
+                break
+
+    if payload is None:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": _UA,
+                "Accept": "application/json",
+            },
+        )
+        for ctx in _ssl_contexts():
+            try:
+                with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    payload = json.loads(raw)
+                    break
+            except ssl.SSLError as exc:
+                last_err = exc
+                continue
+            except urllib.error.HTTPError as exc:
+                body_preview = ""
+                try:
+                    body_preview = exc.read().decode("utf-8", errors="replace")[:400]
+                except Exception:
+                    pass
+                raise RuntimeError(f"HTTP {exc.code} from {url}: {body_preview or exc.reason}") from exc
+            except urllib.error.URLError as exc:
+                last_err = exc
+                if "CERTIFICATE" not in str(exc).upper() and "SSL" not in str(exc).upper():
+                    raise
+                continue
 
     if payload is None:
         if last_err:
