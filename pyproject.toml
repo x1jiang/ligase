@@ -73,7 +73,7 @@ providers = [
 ]
 web = [
     "fastapi>=0.110.0",
-    "uvicorn>=0.29.0",
+    "uvicorn[standard]>=0.29.0",
 ]
 all = [
     "ligase[genomics,providers,web]",

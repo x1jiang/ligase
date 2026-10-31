@@ -200,3 +200,43 @@ def test_cron_digest_token_enforcement_and_delivery(tmp_path: Path, monkeypatch:
         assert res["item_count"] == 1
         assert len(_FakeSMTP.sent_messages) == 1
 
+
+def test_deferred_hydration_fast_cold_boot_still_recovers_persistent_state(tmp_path: Path) -> None:
+    """Verify scale-from-zero deferred GCS hydration skips init blocking yet serves all persisted data."""
+    from ligase.webapp.feedback import FeedbackManager
+    from ligase.webapp.store import ThreadStore
+    from ligase.webapp.usage_tracker import UsageTracker
+
+    persist_root = tmp_path / "gcs_fuse_sim"
+    db_a = tmp_path / "inst_a" / "ligase.sqlite3"
+    store_a = ThreadStore(db_a, persistent_root=persist_root)
+    th = store_a.create_thread("cli_coldboot_01", title="Cold Boot Persistence Check")
+    tracker_a = UsageTracker(db_a, persistent_dir=persist_root / "usage_events")
+    tracker_a.record_niagads_api_call(
+        client_id="cli_coldboot_01",
+        action="gene",
+        target="APOE",
+        endpoint="/service/gene/APOE",
+        ok=True,
+        elapsed_ms=95,
+        payload_bytes=2048,
+    )
+
+    # New instance boots with defer_hydration=True (zero FUSE scandir/mkdir during __init__)
+    db_b = tmp_path / "inst_b" / "ligase.sqlite3"
+    store_b = ThreadStore(db_b, persistent_root=persist_root, defer_hydration=True)
+    tracker_b = UsageTracker(db_b, persistent_dir=persist_root / "usage_events", defer_hydration=True)
+    fb_b = FeedbackManager(persist_root, defer_dirs=True)
+    assert store_b._last_sync_m == 0.0
+    assert tracker_b._last_sync_monotonic == 0.0
+
+    # Even if queried immediately before background hydration runs, on-demand sync recovers everything
+    threads = store_b.list_threads("cli_coldboot_01")
+    assert any(t["id"] == th["id"] for t in threads)
+    summary = tracker_b.get_dashboard_summary(days="all")
+    assert len(summary["ledger"]) == 1
+    assert summary["ledger"][0]["event_type"] == "niagads_api"
+    rec = fb_b.save_feedback(comment="Fast cold boot comment check", client_id="cli_coldboot_01")
+    assert (persist_root / "feedback" / "events" / f"{rec['id']}.json").is_file()
+
+

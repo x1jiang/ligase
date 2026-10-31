@@ -32,4 +32,4 @@ RUN useradd --create-home --uid 10001 ligase \
 USER ligase
 EXPOSE 8080
 
-CMD ["sh", "-c", "exec python -m uvicorn ligase.webapp.server:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
+CMD ["sh", "-c", "exec uvicorn ligase.webapp.server:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 --loop auto --http auto --no-access-log"]

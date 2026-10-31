@@ -9,18 +9,33 @@ import sqlite3
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _safe_id(raw: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]", "_", (raw or "").strip())[:96] or "item"
 
 
+def _read_json_file(path_str: str) -> Optional[Dict[str, Any]]:
+    try:
+        obj = json.loads(Path(path_str).read_text(encoding="utf-8"))
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
 class ThreadStore:
     """Thread-safe SQLite store scoped per client workspace key, with optional persistent-volume mirroring."""
 
-    def __init__(self, db_path: Path, persistent_root: Optional[Path] = None):
+    def __init__(
+        self,
+        db_path: Path,
+        persistent_root: Optional[Path] = None,
+        *,
+        defer_hydration: bool = False,
+    ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.persistent_root = Path(persistent_root).resolve() if persistent_root is not None else None
@@ -29,20 +44,21 @@ class ThreadStore:
         if self.persistent_root is not None:
             self.threads_dir = self.persistent_root / "threads"
             self.runs_meta_dir = self.persistent_root / "runs_meta"
-            self.threads_dir.mkdir(parents=True, exist_ok=True)
-            self.runs_meta_dir.mkdir(parents=True, exist_ok=True)
+            if not defer_hydration:
+                self.threads_dir.mkdir(parents=True, exist_ok=True)
+                self.runs_meta_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._synced_threads: Dict[str, int] = {}
         self._synced_runs: Dict[str, int] = {}
         self._last_sync_m: float = 0.0
-        self._init_db()
+        self._init_db(hydrate=not defer_hydration)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _init_db(self) -> None:
+    def _init_db(self, *, hydrate: bool = True) -> None:
         with self._lock, self._connect() as conn:
             conn.executescript(
                 """
@@ -92,12 +108,24 @@ class ThreadStore:
                     ON runs(client_id, created_at DESC);
                 """
             )
-            self._sync_from_persistent_unlocked(conn, force=True)
+            if hydrate:
+                self._sync_from_persistent_unlocked(conn, force=True)
+
+    def sync_from_persistent_storage(self, force: bool = True) -> None:
+        if self.persistent_root is None:
+            return
+        if self.threads_dir is not None:
+            self.threads_dir.mkdir(parents=True, exist_ok=True)
+        if self.runs_meta_dir is not None:
+            self.runs_meta_dir.mkdir(parents=True, exist_ok=True)
+        with self._lock, self._connect() as conn:
+            self._sync_from_persistent_unlocked(conn, force=force)
 
     def _persist_thread_unlocked(self, conn: sqlite3.Connection, thread_id: str) -> None:
         if self.threads_dir is None:
             return
         try:
+            self.threads_dir.mkdir(parents=True, exist_ok=True)
             t_row = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
             if not t_row:
                 return
@@ -123,6 +151,7 @@ class ThreadStore:
         if self.runs_meta_dir is None:
             return
         try:
+            self.runs_meta_dir.mkdir(parents=True, exist_ok=True)
             r_row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
             if not r_row:
                 return
@@ -145,6 +174,7 @@ class ThreadStore:
         self._last_sync_m = now_m
 
         if self.threads_dir and self.threads_dir.is_dir():
+            pending_t: List[Tuple[str, str, int]] = []
             try:
                 with os.scandir(self.threads_dir) as it:
                     for entry in it:
@@ -154,53 +184,59 @@ class ThreadStore:
                             mtime_ns = entry.stat().st_mtime_ns
                         except OSError:
                             continue
-                        if self._synced_threads.get(entry.name) == mtime_ns:
-                            continue
-                        self._synced_threads[entry.name] = mtime_ns
-                        try:
-                            obj = json.loads(Path(entry.path).read_text(encoding="utf-8"))
-                            th = obj.get("thread") or {}
-                            if th.get("id") and th.get("client_id"):
+                        if self._synced_threads.get(entry.name) != mtime_ns:
+                            pending_t.append((entry.name, entry.path, mtime_ns))
+            except OSError:
+                pending_t = []
+            if pending_t:
+                if len(pending_t) > 3:
+                    with ThreadPoolExecutor(max_workers=min(8, len(pending_t))) as pool:
+                        parsed_t = list(pool.map(_read_json_file, [p[1] for p in pending_t]))
+                else:
+                    parsed_t = [_read_json_file(p[1]) for p in pending_t]
+                for (fname, _, mtime_ns), obj in zip(pending_t, parsed_t):
+                    self._synced_threads[fname] = mtime_ns
+                    if not obj:
+                        continue
+                    th = obj.get("thread") or {}
+                    if th.get("id") and th.get("client_id"):
+                        conn.execute(
+                            """
+                            INSERT OR REPLACE INTO threads
+                            (id, client_id, title, profile, mode, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                th["id"],
+                                th["client_id"],
+                                th.get("title") or "New Biomedical Study",
+                                th.get("profile") or "ad1",
+                                th.get("mode") or "direct",
+                                float(th.get("created_at") or time.time()),
+                                float(th.get("updated_at") or time.time()),
+                            ),
+                        )
+                        for m in obj.get("messages") or []:
+                            if m.get("id"):
                                 conn.execute(
                                     """
-                                    INSERT OR REPLACE INTO threads
-                                    (id, client_id, title, profile, mode, created_at, updated_at)
+                                    INSERT OR REPLACE INTO messages
+                                    (id, thread_id, role, content, run_id, metadata_json, created_at)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)
                                     """,
                                     (
+                                        m["id"],
                                         th["id"],
-                                        th["client_id"],
-                                        th.get("title") or "New Biomedical Study",
-                                        th.get("profile") or "ad1",
-                                        th.get("mode") or "direct",
-                                        float(th.get("created_at") or time.time()),
-                                        float(th.get("updated_at") or time.time()),
+                                        m.get("role") or "user",
+                                        m.get("content") or "",
+                                        m.get("run_id"),
+                                        m.get("metadata_json") or "{}",
+                                        float(m.get("created_at") or time.time()),
                                     ),
                                 )
-                                for m in obj.get("messages") or []:
-                                    if m.get("id"):
-                                        conn.execute(
-                                            """
-                                            INSERT OR REPLACE INTO messages
-                                            (id, thread_id, role, content, run_id, metadata_json, created_at)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                                            """,
-                                            (
-                                                m["id"],
-                                                th["id"],
-                                                m.get("role") or "user",
-                                                m.get("content") or "",
-                                                m.get("run_id"),
-                                                m.get("metadata_json") or "{}",
-                                                float(m.get("created_at") or time.time()),
-                                            ),
-                                        )
-                        except Exception:
-                            pass
-            except OSError:
-                pass
 
         if self.runs_meta_dir and self.runs_meta_dir.is_dir():
+            pending_r: List[Tuple[str, str, int]] = []
             try:
                 with os.scandir(self.runs_meta_dir) as it:
                     for entry in it:
@@ -210,41 +246,46 @@ class ThreadStore:
                             mtime_ns = entry.stat().st_mtime_ns
                         except OSError:
                             continue
-                        if self._synced_runs.get(entry.name) == mtime_ns:
-                            continue
-                        self._synced_runs[entry.name] = mtime_ns
-                        try:
-                            r = json.loads(Path(entry.path).read_text(encoding="utf-8"))
-                            if r.get("id") and r.get("client_id"):
-                                conn.execute(
-                                    """
-                                    INSERT OR REPLACE INTO runs
-                                    (id, client_id, thread_id, prompt, model, profile, status, answer,
-                                     elapsed_s, iterations, tool_trace_json, usage_json, run_dir, created_at, finished_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """,
-                                    (
-                                        r["id"],
-                                        r["client_id"],
-                                        r.get("thread_id") or "",
-                                        r.get("prompt") or "",
-                                        r.get("model") or "gpt-6-luna",
-                                        r.get("profile") or "ad1",
-                                        r.get("status") or "completed",
-                                        r.get("answer") or "",
-                                        float(r.get("elapsed_s") or 0.0),
-                                        int(r.get("iterations") or 0),
-                                        r.get("tool_trace_json") or "[]",
-                                        r.get("usage_json") or "{}",
-                                        r.get("run_dir") or "",
-                                        float(r.get("created_at") or time.time()),
-                                        r.get("finished_at"),
-                                    ),
-                                )
-                        except Exception:
-                            pass
+                        if self._synced_runs.get(entry.name) != mtime_ns:
+                            pending_r.append((entry.name, entry.path, mtime_ns))
             except OSError:
-                pass
+                pending_r = []
+            if pending_r:
+                if len(pending_r) > 3:
+                    with ThreadPoolExecutor(max_workers=min(8, len(pending_r))) as pool:
+                        parsed_r = list(pool.map(_read_json_file, [p[1] for p in pending_r]))
+                else:
+                    parsed_r = [_read_json_file(p[1]) for p in pending_r]
+                for (fname, _, mtime_ns), r in zip(pending_r, parsed_r):
+                    self._synced_runs[fname] = mtime_ns
+                    if not r:
+                        continue
+                    if r.get("id") and r.get("client_id"):
+                        conn.execute(
+                            """
+                            INSERT OR REPLACE INTO runs
+                            (id, client_id, thread_id, prompt, model, profile, status, answer,
+                             elapsed_s, iterations, tool_trace_json, usage_json, run_dir, created_at, finished_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                r["id"],
+                                r["client_id"],
+                                r.get("thread_id") or "",
+                                r.get("prompt") or "",
+                                r.get("model") or "gpt-6-luna",
+                                r.get("profile") or "ad1",
+                                r.get("status") or "completed",
+                                r.get("answer") or "",
+                                float(r.get("elapsed_s") or 0.0),
+                                int(r.get("iterations") or 0),
+                                r.get("tool_trace_json") or "[]",
+                                r.get("usage_json") or "{}",
+                                r.get("run_dir") or "",
+                                float(r.get("created_at") or time.time()),
+                                r.get("finished_at"),
+                            ),
+                        )
 
     def create_thread(
         self,

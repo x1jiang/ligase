@@ -175,10 +175,10 @@ echo "6/8 Building & deploying ${SERVICE} to Cloud Run (${REGION}) with GCS FUSE
   --no-invoker-iam-check \
   --session-affinity \
   --service-account="${SA_EMAIL}" \
-  --cpu=2 \
+  --cpu=4 \
   --cpu-boost \
   --no-cpu-throttling \
-  --memory=2Gi \
+  --memory=4Gi \
   --timeout=300 \
   --concurrency=16 \
   --min-instances="${MIN_INSTANCES}" \

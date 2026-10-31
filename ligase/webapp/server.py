@@ -693,22 +693,33 @@ def create_webapp(
     elif state_dir is None and env_persist:
         resolved_persist_root = Path(env_persist).resolve()
 
+    # On Cloud Run scale-from-zero, defer all GCS FUSE mkdir/scandir/read RPCs out of
+    # synchronous module import so uvicorn binds :8080 and serves pre-rendered GET / immediately.
+    defer_cloud_fs = bool(IS_CLOUD and state_dir is None and persistent_dir is None)
+
     persistent_runs_root: Optional[Path] = None
     if resolved_persist_root is not None:
-        resolved_persist_root.mkdir(parents=True, exist_ok=True)
         persistent_runs_root = resolved_persist_root / "runs"
-        persistent_runs_root.mkdir(parents=True, exist_ok=True)
+        if not defer_cloud_fs:
+            resolved_persist_root.mkdir(parents=True, exist_ok=True)
+            persistent_runs_root.mkdir(parents=True, exist_ok=True)
 
     db_path = resolved_state / "ligase_webapp.sqlite3"
-    store = ThreadStore(db_path, persistent_root=resolved_persist_root)
+    store = ThreadStore(
+        db_path,
+        persistent_root=resolved_persist_root,
+        defer_hydration=defer_cloud_fs,
+    )
     usage_tracker = UsageTracker(
         db_path,
         persistent_dir=(resolved_persist_root / "usage_events") if resolved_persist_root is not None else None,
+        defer_hydration=defer_cloud_fs,
     )
     feedback_manager = FeedbackManager(
         resolved_persist_root if resolved_persist_root is not None else resolved_state,
         openai_api_key=_CAPTURED_OPENAI_KEY,
         smtp_password=_CAPTURED_SMTP_PASSWORD,
+        defer_dirs=defer_cloud_fs,
     )
     niagads_summary = _load_niagads_summary()
     starters_list = _build_starters()
@@ -746,6 +757,20 @@ def create_webapp(
             "starters": starters_list,
         }
 
+    # Pre-warm SSR index HTML and Mindmap JSON in RAM (<2 ms, zero network/FUSE I/O)
+    if index_template:
+        _boot_m, _boot_k, _boot_u = _resolve_web_credentials()
+        _boot_r = bool(_boot_k or _boot_u)
+        _boot_tag = (
+            f'<script id="ligase-bootstrap" type="application/json">'
+            f'{_safe_json_for_script_tag({"boot": _build_lean_boot(_boot_m, _boot_r)})}</script>'
+        )
+        index_html_cache[(_boot_m, _boot_r)] = (
+            index_template.replace("<!-- LIGASE_STARTERS_SSR -->", starters_ssr_html)
+            .replace("<!-- LIGASE_BOOTSTRAP_JSON -->", _boot_tag)
+        )
+        _get_mindmap(_boot_m)
+
     def _build_meta(model_name: str, is_ready: bool) -> Dict[str, Any]:
         return {
             **_build_lean_boot(model_name, is_ready),
@@ -766,14 +791,30 @@ def create_webapp(
             headers={"ETag": etag, "Cache-Control": cache_hdr},
         )
 
+    def _background_boot_tasks() -> None:
+        if defer_cloud_fs:
+            try:
+                if persistent_runs_root is not None:
+                    persistent_runs_root.mkdir(parents=True, exist_ok=True)
+                store.sync_from_persistent_storage(force=True)
+                usage_tracker.sync_from_persistent_storage(force=True)
+                feedback_manager.ensure_dirs()
+            except Exception as exc:
+                logger.debug("Deferred GCS FUSE hydration warning: %s", exc)
+        if os.getenv("LIGASE_SKIP_WARMUP", "").strip() != "1":
+            # Yield briefly on cold boot so initial HTML/CSS/JS requests get uncontested CPU & GIL
+            if IS_CLOUD:
+                time.sleep(0.45)
+            _warmup_agent_runtime()
+
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         global _WARMUP_STARTED
-        if os.getenv("LIGASE_SKIP_WARMUP", "").strip() != "1":
+        if defer_cloud_fs or os.getenv("LIGASE_SKIP_WARMUP", "").strip() != "1":
             with _WARMUP_LOCK:
                 if not _WARMUP_STARTED:
                     _WARMUP_STARTED = True
-                    threading.Thread(target=_warmup_agent_runtime, name="ligase-warmup", daemon=True).start()
+                    threading.Thread(target=_background_boot_tasks, name="ligase-boot", daemon=True).start()
         yield
 
     webapp = FastAPI(

@@ -212,15 +212,22 @@ def _read_json_event_file(path_str: str) -> Optional[Dict[str, Any]]:
 class UsageTracker:
     """Thread-safe usage & volume tracker combining fast local SQLite indexing with durable per-event JSON storage."""
 
-    def __init__(self, db_path: Path, persistent_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        db_path: Path,
+        persistent_dir: Optional[Path] = None,
+        *,
+        defer_hydration: bool = False,
+    ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.persistent_dir = resolve_persistent_usage_dir(self.db_path, persistent_dir)
-        self.persistent_dir.mkdir(parents=True, exist_ok=True)
+        if not defer_hydration:
+            self.persistent_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._synced_files: Dict[str, int] = {}
         self._last_sync_monotonic: float = 0.0
-        self._init_and_backfill()
+        self._init_and_backfill(hydrate=not defer_hydration)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -340,10 +347,14 @@ class UsageTracker:
 
     def sync_from_persistent_storage(self, force: bool = True) -> int:
         """Public trigger to hydrate/sync any new JSON event records from persistent storage."""
+        try:
+            self.persistent_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         with self._lock, self._connect() as conn:
             return self._sync_from_persistent_dir_unlocked(conn, force=force)
 
-    def _init_and_backfill(self) -> None:
+    def _init_and_backfill(self, *, hydrate: bool = True) -> None:
         with self._lock, self._connect() as conn:
             conn.executescript(
                 """
@@ -382,6 +393,8 @@ class UsageTracker:
                     ON usage_events(run_id);
                 """
             )
+            if not hydrate:
+                return
             # 1. Hydrate all durable per-event JSON records from persistent storage first
             self._sync_from_persistent_dir_unlocked(conn, force=True)
 

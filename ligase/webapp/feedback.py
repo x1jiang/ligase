@@ -175,16 +175,25 @@ class FeedbackManager:
         *,
         openai_api_key: Optional[str] = None,
         smtp_password: Optional[str] = None,
+        defer_dirs: bool = False,
     ) -> None:
         self.root = (Path(base_dir).resolve() / "feedback").resolve()
         self.events_dir = self.root / "events"
         self.attachments_root = self.root / "attachments"
         self.raw_dir = self.root / "raw"
         self.digests_dir = self.root / "digests"
-        for d in (self.root, self.events_dir, self.attachments_root, self.raw_dir, self.digests_dir):
-            d.mkdir(parents=True, exist_ok=True)
+        self._dirs_ready = False
+        if not defer_dirs and os.getenv("LIGASE_DEFER_FEEDBACK_DIRS", "").strip() != "1":
+            self.ensure_dirs()
         self._openai_api_key = (openai_api_key or "").strip() or None
         self._smtp_password = (smtp_password or "").strip() or None
+
+    def ensure_dirs(self) -> None:
+        if self._dirs_ready:
+            return
+        for d in (self.root, self.events_dir, self.attachments_root, self.raw_dir, self.digests_dir):
+            d.mkdir(parents=True, exist_ok=True)
+        self._dirs_ready = True
 
     def get_smtp_config(self) -> Dict[str, Any]:
         raw_pw = resolve_credential("SMTP_PASSWORD", "", explicit=self._smtp_password)
@@ -230,6 +239,7 @@ class FeedbackManager:
         if not cleaned_comment:
             raise ValueError("Comment or improvement instruction cannot be empty.")
 
+        self.ensure_dirs()
         feedback_id = str(uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
         sub_att_dir = self.attachments_root / feedback_id
@@ -1051,6 +1061,7 @@ class FeedbackManager:
             "summary": summary,
             "delivery": mail_res,
         }
+        self.ensure_dirs()
         (self.digests_dir / f"{now.strftime('%Y-%m-%d')}-{digest_id}.json").write_text(
             json.dumps(digest_rec, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
