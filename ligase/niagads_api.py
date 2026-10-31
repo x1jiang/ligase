@@ -26,7 +26,8 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.7.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+NIAGADS_GENOMICSDB_BROWSER_URL = "https://www.niagads.org/genomics/app/visualizations/browser"
+_UA = "Ligase/0.8.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
 _CACHE_TTL_S = 900.0
 _CACHE_MAX_SIZE = 512
@@ -125,6 +126,14 @@ OPEN_ACCESS_ROLLOUT_CATALOG: Dict[str, Any] = {
         },
     ],
     "endpoints": [
+        {
+            "action": "adsp_r5_power_dar",
+            "method": "ADSP-R5+DAR",
+            "path": "ADSP Release 5 (58,507 WGS) Power Planner + ADSP-PHC + NIH DAR / Specific-Aims Co-Pilot",
+            "summary": "ADSP R5 (58.5k WGS) Multi-Ancestry Power Planner & NIH DAR / Grant Specific-Aims Co-Pilot",
+            "example_target": "ABCA7",
+            "description": "Computes exact non-central chi-square statistical power, MDOR_80, and required N across ADSP Release 5 WGS strata (NHW 29,107, HIS 15,390, AA 6,975, ASN 5,523; 57,302 unique subjects / 58,507 genomes) and ADSP-PHC (U24AG074855) phenotype domains, selects NG* DSS accessions, and drafts a ready-to-submit NIAGADS DARM Data Access Request (DAR) + NIH R01/R21 Specific Aims & DMS packet.",
+        },
         {
             "action": "colocboost_mesusie",
             "method": "COLOCBOOST+MESuSiE",
@@ -1059,11 +1068,16 @@ def _build_visual_and_links(
 
     gene_sym = ""
     ensg_id = ""
+    locus_span = ""
     if isinstance(gene_payload, dict):
         g_list = [g for g in (gene_payload.get("data") or []) if isinstance(g, dict)]
         if g_list:
             gene_sym = str(g_list[0].get("gene_symbol") or "").strip().upper()
             ensg_id = str(g_list[0].get("id") or "").strip().upper()
+            loc_raw = str(g_list[0].get("location") or "").strip().split(":")[0:2]
+            if len(loc_raw) == 2 and "-" in loc_raw[1]:
+                chrom_tok = loc_raw[0] if loc_raw[0].startswith("chr") else f"chr{loc_raw[0]}"
+                locus_span = f"{chrom_tok}:{loc_raw[1]}"
 
     rsid = ""
     pos_id = ""
@@ -1073,12 +1087,20 @@ def _build_visual_and_links(
             v0 = v_list[0]
             rsid = str(v0.get("ref_snp_id") or "").strip()
             pos_id = str(v0.get("id") or v0.get("normalized_positional_id") or "").strip()
+            if not locus_span and v0.get("chromosome") and v0.get("position"):
+                v_chr = str(v0["chromosome"]).lstrip("chr")
+                v_pos = int(v0["position"])
+                locus_span = f"chr{v_chr}:{max(1, v_pos - 25000)}-{v_pos + 25000}"
             if not gene_sym:
                 msc_gene = (((v0.get("most_severe_consequence") or {}).get("feature") or {}).get("gene") or {})
                 gene_sym = str(msc_gene.get("gene_symbol") or "").strip().upper()
                 ensg_id = str(msc_gene.get("id") or "").strip().upper()
 
     tgt_clean = (target or "").strip().split(",")[0].strip()
+    if not locus_span and _REGION_RE.match(tgt_clean):
+        locus_span, _ = normalize_region(tgt_clean)
+    if not locus_span and isinstance(filer_info, dict) and _REGION_RE.match(str(filer_info.get("region") or "")):
+        locus_span, _ = normalize_region(str(filer_info["region"]))
     if not gene_sym and _GENE_SYMBOL_RE.match(tgt_clean.upper()) and not _RSID_RE.match(tgt_clean) and not _TRACK_ID_RE.match(tgt_clean):
         gene_sym = tgt_clean.upper()
     if not ensg_id and _ENSEMBL_GENE_RE.match(tgt_clean):
@@ -1101,6 +1123,13 @@ def _build_visual_and_links(
             "overlapping_intervals": int(filer_info.get("overlapping_intervals") or 0),
         }
 
+    if not locus_span and struct_vis and struct_vis.get("start") and struct_vis.get("end") and struct_vis.get("chr"):
+        s_chr = str(struct_vis["chr"])
+        s_chr = s_chr if s_chr.startswith("chr") else f"chr{s_chr}"
+        locus_span = f"{s_chr}:{struct_vis['start']}-{struct_vis['end']}"
+    if locus_span:
+        visual["niagads_browser_locus"] = locus_span
+
     links: List[Dict[str, str]] = []
     seen_urls: set[str] = set()
 
@@ -1108,6 +1137,13 @@ def _build_visual_and_links(
         if url and url not in seen_urls:
             seen_urls.add(url)
             links.append({"label": label, "url": url, "badge": badge})
+
+    if locus_span:
+        _add_link(
+            f"NIAGADS Genome Browser: {locus_span}",
+            f"{NIAGADS_GENOMICSDB_BROWSER_URL}?locus={urllib.parse.quote(locus_span, safe=':-')}",
+            "NIAGADS IGV.js",
+        )
 
     gene_ref = ensg_id or gene_sym
     if gene_ref:
@@ -1144,21 +1180,38 @@ def _build_visual_and_links(
 
     # Detect NG* study accession from target, tracks, or top association
     ng_acc = ""
+    track_rec_id = ""
     if _TRACK_ID_RE.match(tgt_clean):
-        ng_acc = tgt_clean.split("_")[0].upper()
+        track_rec_id = tgt_clean.upper()
+        ng_acc = track_rec_id.split("_")[0].upper()
     elif isinstance(track_payload, dict):
         t_list = [t for t in (track_payload.get("data") or []) if isinstance(t, dict)]
         if t_list:
+            track_rec_id = str(t_list[0].get("id") or "").strip()
             prov = t_list[0].get("provenance") or {}
-            cand = str(prov.get("study_accession") or str(t_list[0].get("id") or "").split("_")[0]).upper()
+            cand = str(prov.get("accession") or prov.get("study_accession") or track_rec_id.split("_")[0]).upper()
             if cand.startswith("NG"):
                 ng_acc = cand
     elif assoc_vis.get("items"):
-        cand = str(assoc_vis["items"][0].get("study") or "").upper()
+        top_tr = str(assoc_vis["items"][0].get("track") or "").strip()
+        if _TRACK_ID_RE.match(top_tr):
+            track_rec_id = top_tr.upper()
+        cand = str(assoc_vis["items"][0].get("study") or top_tr.split("_")[0]).upper()
         if cand.startswith("NG"):
             ng_acc = cand
 
+    if track_rec_id:
+        _add_link(
+            f"GenomicsDB Track: {track_rec_id[:18]}",
+            f"https://www.niagads.org/genomics/app/record/track/{urllib.parse.quote(track_rec_id)}",
+            "NIAGADS Track",
+        )
     if ng_acc:
+        _add_link(
+            f"GenomicsDB Dataset: {ng_acc}",
+            f"https://www.niagads.org/genomics/app/record/dataset/{urllib.parse.quote(ng_acc)}",
+            "GenomicsDB",
+        )
         _add_link(
             f"NIAGADS DSS: {ng_acc}",
             f"https://dss.niagads.org/datasets/{ng_acc.lower()}/",
@@ -1207,6 +1260,8 @@ def execute_niagads_action(
         tgt = loc_clean
     if not tgt and act == "literature_credits":
         tgt = "all"
+    if not tgt and act == "adsp_r5_power_dar":
+        tgt = "ABCA7"
 
     if not tgt:
         return {
@@ -1225,8 +1280,9 @@ def execute_niagads_action(
     t0 = time.monotonic()
 
     try:
-        # NIAGADS v0.7 Literature-Grounded Quantitative V2F, ColocBoost/MESuSiE, Resilience/XWAS/SEA-AD, Fine-Mapping, 2SMR/PRS, Rare Regulatory, VCF & Translational Suite
+        # NIAGADS v0.8 Literature-Grounded Quantitative V2F, ADSP R5 Power/DAR, ColocBoost/MESuSiE, Resilience/XWAS/SEA-AD, Fine-Mapping, 2SMR/PRS, Rare Regulatory, VCF & Translational Suite
         if act in (
+            "adsp_r5_power_dar",
             "colocboost_mesusie",
             "resilience_xwas_seaad",
             "literature_credits",
@@ -1238,6 +1294,7 @@ def execute_niagads_action(
         ):
             from ligase.niagads_v2f_engine import (
                 get_niagads_literature_catalog,
+                niagads_adsp_r5_power_dar,
                 niagads_colocboost_mesusie,
                 niagads_finemap_coloc,
                 niagads_mendelian_randomization_prs,
@@ -1247,6 +1304,22 @@ def execute_niagads_action(
                 niagads_vcf_batch_v2f,
             )
 
+            if act == "adsp_r5_power_dar":
+                parts = [p.strip() for p in loc_clean.split("|") if p.strip()] if loc_clean else []
+                t_mode = parts[0] if len(parts) >= 1 else "staar_o_burden"
+                p_dom = parts[1] if len(parts) >= 2 else "case_control_ad"
+                eff_val = 0.0
+                if len(parts) >= 3:
+                    try:
+                        eff_val = float(parts[2])
+                    except ValueError:
+                        eff_val = 0.0
+                return niagads_adsp_r5_power_dar(
+                    target=tgt,
+                    test_mode=t_mode,
+                    phenotype_domain=p_dom,
+                    effect_size=eff_val,
+                )
             if act == "colocboost_mesusie":
                 return niagads_colocboost_mesusie(target=tgt, ancestry=loc_clean or "ALL")
             if act == "resilience_xwas_seaad":
@@ -1946,3 +2019,98 @@ def fetch_live_niagads_supplement(query: str) -> str:
         "\n\n[Live NIAGADS Open Access API v2.0 (`https://api.niagads.org/api`)]\n"
         + "\n\n".join(snippets)
     )
+
+
+def export_niagads_browser_tracks(result: Dict[str, Any]) -> Dict[str, str]:
+    """Convert a live NIAGADS Open Access v2.0 / V2F / fine-mapping result into standard
+    GRCh38 IGV.js `.bedGraph` and LocusZoom `.tsv` track files ready for the NIAGADS Genome Browser.
+    """
+    action = str(result.get("action") or "niagads").strip()
+    vis = result.get("visual") or {}
+    raw = result.get("raw") or {}
+    rows = result.get("rows") or []
+
+    bedgraph_lines: List[str] = [
+        f'track type=bedGraph name="Ligase_NIAGADS_{action}" description="NIAGADS Open Access v2.0 / Ligase v0.8.0 ({action}, GRCh38, U24AG041689)" visibility=full color=15,118,110 altColor=79,70,229 autoScale=on'
+    ]
+    lz_lines: List[str] = ["chrom\tpos\trsid\tref\talt\tneg_log10_p\tpip_filer\ttrack_or_modality"]
+
+    # 1. Fine-mapping / LocusZoom payload
+    lz = vis.get("locuszoom") if isinstance(vis, dict) else None
+    if isinstance(lz, dict) and isinstance(lz.get("variants"), list):
+        chrom = str(lz.get("chrom") or lz.get("chr") or "chr2")
+        if not chrom.startswith("chr"):
+            chrom = f"chr{chrom}"
+        for v in lz["variants"]:
+            if not isinstance(v, dict):
+                continue
+            pos = int(v.get("pos") or 0)
+            if pos <= 0:
+                continue
+            nlp = float(v.get("neg_log10_p") or v.get("gwas_nlp") or 0.0)
+            pip = float(v.get("pip_filer") or 0.0)
+            score = float(v.get("pip_filer") if v.get("pip_filer") is not None else nlp)
+            rs = str(v.get("rsid") or f"{chrom}:{pos}")
+            bedgraph_lines.append(f"{chrom}\t{max(0, pos - 1)}\t{pos}\t{score:.4f}")
+            lz_lines.append(f"{chrom.lstrip('chr')}\t{pos}\t{rs}\tN\tN\t{nlp:.4f}\t{pip:.4f}\t{lz.get('gene') or action}")
+
+    # 2. Gene / transcript exon intervals
+    gs = vis.get("gene_structure") if isinstance(vis, dict) else None
+    if len(bedgraph_lines) == 1 and isinstance(gs, dict) and isinstance(gs.get("exons"), list):
+        chrom = str(gs.get("chr") or "chr19")
+        if not chrom.startswith("chr"):
+            chrom = f"chr{chrom}"
+        for idx, ex in enumerate(gs["exons"], 1):
+            if not isinstance(ex, dict):
+                continue
+            st = int(ex.get("start") or 0)
+            en = int(ex.get("end") or 0)
+            if st > 0 and en >= st:
+                bedgraph_lines.append(f"{chrom}\t{max(0, st - 1)}\t{en}\t1.0000")
+                lz_lines.append(f"{chrom.lstrip('chr')}\t{st}\texon_{idx}\tN\tN\t1.0000\t0.0000\t{gs.get('transcript_id') or 'exon'}")
+
+    # 3. Variant / GWAS association items
+    assoc = vis.get("associations") if isinstance(vis, dict) else None
+    if len(bedgraph_lines) == 1 and isinstance(assoc, dict) and isinstance(assoc.get("items"), list):
+        for it in assoc["items"]:
+            if not isinstance(it, dict):
+                continue
+            vid = str(it.get("variant") or "")
+            nlp = float(it.get("neg_log10_p") or it.get("count") or 0.0)
+            m = _POS_VARIANT_COLON_RE.match(vid)
+            if m:
+                c_tok, p_tok, r_tok, a_tok = m.groups()
+                pos = int(p_tok)
+                bedgraph_lines.append(f"chr{c_tok.upper()}\t{max(0, pos - 1)}\t{pos}\t{nlp:.4f}")
+                lz_lines.append(f"{c_tok.upper()}\t{pos}\t{vid}\t{r_tok}\t{a_tok}\t{nlp:.4f}\t0.0000\t{it.get('track') or action}")
+            else:
+                lz_lines.append(f"NA\t0\t{vid or 'signal'}\tN\tN\t{nlp:.4f}\t0.0000\t{it.get('track') or action}")
+
+    # 4. Fallback to niagads_browser_locus or raw coordinates
+    if len(bedgraph_lines) == 1:
+        loc_str = str((vis.get("niagads_browser_locus") if isinstance(vis, dict) else "") or (raw.get("grch38_locus") if isinstance(raw, dict) else "") or "")
+        m_reg = _REGION_RE.match(loc_str)
+        if m_reg:
+            c_tok, s_tok, e_tok = m_reg.groups()
+            st = int(s_tok.replace(",", ""))
+            en = int(e_tok.replace(",", ""))
+            bedgraph_lines.append(f"chr{c_tok.upper()}\t{max(0, st - 1)}\t{max(st, en)}\t1.0000")
+            lz_lines.append(f"{c_tok.upper()}\t{st}\t{action}\tN\tN\t1.0000\t1.0000\t{action}")
+        elif rows and isinstance(rows[0], dict):
+            for r in rows[:20]:
+                label = str(r.get("ancestry") or r.get("gene") or r.get("variant") or r.get("rsid") or action)
+                val = float(r.get("power_pct") or r.get("pip_filer") or r.get("v2f_score") or 1.0)
+                lz_lines.append(f"NA\t0\t{label}\tN\tN\t{val:.4f}\t0.0000\t{action}")
+
+    locus_url = ""
+    loc_candidate = str((vis.get("niagads_browser_locus") if isinstance(vis, dict) else "") or (raw.get("grch38_locus") if isinstance(raw, dict) else "") or "")
+    if loc_candidate:
+        locus_url = f"{NIAGADS_GENOMICSDB_BROWSER_URL}?locus={urllib.parse.quote(loc_candidate, safe=':-')}"
+    else:
+        locus_url = NIAGADS_GENOMICSDB_BROWSER_URL
+
+    return {
+        "bedgraph": "\n".join(bedgraph_lines) + "\n",
+        "locuszoom_tsv": "\n".join(lz_lines) + "\n",
+        "niagads_browser_url": locus_url,
+    }

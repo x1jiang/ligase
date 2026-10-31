@@ -28,7 +28,7 @@
     :not([hidden="until-found"])[hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.7.0">
+  <link rel="stylesheet" href="/static/styles.css?v=0.8.0">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.7.0</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.8.0</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -242,7 +242,7 @@
                   <span aria-hidden="true">🎬</span> Watch 1-Min Tour
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> 48-Node Mindmap
+                  <span aria-hidden="true">🧠</span> 50-Node Mindmap
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
                   <span aria-hidden="true">🌐</span> Live NIAGADS API
@@ -288,7 +288,7 @@
                     data-shelf-target="niagads"
                   >
                     <span aria-hidden="true">🧬</span> NIAGADS Ecosystem
-                    <span class="shelf-count-pill">22 APIs · 14 Papers</span>
+                    <span class="shelf-count-pill">23 APIs · 16 Papers</span>
                   </button>
                 </div>
 
@@ -343,13 +343,13 @@
                       playsinline
                       width="1280"
                       height="720"
-                      poster="/static/media/ligase-showcase-poster.webp?v=0.7.0"
+                      poster="/static/media/ligase-showcase-poster.webp?v=0.8.0"
                       aria-labelledby="video-showcase-title"
                       aria-details="showcase-video-transcript"
                     >
-                      <source src="/static/media/ligase-showcase.mp4?v=0.7.0" type="video/mp4">
+                      <source src="/static/media/ligase-showcase.mp4?v=0.8.0" type="video/mp4">
                       <track
-                        src="/static/media/ligase-showcase-en.vtt?v=0.7.0"
+                        src="/static/media/ligase-showcase-en.vtt?v=0.8.0"
                         kind="captions"
                         srclang="en"
                         label="English (Grok Voice Verbatim)"
@@ -657,14 +657,15 @@
               <div class="oa-field">
                 <label for="oa-action-select">Endpoint Action</label>
                 <select id="oa-action-select" name="action">
-                  <optgroup label="NIAGADS v0.7 Literature-Grounded V2F &amp; Translational Suite">
+                  <optgroup label="NIAGADS v0.8 Literature-Grounded V2F, ADSP R5 Power/DAR &amp; Translational Suite">
+                    <option value="adsp_r5_power_dar">🏛️ ADSP R5 (58,507 WGS) Power Planner &amp; NIH DAR / Specific-Aims Co-Pilot (NG00067 · ADSP-PHC)</option>
                     <option value="colocboost_mesusie">🔬 TAD 6-Modality ColocBoost + 4-Ancestry ADSP emeraLD MESuSiE (Li 2025 · Gao 2024)</option>
                     <option value="resilience_xwas_seaad">🛡️ APOEε4 FN1 Resilience + chrX XWAS/XCI + SEA-AD CPS (Bhattarai · Belloy · Gabitto 2024)</option>
                     <option value="finemap_coloc">🎯 Wakefield ABF Fine-Mapping + FILER 95% CS + FunGen-xQTL Coloc</option>
                     <option value="mr_prs">📐 Two-Sample Mendelian Randomization + PRS-CSx Admixture Calibration</option>
                     <option value="rare_regulatory">🧬 AlphaGenome 1-Mb + ADSP R5 STAAR/SV Regulatory Impact (0–100)</option>
                     <option value="translational_trials">💊 AD Drug Targets, APOE ARIA Safety &amp; ClinicalTrials.gov v2</option>
-                    <option value="literature_credits">📚 Grounded Scientific Literature &amp; Methodological Credits (14 Papers)</option>
+                    <option value="literature_credits">📚 Grounded Scientific Literature &amp; Methodological Credits (16 Papers)</option>
                   </optgroup>
                   <optgroup label="NIAGADS Open Access v2.0 REST &amp; FILER Endpoints">
                     <option value="auto" selected>Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
@@ -755,9 +756,62 @@ chrX	46610904	rs188959992	C	T</textarea>
               <div class="vcf-drawer-actions">
                 <button type="button" class="send-btn" id="niagads-vcf-run-btn">⚡ Run Batch NIAGADS V2F Prioritization</button>
                 <button type="button" class="artifact-btn" id="niagads-vcf-csv-btn" hidden>⬇ Download Ranked V2F .csv</button>
-                <button type="button" class="artifact-btn" id="niagads-bench-btn">🏆 Run AD-HeurekaBench v0.7 (6 Loci + 5 Workflows)</button>
+                <button type="button" class="artifact-btn" id="niagads-bench-btn">🏆 Run AD-HeurekaBench v0.8 (6 Loci + 6 Workflows)</button>
               </div>
               <div class="md-body" id="niagads-vcf-output" hidden></div>
+            </div>
+          </details>
+
+          <!-- Collapsible ADSP Release 5 (58,507 WGS) Power Planner & NIH DAR / Grant Specific-Aims Co-Pilot -->
+          <details class="vcf-batch-drawer power-dar-drawer" id="niagads-power-dar-drawer">
+            <summary class="vcf-drawer-summary">
+              <span>🏛️ <strong>ADSP Release 5 (58,507 WGS) Power Planner &amp; NIH DAR / Grant Specific-Aims Co-Pilot</strong> (<code>NG00067</code> + <code>ADSP-PHC</code> + <code>DARM</code>)</span>
+              <span class="shelf-count-pill">NHW · HIS · AA · ASN · R01/R21</span>
+            </summary>
+            <div class="vcf-drawer-body">
+              <div class="oa-form-grid power-dar-grid">
+                <div class="oa-field">
+                  <label for="dar-target-input">Target Gene or Variant</label>
+                  <input
+                    id="dar-target-input"
+                    type="text"
+                    value="ABCA7"
+                    placeholder="e.g. ABCA7, SORL1, TREM2, BIN1, APOE, FN1, rs115550680"
+                  >
+                </div>
+                <div class="oa-field">
+                  <label for="dar-mode-select">Statistical Test Design</label>
+                  <select id="dar-mode-select">
+                    <option value="staar_o_burden" selected>STAAR-O Coding + Enhancer Burden (α = 2.5×10⁻⁶)</option>
+                    <option value="single_variant">Genome-Wide Single-Variant WGS (α = 5.0×10⁻⁸)</option>
+                    <option value="endophenotype_qtl">ADSP-PHC Quantitative Endophenotype QTL (α = 5.0×10⁻⁸)</option>
+                  </select>
+                </div>
+                <div class="oa-field">
+                  <label for="dar-domain-select">ADSP-PHC Phenotype Domain (NG00067)</label>
+                  <select id="dar-domain-select">
+                    <option value="case_control_ad" selected>AD / MCI Case–Control (N = 57,302)</option>
+                    <option value="cognition_longitudinal">Longitudinal Cognition Slopes (N ≈ 38,392)</option>
+                    <option value="neuroimaging_mri_pet">MRI / DTI / Amyloid &amp; Tau-PET (N ≈ 11,231)</option>
+                    <option value="fluid_biomarkers_atn">CSF &amp; Plasma AT(N) Biomarkers (N ≈ 8,882)</option>
+                    <option value="neuropathology_autopsy">Autopsy Neuropathology ADNC / LATE-NC (N ≈ 7,449)</option>
+                  </select>
+                </div>
+                <div class="oa-field oa-field-narrow">
+                  <label for="dar-effect-input">Effect (OR / β<sub>SD</sub>, 0=Auto)</label>
+                  <input id="dar-effect-input" type="number" step="0.05" min="0" max="30" value="0">
+                </div>
+                <div class="oa-field oa-field-narrow">
+                  <label for="dar-maf-input">MAF / cMAF (0=Live)</label>
+                  <input id="dar-maf-input" type="number" step="0.001" min="0" max="0.5" value="0">
+                </div>
+              </div>
+              <div class="vcf-drawer-actions">
+                <button type="button" class="send-btn" id="niagads-dar-run-btn">⚡ Compute ADSP R5 Power &amp; Draft NIH DAR</button>
+                <button type="button" class="artifact-btn" id="niagads-dar-md-btn" hidden>⬇ Download DAR &amp; Specific Aims (.md)</button>
+                <button type="button" class="artifact-btn" id="niagads-dar-csv-btn" hidden>⬇ Download Power Table (.csv)</button>
+                <a href="https://dss.niagads.org/data-access/" target="_blank" rel="noopener noreferrer" class="artifact-btn">↗ Open NIAGADS DARM Portal</a>
+              </div>
             </div>
           </details>
 
@@ -768,6 +822,12 @@ chrX	46610904	rs188959992	C	T</textarea>
               <div class="oa-result-actions">
                 <button type="button" class="plan-approve-btn" id="oa-send-studio-btn">
                   🔬 Analyze in Research Studio (gpt-6-luna)
+                </button>
+                <button type="button" class="artifact-btn" id="oa-export-bedgraph-btn" title="Download GRCh38 IGV.js bedGraph track for NIAGADS Genome Browser">
+                  ⬇ IGV .bedGraph
+                </button>
+                <button type="button" class="artifact-btn" id="oa-export-lz-btn" title="Download GRCh38 LocusZoom TSV track">
+                  ⬇ LocusZoom .tsv
                 </button>
                 <button type="button" class="artifact-btn" id="oa-cite-btn">
                   📜 Cite NIAGADS
@@ -788,7 +848,7 @@ chrX	46610904	rs188959992	C	T</textarea>
           </div>
 
           <!-- Grounded Scientific Literature & Methodological Credits Accordion (search-hidden-content via <details name=...>) -->
-          <h3 class="section-subhead">Grounded Scientific Literature &amp; Methodological Credits (14 Peer-Reviewed &amp; Preprint Papers)</h3>
+          <h3 class="section-subhead">Grounded Scientific Literature &amp; Methodological Credits (16 Peer-Reviewed &amp; Preprint Papers)</h3>
           <div class="lit-accordion-group" id="niagads-lit-accordion">
             <details class="lit-pillar-disclosure" name="niagads-lit-pillars" open>
               <summary class="lit-pillar-summary">
@@ -833,6 +893,19 @@ chrX	46610904	rs188959992	C	T</textarea>
                 <ul class="lit-credit-list">
                   <li><strong>Panigrahi, Jang et al. (arXiv, 2026)</strong> — <em>HeurekaBench: benchmarking multi-step data-grounded scientific co-scientist workflows with deterministic rubric verification</em> · <a href="https://arxiv.org/abs/2601.12430" target="_blank" rel="noopener noreferrer">arXiv:2601.12430</a> · <code>NIAGADS-AD-HeurekaBench-v0.7</code></li>
                   <li><strong>Goel, Jain et al. (arXiv, 2025)</strong> — <em>Training &amp; auditing AI co-scientists via explicit multi-gate scientific rubric rewards and Python verification</em> · <a href="https://arxiv.org/abs/2510.09734" target="_blank" rel="noopener noreferrer">arXiv:2510.09734</a> · <code>niagads_rubric_verifier</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="lit-pillar-disclosure" name="niagads-lit-pillars">
+              <summary class="lit-pillar-summary">
+                <span>🌐 <strong>Priority 4 · NIAGADS GenomicsDB / IGV.js Browser Ecosystem &amp; ADSP-PHC Harmonized Phenotypes</strong></span>
+                <span class="shelf-count-pill">2 Papers</span>
+              </summary>
+              <div class="lit-pillar-body">
+                <ul class="lit-credit-list">
+                  <li><strong>Greenfest-Allen, Valladares, Kuksa, Leung et al. / NIAGADS (Alzheimer's &amp; Dementia, 2024)</strong> — <em>NIAGADS Alzheimer's GenomicsDB: harmonized Open Access API v2.0, LocusZoom regional plots &amp; IGV.js Genome Browser ecosystem</em> · <a href="https://doi.org/10.1002/alz.13598" target="_blank" rel="noopener noreferrer">DOI: 10.1002/alz.13598</a> · <code>U24AG041689 · GenomicsDB</code></li>
+                  <li><strong>Mukherjee, Mez, Trittschuh, Hohman et al. / ADSP-PHC (Alzheimer's &amp; Dementia, 2024)</strong> — <em>ADSP Phenotype Harmonization Consortium: cross-cohort harmonization of cognition, MRI/PET neuroimaging, CSF/plasma ATN biomarkers &amp; autopsy neuropathology in NG00067</em> · <a href="https://doi.org/10.1002/alz.13004" target="_blank" rel="noopener noreferrer">DOI: 10.1002/alz.13004</a> · <code>U24AG074855 · NG00067</code></li>
                 </ul>
               </div>
             </details>
@@ -1445,6 +1518,6 @@ chrX	46610904	rs188959992	C	T</textarea>
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.7.0" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.8.0" defer fetchpriority="high"></script>
 </body>
 </html>

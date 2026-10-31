@@ -2,9 +2,9 @@
   "platforms": [
     {
       "id": "NIAGADS_DSS",
-      "name": "NIAGADS Data Sharing Service (DSS) & ADSP Umbrella",
+      "name": "NIAGADS Data Sharing Service (DSS), ADSP Release 5 & ADSP-PHC Umbrella",
       "url": "https://dss.niagads.org/",
-      "summary": "NIA-designated national genetics and genomics repository for Alzheimers disease and related dementias (ADRD). Hosts the Alzheimers Disease Sequencing Project (ADSP) Umbrella (NG00067) with whole-genome sequencing (WGS) and whole-exome sequencing (WES) across multi-ancestry cohorts, FAVOR functional annotations, and structural variant callsets.",
+      "summary": "NIA-designated national genetics and genomics repository for Alzheimers disease and related dementias (ADRD, U24AG041689). Hosts the Alzheimers Disease Sequencing Project (ADSP) Umbrella (NG00067) with Release 5 whole-genome sequencing (58,507 WGS genomes / 57,302 unique participants across 57 multi-ancestry cohorts: NHW 29,107, HIS 15,390, AA 6,975, ASN 5,523), >390M SNVs/INDELs, 2.21M structural variants, FAVOR annotations, and ADSP Phenotype Harmonization Consortium (ADSP-PHC, U24AG074855) cognitive, neuroimaging, fluid biomarker, and neuropathology endophenotypes.",
       "key_loci_and_variants": [
         "APOE e2/e3/e4",
         "ABCA7",
@@ -22,10 +22,11 @@
     },
     {
       "id": "NIAGADS_GENOMICSDB",
-      "name": "NIAGADS Alzheimers Genomics Database (GenomicsDB)",
+      "name": "NIAGADS Alzheimers Genomics Database (GenomicsDB) & Genome Browser",
       "url": "https://www.niagads.org/genomics/",
-      "api_url": "https://www.niagads.org/genomics/service/record-types",
-      "summary": "Public interactive knowledge base harmonizing >230 million ADSP variants, IGAP and multi-ancestry ADRD GWAS summary statistics, Linkage Disequilibrium regional plots, and functional genomic annotations.",
+      "api_url": "https://api.niagads.org/open-access",
+      "browser_url": "https://www.niagads.org/genomics/app/visualizations/browser",
+      "summary": "Public interactive knowledge base and IGV.js/LocusZoom genome browser harmonizing >390 million ADSP Release 5 SNVs/INDELs, IGAP and multi-ancestry ADRD GWAS summary statistics, GA4GH VRS allele digests, Linkage Disequilibrium regional plots, and functional genomic annotations.",
       "key_loci_and_variants": [
         "APOE",
         "BIN1",
@@ -115,16 +116,16 @@
     },
     {
       "id": "NG00067",
-      "title": "NG00067 ADSP Umbrella",
-      "access": "open",
+      "title": "NG00067 ADSP Umbrella (Release 5 58,507 WGS & ADSP-PHC Harmonized Phenotypes)",
+      "access": "controlled_dar",
       "dataset_url": "https://dss.niagads.org/datasets/ng00067/",
-      "study_description": "Umbrella dataset aggregating Alzheimers Disease Sequencing Project whole-exome and whole-genome sequence data, structural variants, and harmonized phenotypes across multiple cohorts.",
-      "file_count": 114,
+      "study_description": "Flagship Alzheimer's Disease Sequencing Project umbrella dataset aggregating Release 5 whole-genome sequencing (58,507 genomes / 57,302 unique participants across 57 cohorts: 29,107 NHW, 15,390 HIS, 6,975 AA, 5,523 ASN), whole-exome sequencing, 2.21M structural variants, FAVOR annotations, and ADSP-PHC (U24AG074855) harmonized longitudinal cognition, MRI/PET neuroimaging, CSF/plasma ATN biomarkers, and autopsy neuropathology.",
+      "file_count": 168,
       "sample_files": [
-        "r4.wgs.annotation.2023.12.01.tar.gz",
-        "r4_wgs_FAVOR_annotation_README.txt",
-        "r4.wgs.annotation.2023.12.01.README.txt",
-        "r4_wgs_FAVOR_annotation_chr22.gds"
+        "r5.wgs.vcpa.joint_called.pVCF.manifest.txt",
+        "r5_wgs_FAVOR_annotation_README.txt",
+        "ADSP_PHC_Cognition_Fluid_Neuroimaging_Neuropath_R3_R4.tar.gz",
+        "r4_r5_wgs_emeraLD_4pop_matrices.tar.gz"
       ]
     },
     {

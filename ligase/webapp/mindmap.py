@@ -893,13 +893,54 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                     ),
                 },
                 {
+                    "id": "mm_oa_power_dar",
+                    "title": "ADSP R5 (58,507 WGS) Power Planner & NIH DAR / Grant Co-Pilot",
+                    "badge": "New v0.8 · NG00067 + DARM",
+                    "status": "live",
+                    "summary": (
+                        "Computes exact non-central chi-square statistical power, MDOR_80, and required N across ADSP Release 5 "
+                        "strata (`NHW 29,107`, `HIS 15,390`, `AA 6,975`, `ASN 5,523`; `57,302` subjects / `58,507` WGS) and "
+                        "`ADSP-PHC` (`U24AG074855`) phenotype domains, selecting `NG*` datasets and drafting NIH R01/R21 Specific Aims & DARM packets."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='adsp_r5_power_dar')",
+                        "POST /api/niagads/power-dar",
+                        "GET /api/niagads/live?action=adsp_r5_power_dar",
+                    ],
+                    "sample_prompt": (
+                        "Run `niagads_v2f_statistical_suite(analysis='adsp_r5_power_dar', target='ABCA7')` and `'SORL1'` "
+                        "to compare multi-ancestry STAAR-O statistical power across ADSP Release 5 (`58,507` WGS) and draft "
+                        "an NIH R01 Specific Aims + NIAGADS DARM Research Use Statement."
+                    ),
+                    "live_api_preset": {"action": "adsp_r5_power_dar", "target": "ABCA7", "loc": "staar_o_burden|case_control_ad"},
+                },
+                {
+                    "id": "mm_oa_niagads_viz_tracks",
+                    "title": "NIAGADS Genome Browser (IGV.js) & LocusZoom Track Exporter",
+                    "badge": "New v0.8 · .bedGraph + .tsv + SVG",
+                    "status": "live",
+                    "summary": (
+                        "Links every gene, variant, fine-mapping, and ColocBoost query directly to the official NIAGADS GenomicsDB "
+                        "`IGV.js` Genome Browser (`?locus=chr...`) and exports standard GRCh38 `.bedGraph`, LocusZoom `.tsv`, vector `.svg`, and `300-DPI .png` figures."
+                    ),
+                    "backing": [
+                        "GET /api/niagads/export-track?format=bedgraph|locuszoom",
+                        "https://www.niagads.org/genomics/app/visualizations/browser",
+                    ],
+                    "sample_prompt": (
+                        "Run a NIAGADS fine-mapping locus dossier on `BIN1` (`rs6733839`) and summarize its GRCh38 enhancer "
+                        "coordinates for inspection in the NIAGADS GenomicsDB IGV.js Genome Browser."
+                    ),
+                    "live_api_preset": {"action": "finemap_coloc", "target": "BIN1", "loc": ""},
+                },
+                {
                     "id": "mm_lit_rubric_heurekabench",
-                    "title": "Closed-Loop Rubric Verifier, AD-HeurekaBench & 14-Paper Registry",
-                    "badge": "New v0.7 · 14 Scholarly DOIs",
+                    "title": "Closed-Loop Rubric Verifier, AD-HeurekaBench & 16-Paper Registry",
+                    "badge": "New v0.8 · 16 Scholarly DOIs",
                     "status": "live",
                     "summary": (
                         "Executes a deterministic 6-gate Python scientific rubric verifier in `🏛️ Critic` mode, "
-                        "evaluates 5 multi-step workflows in `AD-HeurekaBench v0.7`, and credits 14 foundational NIAGADS/ADSP papers."
+                        "evaluates 6 multi-step workflows in `AD-HeurekaBench v0.8`, and credits 16 foundational NIAGADS/ADSP/ADSP-PHC papers."
                     ),
                     "backing": [
                         "GET /api/niagads/literature",

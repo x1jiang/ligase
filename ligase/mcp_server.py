@@ -19,6 +19,7 @@ from ligase.gemma_tools import query_niagads
 from ligase.niagads_api import execute_niagads_action
 from ligase.niagads_v2f_engine import (
     get_niagads_literature_catalog,
+    niagads_adsp_r5_power_dar,
     niagads_colocboost_mesusie,
     niagads_finemap_coloc,
     niagads_mendelian_randomization_prs,
@@ -208,18 +209,61 @@ NIAGADS_MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "niagads_literature_credits",
         "description": (
-            "Query the 14-paper NIAGADS/ADSP scholarly attribution registry (ColocBoost, FILER, MESuSiE, ADSP R4/STAAR, "
-            "AlphaGenome, EADB, FN1 resilience, chrX XWAS, PRS-CSx, SEA-AD, SpatialTargetAgent, HeurekaBench, Rubric Rewards) "
-            "with DOIs, Europe PMC / arXiv URLs, and NIAGADS dataset anchors."
+            "Query the 16-paper NIAGADS/ADSP scholarly attribution registry (ColocBoost, FILER, MESuSiE, ADSP R4/STAAR, "
+            "NIAGADS GenomicsDB Browser, ADSP-PHC, AlphaGenome, EADB, FN1 resilience, chrX XWAS, PRS-CSx, SEA-AD, "
+            "SpatialTargetAgent, HeurekaBench, Rubric Rewards) with DOIs, Europe PMC / arXiv URLs, and NIAGADS dataset anchors."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "topic": {
                     "type": "string",
-                    "description": "Optional filter keyword (e.g. colocboost, fn1, xwas, sea-ad, alphagenome) or empty for all 14.",
+                    "description": "Optional filter keyword (e.g. colocboost, fn1, xwas, sea-ad, phc, browser) or empty for all 16.",
                 }
             },
+        },
+    },
+    {
+        "name": "niagads_adsp_r5_power_dar",
+        "description": (
+            "Compute ancestry-stratified statistical power across ADSP Release 5 (58,507 WGS / 57,302 subjects: "
+            "NHW 29,107, HIS 15,390, AA 6,975, ASN 5,523) and ADSP-PHC (U24AG074855) harmonized endophenotype domains, "
+            "select NG* NIAGADS DSS datasets, and draft a ready-to-submit NIAGADS DARM Data Access Request (DAR) + "
+            "NIH R01/R21 Specific Aims & DMS packet."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Target ADRD gene symbol or variant (e.g. ABCA7, SORL1, TREM2, BIN1, APOE, FN1, rs115550680).",
+                },
+                "test_mode": {
+                    "type": "string",
+                    "enum": ["staar_o_burden", "single_variant", "endophenotype_qtl"],
+                    "description": "Statistical association design.",
+                },
+                "phenotype_domain": {
+                    "type": "string",
+                    "enum": [
+                        "case_control_ad",
+                        "cognition_longitudinal",
+                        "neuroimaging_mri_pet",
+                        "fluid_biomarkers_atn",
+                        "neuropathology_autopsy",
+                    ],
+                    "description": "ADSP-PHC harmonized phenotype domain inside NG00067.",
+                },
+                "effect_size": {
+                    "type": "number",
+                    "description": "Expected Odds Ratio (for binary traits) or SD effect beta (for quantitative traits); 0 uses locus default.",
+                },
+                "custom_maf": {
+                    "type": "number",
+                    "description": "Optional allele or cumulative burden frequency override (0 uses live NIAGADS / ADSP R5 ancestry frequencies).",
+                },
+            },
+            "required": ["target"],
         },
     },
     {
@@ -253,6 +297,12 @@ NIAGADS_MCP_RESOURCES: List[Dict[str, Any]] = [
         "name": "NIAGADS v0.7 Grounded Literature & Methodological Credits (14 Papers)",
         "description": "Structured scholarly citations, DOIs, Europe PMC/arXiv URLs, and NIAGADS/ADSP dataset anchors for all 14 integrated papers.",
         "mimeType": "application/json",
+    },
+    {
+        "uri": "niagads://dar/adsp-r5-guide",
+        "name": "NIAGADS ADSP Release 5 (58,507 WGS) Power & DARM Data Access Request Packet",
+        "description": "Ancestry-stratified ADSP R5 power table, NG00067/ADSP-PHC dataset selector, DARM compliance checklist, and NIH R01/R21 Specific Aims template.",
+        "mimeType": "text/markdown",
     },
     {
         "uri": "niagads://citation/u24ag041689",
@@ -320,6 +370,15 @@ def _dispatch_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
     if name == "niagads_literature_credits":
         res = get_niagads_literature_catalog(topic=str(args.get("topic") or ""))
+        return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
+    if name == "niagads_adsp_r5_power_dar":
+        res = niagads_adsp_r5_power_dar(
+            target=str(args.get("target") or "ABCA7"),
+            test_mode=str(args.get("test_mode") or "staar_o_burden"),
+            phenotype_domain=str(args.get("phenotype_domain") or "case_control_ad"),
+            effect_size=float(args.get("effect_size") or 0.0),
+            custom_maf=float(args.get("custom_maf") or 0.0),
+        )
         return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
     if name == "query_niagads_catalog":
         out = query_niagads(str(args.get("query") or "NIAGADS"))
@@ -399,6 +458,21 @@ def handle_mcp_request(msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                                 "uri": uri,
                                 "mimeType": "application/json",
                                 "text": json.dumps(cat, indent=2),
+                            }
+                        ]
+                    },
+                }
+            if uri == "niagads://dar/adsp-r5-guide":
+                dar_res = niagads_adsp_r5_power_dar(target="ABCA7")
+                return {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "text/markdown",
+                                "text": dar_res["summary_markdown"],
                             }
                         ]
                     },

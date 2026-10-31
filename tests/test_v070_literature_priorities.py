@@ -30,12 +30,12 @@ from ligase.webapp.server import create_webapp
 
 def test_v070_literature_credits_registry_and_priorities(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIGASE_DISABLE_LIVE_NIAGADS", "1")
-    assert ligase.__version__ == "0.7.0"
-    assert len(NIAGADS_LITERATURE_CREDITS) == 14
+    assert ligase.__version__ == "0.8.0"
+    assert len(NIAGADS_LITERATURE_CREDITS) == 16
 
     cat = get_niagads_literature_catalog()
     assert cat["ok"] is True
-    assert len(cat["rows"]) == 14
+    assert len(cat["rows"]) == 16
     dois_joined = " | ".join(r["doi_or_id"] for r in cat["rows"])
     assert "PMC11709351" in dois_joined  # ColocBoost / FunGen-xQTL (Cifello et al. 2025)
     assert "10.1038/s41588-023-01604-7" in dois_joined  # MESuSiE (Gao et al. 2024)
@@ -97,9 +97,9 @@ def test_v070_literature_credits_registry_and_priorities(monkeypatch: pytest.Mon
     assert audit["gates_total"] == 6
 
     bench = run_niagads_v2f_benchmark()
-    assert bench["benchmark"] == "NIAGADS-AD-HeurekaBench-v0.7"
+    assert bench["benchmark"] == "NIAGADS-AD-HeurekaBench-v0.8"
     assert bench["loci_evaluated"] == 6
-    assert bench["multi_step_workflows_evaluated"] == 5
+    assert bench["multi_step_workflows_evaluated"] == 6
     assert bench["workflow_pass_rate"] == 1.0
 
     # Tool wrapper dispatch
@@ -125,7 +125,7 @@ def test_v070_webapp_routes_mcp_literature_and_closed_loop_critic(
     )
     assert mcp_lit is not None
     lit_payload = json.loads(mcp_lit["result"]["contents"][0]["text"])
-    assert len(lit_payload["rows"]) == 14
+    assert len(lit_payload["rows"]) == 16
 
     mcp_cb = handle_mcp_request(
         {
@@ -139,7 +139,7 @@ def test_v070_webapp_routes_mcp_literature_and_closed_loop_critic(
     assert "rs76928645" in mcp_cb["result"]["content"][0]["text"]
 
     mm = build_capabilities_mindmap()
-    assert mm["stats"]["components"] == 48
+    assert mm["stats"]["components"] == 50
 
     class DummyClaw:
         on_stream_event: Any = None

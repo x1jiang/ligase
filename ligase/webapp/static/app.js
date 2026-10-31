@@ -35,6 +35,8 @@
   };
 
   const OA_PRESETS = [
+    { label: "🏛️ ADSP R5 (58.5k) Power & NIH DAR: ABCA7", action: "adsp_r5_power_dar", target: "ABCA7", loc: "staar_o_burden|case_control_ad", flank: 0 },
+    { label: "🏛️ ADSP R5 SORL1 Rare Burden + CSF ATN DAR", action: "adsp_r5_power_dar", target: "SORL1", loc: "staar_o_burden|fluid_biomarkers_atn", flank: 0 },
     { label: "🔬 BIN1 TAD ColocBoost + MESuSiE", action: "colocboost_mesusie", target: "BIN1", loc: "ALL", flank: 0 },
     { label: "🧬 EGFR Distal +243 kb TAD Loop", action: "colocboost_mesusie", target: "EGFR", loc: "ALL", flank: 0 },
     { label: "🛡️ APOEε4 FN1 Resilience + XWAS + SEA-AD", action: "resilience_xwas_seaad", target: "APOE", loc: "e4/e4", flank: 0 },
@@ -42,9 +44,8 @@
     { label: "📐 Microglia 2SMR + PRS-CSx Admixture", action: "mr_prs", target: "microglia_endolysosomal", loc: "", flank: 0 },
     { label: "🧬 TSPAN14 AlphaGenome + Cryptic Splice", action: "rare_regulatory", target: "TSPAN14", loc: "", flank: 0 },
     { label: "💊 APOE ARIA Safety + ClinicalTrials", action: "translational_trials", target: "APOE", loc: "", flank: 0 },
-    { label: "📚 14-Paper Literature Credits", action: "literature_credits", target: "all", loc: "", flank: 0 },
+    { label: "📚 16-Paper Literature Credits", action: "literature_credits", target: "all", loc: "", flank: 0 },
     { label: "🔬 rs6733839 Full V2F Dossier", action: "locus_dossier", target: "rs6733839", loc: "", flank: 0 },
-    { label: "🔎 Search Tracks: African American", action: "search_tracks", target: "African American", loc: "", flank: 0 },
   ];
 
   const state = {
@@ -1178,7 +1179,7 @@
       "  title        = {NIAGADS Alzheimer's GenomicsDB \\& Open Access API v2.0},",
       "  organization = {National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS)},",
       "  url          = {https://api.niagads.org/open-access},",
-      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.7.0}",
+      "  note         = {Supported by NIH/NIA Cooperative Agreements U24AG041689 and U24AG074855 (ADSP-PHC); synthesized via Ligase v0.8.0}",
       "}",
     ].join("\n");
   }
@@ -2009,7 +2010,265 @@
       cards.push(card);
     }
 
+    // 9. v0.8 NIAGADS ADSP Release 5 (58,507 WGS) Statistical Power & Multi-Ancestry Power Curves
+    if (vis.adsp_r5_power_dar && Array.isArray(vis.adsp_r5_power_dar.strata)) {
+      const pd = vis.adsp_r5_power_dar;
+      const strata = pd.strata;
+
+      // 9a. Ancestry-Stratified Statistical Power Bar Chart (with 80% Power Threshold & MDE_80)
+      const cardBar = document.createElement("div");
+      cardBar.className = "oa-vis-card oa-vis-wide";
+      const headBar = document.createElement("div");
+      headBar.className = "oa-vis-head";
+      const titleBar = document.createElement("h4");
+      titleBar.className = "oa-vis-title";
+      titleBar.textContent = `${pd.gene} (${pd.lead_variant}) · ADSP Release 5 (58,507 WGS) Statistical Power by Ancestry`;
+      const subBar = document.createElement("span");
+      subBar.className = "oa-vis-sub";
+      subBar.textContent = `α = ${Number(pd.alpha || 2.5e-6).toExponential(1)} · Dashed line = 80% Power`;
+      headBar.append(titleBar, subBar);
+
+      const width = 780;
+      const rowH = 26;
+      const leftPad = 148;
+      const rightPad = 152;
+      const height = 24 + strata.length * rowH + 10;
+      const plotW = width - leftPad - rightPad;
+
+      const svgBar = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": titleBar.textContent,
+      });
+
+      const x80 = leftPad + 0.80 * plotW;
+      svgBar.appendChild(
+        svgNode("text", { x: x80.toFixed(1), y: 12, "text-anchor": "middle", "font-size": "9.2", "font-weight": "700", fill: "#0d9488" }, "80% Power")
+      );
+      svgBar.appendChild(
+        svgNode("line", {
+          x1: x80.toFixed(1),
+          y1: 16,
+          x2: x80.toFixed(1),
+          y2: height - 6,
+          stroke: "#0d9488",
+          "stroke-width": "1.3",
+          "stroke-dasharray": "4 3",
+        })
+      );
+
+      const ANC_COLORS = {
+        NHW: "#4f46e5",
+        HIS: "#0284c7",
+        AA: "#0f766e",
+        ASN: "#7c3aed",
+        ALL: "#d97706",
+      };
+
+      strata.forEach((st, idx) => {
+        const y = 19 + idx * rowH;
+        const pwr = Math.max(0, Math.min(100, Number(st.power_pct) || 0));
+        const barW = Math.max(4, (pwr / 100) * plotW);
+        const col = ANC_COLORS[st.ancestry] || "#0f766e";
+        const lbl = `${st.ancestry} (N=${Number(st.n_subjects || 0).toLocaleString()})`;
+
+        svgBar.appendChild(
+          svgNode(
+            "text",
+            {
+              x: leftPad - 10,
+              y: y + 14,
+              "text-anchor": "end",
+              "font-size": "10.2",
+              "font-weight": st.ancestry === "ALL" ? "700" : "500",
+              fill: "currentColor",
+            },
+            lbl
+          )
+        );
+        svgBar.appendChild(
+          svgNode("rect", {
+            x: leftPad,
+            y: y + 3,
+            width: plotW.toFixed(1),
+            height: 14,
+            rx: 4,
+            fill: "currentColor",
+            opacity: "0.07",
+          })
+        );
+        const rect = svgNode("rect", {
+          x: leftPad,
+          y: y + 3,
+          width: barW.toFixed(1),
+          height: 14,
+          rx: 4,
+          fill: col,
+          opacity: pwr >= 80 ? "0.94" : "0.72",
+        });
+        rect.appendChild(
+          svgNode(
+            "title",
+            {},
+            `${st.stratum_label} | N=${st.n_subjects} | MAF/cMAF=${st.frequency} | Power=${pwr.toFixed(1)}% | 80% MDE=${st.mde_80}`
+          )
+        );
+        svgBar.appendChild(rect);
+        svgBar.appendChild(
+          svgNode(
+            "text",
+            {
+              x: (leftPad + plotW + 10).toFixed(1),
+              y: y + 14,
+              "font-size": "10",
+              "font-weight": "700",
+              fill: "currentColor",
+            },
+            `${pwr.toFixed(1)}% (${st.mde_80})`
+          )
+        );
+      });
+
+      cardBar.append(headBar, svgBar);
+      cards.push(cardBar);
+
+      // 9b. Multi-Ancestry Effect-Size Power Sweep Curve
+      if (Array.isArray(pd.power_curves) && pd.power_curves.length) {
+        const cardCurve = document.createElement("div");
+        cardCurve.className = "oa-vis-card oa-vis-wide";
+        const headCurve = document.createElement("div");
+        headCurve.className = "oa-vis-head";
+        const titleCurve = document.createElement("h4");
+        titleCurve.className = "oa-vis-title";
+        titleCurve.textContent = `${pd.gene} · Multi-Ancestry Power Curve Across Effect Sizes (${pd.is_quantitative ? "β SD" : "Odds Ratio"})`;
+        const subCurve = document.createElement("span");
+        subCurve.className = "oa-vis-sub";
+        subCurve.textContent = `${pd.phenotype_label}`;
+        headCurve.append(titleCurve, subCurve);
+
+        const cw = 780;
+        const ch = 186;
+        const cLeft = 48;
+        const cRight = 108;
+        const cTop = 16;
+        const cBot = 28;
+        const cPlotW = cw - cLeft - cRight;
+        const cPlotH = ch - cTop - cBot;
+
+        const svgCurve = svgNode("svg", {
+          viewBox: `0 0 ${cw} ${ch}`,
+          class: "oa-vis-svg",
+          role: "img",
+          "aria-label": titleCurve.textContent,
+        });
+
+        const xs = pd.power_curves[0].points.map((p) => Number(p.x));
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const spanX = Math.max(0.01, maxX - minX);
+
+        // Horizontal 80% power line
+        const y80 = cTop + (1 - 0.80) * cPlotH;
+        svgCurve.appendChild(
+          svgNode("line", {
+            x1: cLeft,
+            y1: y80.toFixed(1),
+            x2: cw - cRight,
+            y2: y80.toFixed(1),
+            stroke: "#e11d48",
+            "stroke-width": "1.1",
+            "stroke-dasharray": "4 3",
+          })
+        );
+        svgCurve.appendChild(
+          svgNode("text", { x: cLeft - 6, y: y80 + 3, "text-anchor": "end", "font-size": "9", fill: "#e11d48" }, "80%")
+        );
+        svgCurve.appendChild(
+          svgNode("text", { x: cLeft - 6, y: cTop + 4, "text-anchor": "end", "font-size": "9", fill: "currentColor", opacity: "0.7" }, "100%")
+        );
+        svgCurve.appendChild(
+          svgNode("text", { x: cLeft - 6, y: cTop + cPlotH, "text-anchor": "end", "font-size": "9", fill: "currentColor", opacity: "0.7" }, "0%")
+        );
+
+        xs.forEach((xv) => {
+          const px = cLeft + ((xv - minX) / spanX) * cPlotW;
+          svgCurve.appendChild(
+            svgNode(
+              "text",
+              { x: px.toFixed(1), y: ch - 8, "text-anchor": "middle", "font-size": "9.2", fill: "currentColor", opacity: "0.8" },
+              pd.is_quantitative ? `${xv.toFixed(2)}` : `${xv.toFixed(2)}×`
+            )
+          );
+        });
+
+        pd.power_curves.forEach((series, sIdx) => {
+          const col = ANC_COLORS[series.ancestry] || "#0f766e";
+          const ptsStr = series.points
+            .map((pt) => {
+              const px = cLeft + ((Number(pt.x) - minX) / spanX) * cPlotW;
+              const py = cTop + (1 - Math.max(0, Math.min(100, Number(pt.power_pct))) / 100) * cPlotH;
+              return `${px.toFixed(1)},${py.toFixed(1)}`;
+            })
+            .join(" ");
+          svgCurve.appendChild(
+            svgNode("polyline", {
+              points: ptsStr,
+              fill: "none",
+              stroke: col,
+              "stroke-width": series.ancestry === "ALL" ? "2.6" : "1.9",
+              "stroke-linecap": "round",
+              "stroke-linejoin": "round",
+            })
+          );
+          series.points.forEach((pt) => {
+            const px = cLeft + ((Number(pt.x) - minX) / spanX) * cPlotW;
+            const py = cTop + (1 - Math.max(0, Math.min(100, Number(pt.power_pct))) / 100) * cPlotH;
+            svgCurve.appendChild(svgNode("circle", { cx: px.toFixed(1), cy: py.toFixed(1), r: "2.7", fill: col }));
+          });
+          // Legend row on right
+          const ly = cTop + 12 + sIdx * 20;
+          svgCurve.appendChild(svgNode("rect", { x: cw - cRight + 12, y: ly - 7, width: 10, height: 10, rx: 2, fill: col }));
+          svgCurve.appendChild(
+            svgNode("text", { x: cw - cRight + 27, y: ly + 1, "font-size": "9.5", "font-weight": "600", fill: "currentColor" }, series.ancestry)
+          );
+        });
+
+        cardCurve.append(headCurve, svgCurve);
+        cards.push(cardCurve);
+      }
+    }
+
     if (cards.length) {
+      // Attach 1-click Vector .svg & 300-DPI .png export controls to every NIAGADS chart card
+      cards.forEach((cardEl, idx) => {
+        const svgEl = cardEl.querySelector("svg");
+        const headEl = cardEl.querySelector(".oa-vis-head");
+        if (!svgEl || !headEl) return;
+        const subEl = headEl.querySelector(".oa-vis-sub");
+        const rightWrap = document.createElement("div");
+        rightWrap.className = "oa-vis-head-right";
+        if (subEl) rightWrap.appendChild(subEl);
+
+        const baseSlug = `ligase_niagads_${(state.lastOaResult?.target || "locus").replace(/[^a-zA-Z0-9_-]/g, "_")}_${idx + 1}`;
+        const svgBtn = document.createElement("button");
+        svgBtn.type = "button";
+        svgBtn.className = "oa-vis-export-btn";
+        svgBtn.textContent = "⬇ SVG";
+        svgBtn.title = "Download publication vector SVG figure";
+        svgBtn.addEventListener("click", () => downloadInlineSvgFigure(svgEl, `${baseSlug}.svg`, "svg"));
+
+        const pngBtn = document.createElement("button");
+        pngBtn.type = "button";
+        pngBtn.className = "oa-vis-export-btn";
+        pngBtn.textContent = "⬇ PNG";
+        pngBtn.title = "Download high-DPI PNG figure";
+        pngBtn.addEventListener("click", () => downloadInlineSvgFigure(svgEl, `${baseSlug}.png`, "png"));
+
+        rightWrap.append(svgBtn, pngBtn);
+        headEl.appendChild(rightWrap);
+      });
+
       const grid = document.createElement("div");
       grid.className = "oa-vis-grid";
       for (const c of cards) grid.appendChild(c);
@@ -2018,6 +2277,54 @@
     } else {
       el.oaVisualContainer.hidden = true;
     }
+  }
+
+  function downloadInlineSvgFigure(svgEl, filename, fmt = "svg") {
+    if (!svgEl) return;
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const computedColor = getComputedStyle(svgEl).color || "#0f172a";
+    clone.style.color = computedColor;
+    const serialized = new XMLSerializer().serializeToString(clone).replace(/currentColor/g, computedColor);
+    if (fmt === "svg") {
+      const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    const vb = (svgEl.getAttribute("viewBox") || "0 0 580 220").split(/\s+/).map(Number);
+    const w = vb[2] || 580;
+    const h = vb[3] || 220;
+    const scale = 3;
+    const img = new Image();
+    const svgBlob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext("2d");
+      const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#ffffff";
+      ctx.fillStyle = bg.startsWith("light-dark") ? "#ffffff" : bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((pngBlob) => {
+        if (!pngBlob) return;
+        const pUrl = URL.createObjectURL(pngBlob);
+        const a = document.createElement("a");
+        a.href = pUrl;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(pUrl), 1000);
+      }, "image/png");
+    };
+    img.src = url;
   }
 
   function applyAndRunOaPreset(action, target, loc = "", flank = 0) {
@@ -2036,6 +2343,10 @@
     if (!target && action === "literature_credits") {
       target = "all";
       el.oaTargetInput.value = "all";
+    }
+    if (!target && action === "adsp_r5_power_dar") {
+      target = "ABCA7";
+      el.oaTargetInput.value = "ABCA7";
     }
     if (!target && !loc) return;
 
@@ -2100,6 +2411,36 @@
         el.oaCopyJsonBtn.textContent = "📋 Copy Raw JSON";
       }, 1500);
     } catch {}
+  });
+
+  function triggerNiagadsTrackDownload(trackFormat) {
+    const r = state.lastOaResult;
+    if (!r) return;
+    const qs = new URLSearchParams({
+      action: r.action || "finemap_coloc",
+      target: r.target || "BIN1",
+      loc: r.loc || "",
+      track_format: trackFormat,
+    });
+    const a = document.createElement("a");
+    a.href = `/api/niagads/export-track?${qs.toString()}`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast(
+      trackFormat === "bedgraph"
+        ? "✓ Downloading GRCh38 IGV.js .bedGraph track for NIAGADS Genome Browser"
+        : "✓ Downloading GRCh38 LocusZoom .tsv regional track"
+    );
+  }
+
+  document.getElementById("oa-export-bedgraph-btn")?.addEventListener("click", () => {
+    triggerNiagadsTrackDownload("bedgraph");
+  });
+
+  document.getElementById("oa-export-lz-btn")?.addEventListener("click", () => {
+    triggerNiagadsTrackDownload("locuszoom");
   });
 
   el.oaSendStudioBtn.addEventListener("click", () => {
@@ -5029,7 +5370,7 @@
     benchBtn?.addEventListener("click", async () => {
       const orig = benchBtn.textContent;
       benchBtn.disabled = true;
-      benchBtn.textContent = "Evaluating AD-HeurekaBench v0.7…";
+      benchBtn.textContent = "Evaluating AD-HeurekaBench v0.8…";
       try {
         const b = await apiFetch("/api/niagads/benchmark");
         const rowsMd = (b.results || [])
@@ -5072,6 +5413,102 @@
         benchBtn.disabled = false;
         benchBtn.textContent = orig;
       }
+    });
+
+    // Interactive ADSP Release 5 (58,507 WGS) Power Planner & NIH DAR / Specific-Aims Co-Pilot
+    const darRunBtn = document.getElementById("niagads-dar-run-btn");
+    const darMdBtn = document.getElementById("niagads-dar-md-btn");
+    const darCsvBtn = document.getElementById("niagads-dar-csv-btn");
+    const darTargetInput = document.getElementById("dar-target-input");
+    const darModeSelect = document.getElementById("dar-mode-select");
+    const darDomainSelect = document.getElementById("dar-domain-select");
+    const darEffectInput = document.getElementById("dar-effect-input");
+    const darMafInput = document.getElementById("dar-maf-input");
+    let lastDarMd = "";
+    let lastDarCsv = "";
+    let lastDarTarget = "ABCA7";
+
+    darRunBtn?.addEventListener("click", async () => {
+      const target = (darTargetInput?.value || "ABCA7").trim() || "ABCA7";
+      const testMode = darModeSelect?.value || "staar_o_burden";
+      const domain = darDomainSelect?.value || "case_control_ad";
+      const effectSize = Number(darEffectInput?.value || 0);
+      const customMaf = Number(darMafInput?.value || 0);
+
+      const orig = darRunBtn.textContent;
+      darRunBtn.disabled = true;
+      darRunBtn.textContent = "Computing ADSP R5 Power & Drafting NIH DAR…";
+      el.oaResultCard.hidden = false;
+      el.oaResultMeta.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>Computing ADSP Release 5 (58,507 WGS) power &amp; NIH DAR packet…</span>`;
+
+      try {
+        const resp = await fetch("/api/niagads/power-dar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Ligase-Client-Id": CLIENT_ID,
+          },
+          body: JSON.stringify({
+            target,
+            test_mode: testMode,
+            phenotype_domain: domain,
+            effect_size: effectSize,
+            custom_maf: customMaf,
+          }),
+        });
+        const res = await resp.json().catch(() => ({}));
+        if (!resp.ok || !res.ok) {
+          throw new Error(res.summary_markdown || res.detail || `HTTP ${resp.status}`);
+        }
+        lastDarTarget = target;
+        lastDarMd = res.dar_specific_aims_markdown || res.summary_markdown || "";
+        lastDarCsv = res.csv || "";
+        if (darMdBtn) darMdBtn.hidden = !lastDarMd;
+        if (darCsvBtn) darCsvBtn.hidden = !lastDarCsv;
+
+        state.lastOaResult = {
+          action: "adsp_r5_power_dar",
+          target,
+          loc: `${testMode}|${domain}|${effectSize || ""}`,
+          flank: 0,
+          ...res,
+        };
+        el.oaResultMeta.innerHTML = `
+          <span class="oa-status-pill">✓ HTTP 200 OK · ${escapeHtml(res.elapsed_ms)} ms</span>
+          <span>Endpoint: <code>${escapeHtml(res.endpoint)}</code></span>
+        `;
+        renderOaEcosystemAndVisuals(res);
+        el.oaResultMarkdown.innerHTML = renderMarkdown(res.summary_markdown || "");
+        el.oaResultJson.textContent = JSON.stringify(res.raw, null, 2);
+        state.usageData = null;
+      } catch (err) {
+        showToast(`Power/DAR error: ${err.message}`);
+      } finally {
+        darRunBtn.disabled = false;
+        darRunBtn.textContent = orig;
+      }
+    });
+
+    darMdBtn?.addEventListener("click", () => {
+      if (!lastDarMd) return;
+      const blob = new Blob([lastDarMd], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `niagads_adsp_r5_dar_specific_aims_${lastDarTarget.replace(/[^a-zA-Z0-9_-]/g, "_")}.md`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    darCsvBtn?.addEventListener("click", () => {
+      if (!lastDarCsv) return;
+      const blob = new Blob([lastDarCsv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `niagads_adsp_r5_power_${lastDarTarget.replace(/[^a-zA-Z0-9_-]/g, "_")}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   }
 
@@ -5200,6 +5637,44 @@
             if (signal?.aborted) {
               throw err;
             }
+            return { error: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        annotations: { readOnlyHint: true },
+      },
+      {
+        name: "run_niagads_adsp_r5_power_dar",
+        description:
+          "Computes ancestry-stratified statistical power across ADSP Release 5 (58,507 WGS / 57,302 subjects) and ADSP-PHC domains, selects NG* datasets, and drafts a NIAGADS DARM Data Access Request + NIH R01/R21 Specific Aims packet.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            target: { type: "string", default: "ABCA7", description: "Target Alzheimer's gene or variant." },
+            test_mode: { type: "string", default: "staar_o_burden", description: "staar_o_burden | single_variant | endophenotype_qtl" },
+            phenotype_domain: { type: "string", default: "case_control_ad", description: "ADSP-PHC phenotype domain" },
+          },
+          required: ["target"],
+        },
+        async execute(input, { signal }) {
+          const target = typeof input?.target === "string" && input.target.trim() ? input.target.trim() : "ABCA7";
+          const test_mode = typeof input?.test_mode === "string" ? input.test_mode : "staar_o_burden";
+          const phenotype_domain = typeof input?.phenotype_domain === "string" ? input.phenotype_domain : "case_control_ad";
+          try {
+            const resp = await fetch("/api/niagads/power-dar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Ligase-Client-Id": CLIENT_ID },
+              body: JSON.stringify({ target, test_mode, phenotype_domain }),
+              signal,
+            });
+            if (!resp.ok) return { error: `Power/DAR query failed with status ${resp.status}.` };
+            const data = await resp.json();
+            return {
+              gene: data.raw?.gene || target,
+              strata: data.rows || [],
+              darMarkdown: data.dar_specific_aims_markdown || "",
+            };
+          } catch (err) {
+            if (signal?.aborted) throw err;
             return { error: err instanceof Error ? err.message : String(err) };
           }
         },

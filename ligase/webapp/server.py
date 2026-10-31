@@ -549,6 +549,15 @@ class VcfAnnotateRequest(BaseModel):
     vcf_text: str = Field(..., min_length=2, max_length=250_000)
 
 
+class PowerDarRequest(BaseModel):
+    target: str = Field(default="ABCA7", min_length=1, max_length=120)
+    test_mode: str = Field(default="staar_o_burden", max_length=64)
+    phenotype_domain: str = Field(default="case_control_ad", max_length=64)
+    effect_size: float = Field(default=0.0, ge=-10.0, le=50.0)
+    custom_maf: float = Field(default=0.0, ge=0.0, le=0.5)
+    alpha: float = Field(default=0.0, ge=0.0, le=0.25)
+
+
 class CreateThreadRequest(BaseModel):
     title: str = "New Biomedical Study"
     profile: str = "ad1"
@@ -1136,6 +1145,8 @@ def create_webapp(
     ) -> JSONResponse:
         if action.strip().lower() == "literature_credits" and not (target or "").strip():
             target = "all"
+        if action.strip().lower() == "adsp_r5_power_dar" and not (target or "").strip():
+            target = "ABCA7"
         if not (target or "").strip() and not (loc or "").strip():
             raise HTTPException(
                 status_code=400,
@@ -1197,6 +1208,73 @@ def create_webapp(
         except Exception:
             pass
         return JSONResponse(status_code=200 if result.get("ok") else 400, content=result)
+
+    @webapp.post("/api/niagads/power-dar")
+    async def api_niagads_power_dar(request: Request, body: PowerDarRequest) -> JSONResponse:
+        from ligase.niagads_v2f_engine import niagads_adsp_r5_power_dar
+
+        cid = _client_id_from_request(request)
+        t_start = time.monotonic()
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: niagads_adsp_r5_power_dar(
+                target=body.target,
+                test_mode=body.test_mode,
+                phenotype_domain=body.phenotype_domain,
+                effect_size=body.effect_size,
+                custom_maf=body.custom_maf,
+                alpha=body.alpha,
+            ),
+        )
+        dur_ms = int(result.get("elapsed_ms") or max(1, int((time.monotonic() - t_start) * 1000)))
+        try:
+            usage_tracker.record_niagads_api_call(
+                client_id=cid,
+                action="adsp_r5_power_dar",
+                target=f"{body.target}:{body.test_mode}:{body.phenotype_domain}",
+                endpoint="NIAGADS ADSP R5 (58.5k WGS) Power & NIH DAR Co-Pilot",
+                ok=bool(result.get("ok")),
+                elapsed_ms=dur_ms,
+                payload_bytes=len(str(result.get("dar_specific_aims_markdown") or "").encode("utf-8")),
+            )
+        except Exception:
+            pass
+        return JSONResponse(status_code=200 if result.get("ok") else 400, content=result)
+
+    @webapp.get("/api/niagads/export-track")
+    async def api_niagads_export_track(
+        action: str = "finemap_coloc",
+        target: str = "BIN1",
+        loc: str = "",
+        track_format: str = "bedgraph",
+    ) -> Response:
+        from ligase.niagads_api import export_niagads_browser_tracks
+
+        loop = asyncio.get_running_loop()
+        res = await loop.run_in_executor(
+            None,
+            lambda: execute_niagads_action(action=action, target=target, loc=loc),
+        )
+        tracks = export_niagads_browser_tracks(res)
+        safe_tgt = re.sub(r"[^a-zA-Z0-9_-]", "_", (target or "niagads"))[:40]
+        if track_format.strip().lower() in ("tsv", "locuszoom", "locuszoom_tsv"):
+            content_str = tracks["locuszoom_tsv"]
+            fname = f"ligase_niagads_{safe_tgt}_{action}.locuszoom.tsv"
+            mtype = "text/tab-separated-values; charset=utf-8"
+        else:
+            content_str = tracks["bedgraph"]
+            fname = f"ligase_niagads_{safe_tgt}_{action}.igv.bedGraph"
+            mtype = "text/plain; charset=utf-8"
+        return Response(
+            content=content_str.encode("utf-8"),
+            media_type=mtype,
+            headers={
+                "Content-Disposition": f'attachment; filename="{fname}"',
+                "X-NIAGADS-Browser-URL": tracks["niagads_browser_url"],
+                "Cache-Control": "no-store",
+            },
+        )
 
     @webapp.get("/api/niagads/benchmark")
     async def api_niagads_benchmark() -> Dict[str, Any]:

@@ -493,6 +493,22 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
     ui.add_argument("--port", type=int, default=8080, help="bind port (default: 8080)")
     ui.add_argument("--model", default="gpt-6-luna", help="model ID or preset for web sessions (default: gpt-6-luna)")
+
+    niagads_cmd = sub.add_parser(
+        "niagads",
+        help="run deterministic NIAGADS Open Access v2.0, V2F, VCF, Benchmark, or ADSP R5 Power/DAR workflows",
+    )
+    niagads_cmd.add_argument(
+        "subaction",
+        choices=["power", "live", "vcf", "benchmark"],
+        help="NIAGADS workflow: power (ADSP R5 58.5k WGS & NIH DAR), live (Open Access v2.0 / V2F), vcf, or benchmark",
+    )
+    niagads_cmd.add_argument("target", nargs="?", default="ABCA7", help="gene symbol, rsID, region, or VCF file path")
+    niagads_cmd.add_argument("--action", default="locus_dossier", help="action for `ligase niagads live` (default: locus_dossier)")
+    niagads_cmd.add_argument("--mode", default="staar_o_burden", help="power mode: staar_o_burden | single_variant | endophenotype_qtl")
+    niagads_cmd.add_argument("--domain", default="case_control_ad", help="ADSP-PHC phenotype domain")
+    niagads_cmd.add_argument("--effect", type=float, default=0.0, help="expected Odds Ratio or SD beta (0 uses locus default)")
+    niagads_cmd.add_argument("--output-file", default="", help="optional path to write .md, .csv, or .json output")
     return parser
 
 
@@ -508,6 +524,55 @@ def main(argv=None) -> int:
         if args.cmd == "examples":
             _print_examples(console)
             return 0
+        if args.cmd == "niagads":
+            from ligase.niagads_api import execute_niagads_action
+            from ligase.niagads_v2f_engine import (
+                niagads_adsp_r5_power_dar,
+                niagads_vcf_batch_v2f,
+                run_niagads_v2f_benchmark,
+            )
+
+            subact = args.subaction
+            if subact == "power":
+                res = niagads_adsp_r5_power_dar(
+                    target=args.target,
+                    test_mode=args.mode,
+                    phenotype_domain=args.domain,
+                    effect_size=args.effect,
+                )
+                out_text = res["summary_markdown"]
+                console.print(Markdown(out_text))
+                if args.output_file:
+                    out_p = Path(args.output_file)
+                    if out_p.suffix.lower() == ".csv":
+                        out_p.write_text(res["csv"], encoding="utf-8")
+                    elif out_p.suffix.lower() == ".json":
+                        out_p.write_text(json.dumps(res, indent=2), encoding="utf-8")
+                    else:
+                        out_p.write_text(out_text, encoding="utf-8")
+                    console.print(f"[green]Saved output to {out_p}[/green]")
+                return 0
+            if subact == "vcf":
+                src_p = Path(args.target)
+                vcf_str = src_p.read_text(encoding="utf-8") if src_p.is_file() else args.target
+                res = niagads_vcf_batch_v2f(vcf_text=vcf_str)
+                console.print(Markdown(res["summary_markdown"]))
+                if args.output_file:
+                    out_p = Path(args.output_file)
+                    out_p.write_text(res["csv"] if out_p.suffix.lower() == ".csv" else res["summary_markdown"], encoding="utf-8")
+                    console.print(f"[green]Saved output to {out_p}[/green]")
+                return 0
+            if subact == "benchmark":
+                bench = run_niagads_v2f_benchmark()
+                console.print_json(json.dumps(bench))
+                if args.output_file:
+                    Path(args.output_file).write_text(json.dumps(bench, indent=2), encoding="utf-8")
+                return 0
+            res = execute_niagads_action(action=args.action, target=args.target)
+            console.print(Markdown(res.get("summary_markdown") or ""))
+            if args.output_file:
+                Path(args.output_file).write_text(res.get("summary_markdown") or "", encoding="utf-8")
+            return 0 if res.get("ok") else 1
         if args.cmd == "ui":
             import uvicorn
 

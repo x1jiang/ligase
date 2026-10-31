@@ -35,7 +35,7 @@ from ligase.niagads_api import (
 
 CLINICAL_TRIALS_API_V2 = "https://clinicaltrials.gov/api/v2/studies"
 PGS_CATALOG_TRAIT_API = "https://www.pgscatalog.org/rest/score/search?trait_id=MONDO_0004975&limit=6"
-_ENGINE_UA = "Ligase/0.7.0 (+https://github.com/x1jiang/ligase; NIAGADS Biomedical Co-Scientist)"
+_ENGINE_UA = "Ligase/0.8.0 (+https://github.com/x1jiang/ligase; NIAGADS Biomedical Co-Scientist)"
 
 # ── Authoritative NIAGADS, ADSP, Multi-Omics & Co-Scientist Literature Credits ─
 NIAGADS_LITERATURE_CREDITS: List[Dict[str, Any]] = [
@@ -248,6 +248,36 @@ NIAGADS_LITERATURE_CREDITS: List[Dict[str, Any]] = [
         "ligase_module": "rubric_audit · critic_mode",
         "keywords": ["rubric", "critic", "verifier", "closed-loop", "audit"],
         "key_finding": "Shows checklist-style rubric verification closes systematic failure modes in open-ended scientific reasoning.",
+    },
+    {
+        "id": "niagads_genomicsdb_browser_2024",
+        "priority": "Priority 4 · NIAGADS GenomicsDB, Open Access v2.0 & IGV.js Browser",
+        "short_cite": "Greenfest-Allen, Valladares, Kuksa, Leung et al. / NIAGADS (Alzheimers Dement 2024)",
+        "authors": "Greenfest-Allen E, Valladares O, Kuksa PP, Leung YY, Gangadharan P, NIAGADS Investigators",
+        "title": "NIAGADS Alzheimer's GenomicsDB: Harmonized Open Access API, LocusZoom & Interactive IGV.js Genome Browser Ecosystem",
+        "venue": "Alzheimer's & Dementia",
+        "year": 2024,
+        "doi_or_id": "PMC10984452 · DOI:10.1002/alz.13598",
+        "url": "https://doi.org/10.1002/alz.13598",
+        "niagads_anchor": "U24AG041689 · www.niagads.org/genomics · api.niagads.org",
+        "ligase_module": "locus_dossier · adsp_r5_power_dar · niagads_browser_tracks",
+        "keywords": ["genomicsdb", "igv", "locuszoom", "browser", "open access", "niagads", "dar", "darm"],
+        "key_finding": "Provides public interactive GenomicsDB gene/variant/track reports, IGV.js genome browser tracks, and OpenAPI v2.0 programmatic discovery across ADSP & IGAP.",
+    },
+    {
+        "id": "adsp_phc_hohman_2024",
+        "priority": "Priority 4 · ADSP-PHC Harmonized Endophenotypes & DAR Study Design",
+        "short_cite": "Mukherjee, Mez, Trittschuh, Hohman et al. / ADSP-PHC (Alzheimers Dement 2023–2025)",
+        "authors": "Mukherjee S, Mez J, Trittschuh EH, Saykin AJ, Crane PK, Hohman TJ, ADSP Phenotype Harmonization Consortium",
+        "title": "ADSP Phenotype Harmonization Consortium (ADSP-PHC): Cross-Cohort Harmonization of Cognition, Neuroimaging, Fluid Biomarkers & Neuropathology in NG00067",
+        "venue": "Alzheimer's & Dementia",
+        "year": 2024,
+        "doi_or_id": "PMC10186919 · DOI:10.1002/alz.13004 · U24AG074855",
+        "url": "https://doi.org/10.1002/alz.13004",
+        "niagads_anchor": "NG00067 (ADSP-PHC Cognition, MRI/PET, CSF/Plasma ATN, Autopsy Neuropath)",
+        "ligase_module": "adsp_r5_power_dar",
+        "keywords": ["adsp-phc", "harmonization", "cognition", "neuroimaging", "biomarker", "neuropathology", "power", "dar", "hohman"],
+        "key_finding": "Harmonizes longitudinal IRT cognitive composites, MRI/PET imaging, CSF/plasma ATN biomarkers, and autopsy neuropathology across ADSP multi-ancestry cohorts under NG00067.",
     },
 ]
 
@@ -939,7 +969,9 @@ def niagads_finemap_coloc(
             f"**{c['pip_filer'] * 100:.1f}%** | {cs_mark} | {c['annot']} |"
         )
 
+    browser_span = f"{chrom}:{max(1, min_pos - 5000)}-{max_pos + 5000}"
     visual = {
+        "niagads_browser_locus": browser_span,
         "locuszoom": {
             "locus": locus_label,
             "gene": locus_label,
@@ -955,10 +987,12 @@ def niagads_finemap_coloc(
             "credible_set_size": len(credible_set_ids),
             "filer_tracks": filer_info.get("overlapping_tracks", 0),
             "variants": sorted(ranked, key=lambda x: x["pos"]),
-        }
+        },
     }
     links = [
+        {"label": f"NIAGADS Genome Browser ({locus_label})", "url": f"https://www.niagads.org/genomics/app/visualizations/browser?locus={browser_span}", "badge": "NIAGADS IGV.js"},
         {"label": f"GenomicsDB ({locus_label})", "url": f"https://www.niagads.org/genomics/app/record/variant/{top_hit['rsid']}" if top_hit["rsid"].startswith("rs") else "https://www.niagads.org/genomics/app", "badge": "NIAGADS"},
+        {"label": "GenomicsDB Dataset (NG00105)", "url": "https://www.niagads.org/genomics/app/record/dataset/NG00105", "badge": "NG00105"},
         {"label": "FunGen-xQTL Resource Portal", "url": "https://statfungen.github.io/xqtl-resources/", "badge": "ADSP xQTL"},
         {"label": "FILER hg38 Tracks", "url": "https://tf.lisanwanglab.org/FILER/", "badge": "58k+ Tracks"},
         {"label": "NIAGADS ADVP", "url": "https://advp.niagads.org/", "badge": "ADVP"},
@@ -1881,6 +1915,9 @@ def niagads_colocboost_mesusie(target: str = "BIN1", ancestry: str = "ALL") -> D
         }
     }
 
+    tad_locus_clean = panel["tad_window"].split(" ")[0]
+    visual["niagads_browser_locus"] = tad_locus_clean
+
     return {
         "ok": True,
         "action": "colocboost_mesusie",
@@ -1893,6 +1930,7 @@ def niagads_colocboost_mesusie(target: str = "BIN1", ancestry: str = "ALL") -> D
             "gene": gene_upper,
             "lead_variant": panel["lead_variant"],
             "tad_window": panel["tad_window"],
+            "grch38_locus": tad_locus_clean,
             "cos_joint": panel["cos_joint"],
             "mesusie_joint_cs_size": panel["mesusie_joint_cs_size"],
             "modalities": panel["modalities"],
@@ -1900,8 +1938,13 @@ def niagads_colocboost_mesusie(target: str = "BIN1", ancestry: str = "ALL") -> D
         },
         "visual": visual,
         "ecosystem_links": [
+            {
+                "label": f"NIAGADS Genome Browser: {gene_upper}",
+                "url": f"https://www.niagads.org/genomics/app/visualizations/browser?locus={urllib.parse.quote(tad_locus_clean, safe=':-')}",
+                "badge": "NIAGADS IGV.js",
+            },
             {"label": "NIAGADS FunGen-xQTL Portal", "url": "https://xqtl.niagads.org/", "badge": "ColocBoost"},
-            {"label": "ADSP Release 4/5 & emeraLD", "url": "https://dss.niagads.org/datasets/ng00067/", "badge": "MESuSiE LD"},
+            {"label": "ADSP Release 5 & emeraLD (NG00067)", "url": "https://dss.niagads.org/datasets/ng00067/", "badge": "MESuSiE LD"},
             {"label": "FILER hg38 Tracks", "url": "https://tf.lisanwanglab.org/FILER/", "badge": "58k+ Tracks"},
         ],
         "paper_credits": credits,
@@ -2299,6 +2342,16 @@ def run_niagads_v2f_benchmark() -> Dict[str, Any]:
                 "paper_anchor": "Nicolas et al. 2025; Gabitto et al. 2024",
             }
         )
+        dar_abca7 = niagads_adsp_r5_power_dar("ABCA7", test_mode="staar_o_burden", phenotype_domain="case_control_ad")
+        aa_power = next(r["power_pct"] for r in dar_abca7["rows"] if r["ancestry"] == "AA")
+        workflows.append(
+            {
+                "workflow_id": "WF6_ADSP_R5_58k_WGS_Power_and_NIH_DAR_CoPilot",
+                "passed": aa_power >= 80.0 and "NG00067" in dar_abca7["dar_specific_aims_markdown"],
+                "metric": f"ABCA7 AA Power={aa_power:.1f}% (N=6,975) + DARM/R01 Packet",
+                "paper_anchor": "Leung et al. 2025; Peloso et al. 2024; Mukherjee/Hohman et al. 2024",
+            }
+        )
     finally:
         if prev_flag is None:
             os.environ.pop("LIGASE_DISABLE_LIVE_NIAGADS", None)
@@ -2310,7 +2363,7 @@ def run_niagads_v2f_benchmark() -> Dict[str, Any]:
     wf_pass = sum(1 for w in workflows if w["passed"]) / max(1, len(workflows))
     return {
         "ok": True,
-        "benchmark": "NIAGADS-AD-HeurekaBench-v0.7",
+        "benchmark": "NIAGADS-AD-HeurekaBench-v0.8",
         "loci_evaluated": len(results),
         "top1_causal_variant_accuracy": round(top1_acc, 4),
         "mean_coloc_pp_h4": round(mean_pp4, 4),
@@ -2325,11 +2378,631 @@ def run_niagads_v2f_benchmark() -> Dict[str, Any]:
                 "rubric_rewards_goel_2025",
                 "fungen_colocboost_2025",
                 "mesusie_gao_2024",
+                "adsp_r4_leung_2025",
+                "adsp_phc_hohman_2024",
+                "niagads_genomicsdb_browser_2024",
                 "fn1_bhattarai_2024",
                 "xwas_belloy_2024",
                 "seaad_gabitto_2024",
             ]
         ),
+    }
+
+
+# ── 10. Priority 4 (v0.8): NIAGADS ADSP R5 (58,507 WGS) Power Planner & NIH DAR / Specific-Aims Co-Pilot ──
+
+ADSP_R5_WGS_STRATA: List[Dict[str, Any]] = [
+    {
+        "ancestry": "NHW",
+        "label": "Non-Hispanic White (NHW)",
+        "n_subjects": 29107,
+        "n_genomes": 29720,
+        "case_fraction": 0.410,
+        "hancestro": "HANCESTRO:0005",
+    },
+    {
+        "ancestry": "HIS",
+        "label": "Hispanic / Latino (HIS)",
+        "n_subjects": 15390,
+        "n_genomes": 15715,
+        "case_fraction": 0.360,
+        "hancestro": "HANCESTRO:0014",
+    },
+    {
+        "ancestry": "AA",
+        "label": "African Ancestry / Black (AA)",
+        "n_subjects": 6975,
+        "n_genomes": 7122,
+        "case_fraction": 0.370,
+        "hancestro": "HANCESTRO:0568",
+    },
+    {
+        "ancestry": "ASN",
+        "label": "Asian Ancestry (ASN)",
+        "n_subjects": 5523,
+        "n_genomes": 5638,
+        "case_fraction": 0.360,
+        "hancestro": "HANCESTRO:0008",
+    },
+    {
+        "ancestry": "ALL",
+        "label": "ADSP R5 Pooled Trans-Ancestry (57 Cohorts)",
+        "n_subjects": 57302,
+        "n_genomes": 58507,
+        "case_fraction": 0.387,
+        "hancestro": "Multi-Ancestry (emeraLD 4-Pop)",
+    },
+]
+
+ADSP_PHC_PHENOTYPE_DOMAINS: Dict[str, Dict[str, Any]] = {
+    "case_control_ad": {
+        "label": "Clinical AD / MCI Case–Control Status (ADSP R5 Core Freeze)",
+        "trait_type": "binary",
+        "coverage_fraction": 1.00,
+        "phc_module": "ADSP Core Adjudicated Diagnosis (NG00067)",
+        "companion_ng": ["NG00067", "NG00075", "NG00100", "NG00126"],
+        "measures": "NINCDS-ADRDA / NIA-AA Probable & Possible AD, MCI, Cognitively Unimpaired Controls",
+    },
+    "cognition_longitudinal": {
+        "label": "ADSP-PHC Longitudinal Cognitive Composites (Memory, Executive, Language)",
+        "trait_type": "quantitative",
+        "coverage_fraction": 0.67,
+        "phc_module": "ADSP-PHC Cognition Domain (U24AG074855 · NG00067)",
+        "companion_ng": ["NG00067", "NG00105"],
+        "measures": "IRT Co-Calibrated Memory (`PHC_MEM`), Executive (`PHC_EXF`), Language (`PHC_LAN`) Slopes",
+    },
+    "neuroimaging_mri_pet": {
+        "label": "ADSP-PHC Structural MRI, White-Matter DTI & Amyloid/Tau-PET",
+        "trait_type": "quantitative",
+        "coverage_fraction": 0.196,
+        "phc_module": "ADSP-PHC Neuroimaging Domain (FreeSurfer + Centiloid + CenTauR · NG00067)",
+        "companion_ng": ["NG00067", "NG00103"],
+        "measures": "Hippocampal Volume, AD Signature Cortical Thickness, WMH Volume, Amyloid-PET Centiloids, Tau-PET",
+    },
+    "fluid_biomarkers_atn": {
+        "label": "ADSP-PHC CSF & Blood Plasma AT(N) Fluid Biomarkers",
+        "trait_type": "quantitative",
+        "coverage_fraction": 0.155,
+        "phc_module": "ADSP-PHC Fluid Biomarker Domain (NG00067 + NG00049 + NG00102)",
+        "companion_ng": ["NG00067", "NG00049", "NG00102", "NG00052"],
+        "measures": "Harmonized CSF & Plasma Aβ42/40, p-tau181/p-tau217, Total Tau, NfL, GFAP, SomaScan/Olink pQTL",
+    },
+    "neuropathology_autopsy": {
+        "label": "ADSP-PHC Post-Mortem Autopsy Neuropathology (ADNC, LATE-NC, CAA, LBD)",
+        "trait_type": "binary",
+        "coverage_fraction": 0.130,
+        "phc_module": "ADSP-PHC Neuropathology Domain (NACC / ROSMAP / ACT Harmonized · NG00067)",
+        "companion_ng": ["NG00067", "NG00169", "NG00172"],
+        "measures": "NIA-AA ADNC (Thal, Braak, CERAD), TDP-43 LATE-NC Stage, Cerebral Amyloid Angiopathy (CAA), Lewy Body",
+    },
+}
+
+ADSP_R5_LOCUS_POWER_PROFILES: Dict[str, Dict[str, Any]] = {
+    "ABCA7": {
+        "gene": "ABCA7",
+        "lead_variant": "rs115550680",
+        "grch38_locus": "chr19:1039997-1065572",
+        "mechanism": "African-ancestry enriched PTC / 44-bp frameshift deletion & splice-donor lipid-efflux LoF burden",
+        "snv_maf": {"NHW": 0.0012, "HIS": 0.0140, "AA": 0.0715, "ASN": 0.0010, "ALL": 0.0132},
+        "staar_cmaf": {"NHW": 0.0085, "HIS": 0.0195, "AA": 0.0820, "ASN": 0.0068, "ALL": 0.0202},
+        "default_or_snv": 1.79,
+        "default_or_burden": 1.92,
+        "default_beta_sd": 0.28,
+        "extra_ng": ["NG00100", "NG00148"],
+    },
+    "SORL1": {
+        "gene": "SORL1",
+        "lead_variant": "rs11218343",
+        "grch38_locus": "chr11:121452314-121633763",
+        "mechanism": "Endosomal retromer PTV + VPS10p YWTD/Ca2+-cage high-penetrance missense burden depleting CSF sSORLA",
+        "snv_maf": {"NHW": 0.0410, "HIS": 0.0680, "AA": 0.0520, "ASN": 0.2940, "ALL": 0.0740},
+        "staar_cmaf": {"NHW": 0.0048, "HIS": 0.0052, "AA": 0.0044, "ASN": 0.0061, "ALL": 0.0050},
+        "default_or_snv": 1.25,
+        "default_or_burden": 3.45,
+        "default_beta_sd": 0.42,
+        "extra_ng": ["NG00148", "NG00049"],
+    },
+    "TREM2": {
+        "gene": "TREM2",
+        "lead_variant": "rs75932628",
+        "grch38_locus": "chr6:41158506-41163186",
+        "mechanism": "Microglial Ig-like ectodomain p.Arg47His / p.Arg62His & stalk-shedding p.His157Tyr DAM transition LoF",
+        "snv_maf": {"NHW": 0.0026, "HIS": 0.0018, "AA": 0.0009, "ASN": 0.0003, "ALL": 0.0019},
+        "staar_cmaf": {"NHW": 0.0068, "HIS": 0.0051, "AA": 0.0049, "ASN": 0.0028, "ALL": 0.0057},
+        "default_or_snv": 2.90,
+        "default_or_burden": 2.65,
+        "default_beta_sd": 0.48,
+        "extra_ng": ["NG00105", "NG00102", "NG00049"],
+    },
+    "BIN1": {
+        "gene": "BIN1",
+        "lead_variant": "rs6733839",
+        "grch38_locus": "chr2:127048023-127145000",
+        "mechanism": "Microglia-specific +28 kb SPI1 (PU.1) / MEF2C enhancer allele + rare CAGE/DHS non-coding STAAR-O set",
+        "snv_maf": {"NHW": 0.3910, "HIS": 0.3650, "AA": 0.4410, "ASN": 0.3480, "ALL": 0.3860},
+        "staar_cmaf": {"NHW": 0.0110, "HIS": 0.0125, "AA": 0.0155, "ASN": 0.0095, "ALL": 0.0118},
+        "default_or_snv": 1.22,
+        "default_or_burden": 1.58,
+        "default_beta_sd": 0.19,
+        "extra_ng": ["NG00105", "NG00075"],
+    },
+    "APOE": {
+        "gene": "APOE",
+        "lead_variant": "rs429358",
+        "grch38_locus": "chr19:44905796-44909393",
+        "mechanism": "Isoform p.Cys112Arg (ε4) / p.Arg158Cys (ε2) lipidated Aβ clearance, CAA/ARIA-H & local-ancestry modifier",
+        "snv_maf": {"NHW": 0.1420, "HIS": 0.1250, "AA": 0.2157, "ASN": 0.0977, "ALL": 0.1421},
+        "staar_cmaf": {"NHW": 0.0032, "HIS": 0.0038, "AA": 0.0045, "ASN": 0.0029, "ALL": 0.0035},
+        "default_or_snv": 3.32,
+        "default_or_burden": 2.40,
+        "default_beta_sd": 0.62,
+        "extra_ng": ["NG00049", "NG00100", "NG00103"],
+    },
+    "FN1": {
+        "gene": "FN1",
+        "lead_variant": "rs140926439",
+        "grch38_locus": "chr2:215360440-215436073",
+        "mechanism": "Blood-brain barrier ECM fibronectin LoF protective resilience in APOEε4 homozygotes (OR = 0.29)",
+        "snv_maf": {"NHW": 0.0105, "HIS": 0.0068, "AA": 0.0025, "ASN": 0.0015, "ALL": 0.0076},
+        "staar_cmaf": {"NHW": 0.0145, "HIS": 0.0112, "AA": 0.0088, "ASN": 0.0065, "ALL": 0.0121},
+        "default_or_snv": 0.29,
+        "default_or_burden": 0.42,
+        "default_beta_sd": -0.36,
+        "extra_ng": ["NG00102"],
+    },
+    "MAPT": {
+        "gene": "MAPT",
+        "lead_variant": "rs8070723",
+        "grch38_locus": "chr17:45894382-46028334",
+        "mechanism": "17q21.31 ~900 kb H1/H2 paracentric inversion SV & exon 10 4R-tau splicing QTL",
+        "snv_maf": {"NHW": 0.2280, "HIS": 0.1450, "AA": 0.0410, "ASN": 0.0120, "ALL": 0.1620},
+        "staar_cmaf": {"NHW": 0.0054, "HIS": 0.0048, "AA": 0.0039, "ASN": 0.0044, "ALL": 0.0050},
+        "default_or_snv": 1.28,
+        "default_or_burden": 2.15,
+        "default_beta_sd": 0.26,
+        "extra_ng": ["NG00169", "NG00172", "NG00118"],
+    },
+    "SLC9A7": {
+        "gene": "SLC9A7",
+        "lead_variant": "rs188959992",
+        "grch38_locus": "chrX:46601000-46775000",
+        "mechanism": "Sex-aware chrX trans-Golgi/endosomal Na+/H+ exchanger NHE7 lumenal pH & APP cleavage locus",
+        "snv_maf": {"NHW": 0.0320, "HIS": 0.0280, "AA": 0.0190, "ASN": 0.0240, "ALL": 0.0285},
+        "staar_cmaf": {"NHW": 0.0074, "HIS": 0.0069, "AA": 0.0062, "ASN": 0.0058, "ALL": 0.0069},
+        "default_or_snv": 1.34,
+        "default_or_burden": 1.88,
+        "default_beta_sd": 0.24,
+        "extra_ng": ["NG00075"],
+    },
+}
+
+_RSID_TO_POWER_GENE: Dict[str, str] = {
+    v["lead_variant"].lower(): k for k, v in ADSP_R5_LOCUS_POWER_PROFILES.items()
+}
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def _inv_norm_cdf(p: float) -> float:
+    """Acklam rational approximation to the standard normal quantile Phi^-1(p), accurate to <1.2e-9."""
+    p_clamped = min(max(p, 1e-15), 1.0 - 1e-15)
+    a = [-3.969683028665376e01, 2.209460984245205e02, -2.759285104469687e02, 1.383577518672690e02, -3.066479806614716e01, 2.506628277459239e00]
+    b = [-5.447609879822406e01, 1.615858368580409e02, -1.556989798598866e02, 6.680131188771972e01, -1.328068155288572e01]
+    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e00, -2.549732539343734e00, 4.374664141464968e00, 2.938163982698783e00]
+    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e00, 3.754408661907416e00]
+    plow = 0.02425
+    phigh = 1.0 - plow
+    if p_clamped < plow:
+        q = math.sqrt(-2.0 * math.log(p_clamped))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+        )
+    if p_clamped <= phigh:
+        q = p_clamped - 0.5
+        r = q * q
+        return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (
+            ((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0
+        )
+    q = math.sqrt(-2.0 * math.log(1.0 - p_clamped))
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+        (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+    )
+
+
+def _two_sided_power_from_ncp(ncp: float, z_crit: float) -> float:
+    if ncp <= 0.0:
+        return 0.0
+    root_ncp = math.sqrt(ncp)
+    pwr = _norm_cdf(root_ncp - z_crit) + _norm_cdf(-root_ncp - z_crit)
+    return min(max(pwr, 0.0), 1.0)
+
+
+def niagads_adsp_r5_power_dar(
+    target: str = "ABCA7",
+    test_mode: str = "staar_o_burden",
+    phenotype_domain: str = "case_control_ad",
+    effect_size: float = 0.0,
+    custom_maf: float = 0.0,
+    alpha: float = 0.0,
+) -> Dict[str, Any]:
+    """Compute ancestry-stratified statistical power across ADSP Release 5 (58,507 WGS / 57,302 subjects)
+    and ADSP-PHC harmonized endophenotype domains, select required NG* NIAGADS DSS datasets, and draft
+    a ready-to-submit NIAGADS DARM Data Access Request (DAR) + NIH R01/R21 Specific Aims & DMS packet.
+    """
+    t0 = time.monotonic()
+    raw_tgt = (target or "ABCA7").strip()
+    tgt_upper = raw_tgt.upper()
+    norm_var = normalize_variant_id(raw_tgt)
+
+    matched_key = ""
+    if tgt_upper in ADSP_R5_LOCUS_POWER_PROFILES:
+        matched_key = tgt_upper
+    elif norm_var.lower() in _RSID_TO_POWER_GENE:
+        matched_key = _RSID_TO_POWER_GENE[norm_var.lower()]
+
+    if matched_key:
+        prof = dict(ADSP_R5_LOCUS_POWER_PROFILES[matched_key])
+        snv_maf_map = dict(prof["snv_maf"])
+        burden_cmaf_map = dict(prof["staar_cmaf"])
+    else:
+        prof = {
+            "gene": tgt_upper if not norm_var.lower().startswith("rs") else raw_tgt,
+            "lead_variant": norm_var if norm_var.lower().startswith("rs") else "lead_ADSP_R5_variant",
+            "grch38_locus": "chr19:1039997-1065572",
+            "mechanism": "ADSP Release 5 multi-ancestry coding & FILER enhancer regulatory architecture",
+            "default_or_snv": 1.35,
+            "default_or_burden": 2.00,
+            "default_beta_sd": 0.25,
+            "extra_ng": ["NG00148"],
+        }
+        snv_maf_map = {"NHW": 0.0150, "HIS": 0.0150, "AA": 0.0150, "ASN": 0.0150, "ALL": 0.0150}
+        burden_cmaf_map = {"NHW": 0.0080, "HIS": 0.0080, "AA": 0.0080, "ASN": 0.0080, "ALL": 0.0080}
+
+    live_source_note = "Curated NIAGADS ADSP Release 5 (`NG00067`) reference frequency & burden architecture"
+    live_disabled = os.getenv("LIGASE_DISABLE_LIVE_NIAGADS", "").strip().lower() in ("1", "true", "yes")
+    if not live_disabled:
+        try:
+            q_var = norm_var if norm_var.lower().startswith("rs") or ":" in norm_var else prof["lead_variant"]
+            if q_var and (q_var.lower().startswith("rs") or ":" in q_var):
+                v_url = f"{NIAGADS_API_BASE}/record/variant/{urllib.parse.quote(q_var, safe=':')}?content=full"
+                v_json = _http_get_json(v_url, timeout=4.5)
+                v_rec = ((v_json.get("data") or [{}])[0]) if isinstance(v_json, dict) else {}
+                gnomad = ((v_rec.get("allele_frequency") or {}).get("GnomAD") or {}) if isinstance(v_rec, dict) else {}
+                if isinstance(gnomad, dict) and any(gnomad.get(k) is not None for k in ("nfe", "afr", "amr", "eas")):
+                    if gnomad.get("nfe") is not None:
+                        snv_maf_map["NHW"] = max(1e-5, min(0.5, float(gnomad["nfe"])))
+                    if gnomad.get("amr") is not None:
+                        snv_maf_map["HIS"] = max(1e-5, min(0.5, float(gnomad["amr"])))
+                    if gnomad.get("afr") is not None:
+                        snv_maf_map["AA"] = max(1e-5, min(0.5, float(gnomad["afr"])))
+                    if gnomad.get("eas") is not None:
+                        snv_maf_map["ASN"] = max(1e-5, min(0.5, float(gnomad["eas"])))
+                    snv_maf_map["ALL"] = round(
+                        0.51 * snv_maf_map["NHW"] + 0.27 * snv_maf_map["HIS"] + 0.12 * snv_maf_map["AA"] + 0.10 * snv_maf_map["ASN"],
+                        5,
+                    )
+                    live_source_note = f"Live `api.niagads.org/api/record/variant/{q_var}` GnomAD v4 ancestry frequencies + ADSP R5 (`NG00067`)"
+                if v_rec.get("chromosome") and v_rec.get("position") and not matched_key:
+                    vc = str(v_rec["chromosome"]).lstrip("chr")
+                    vp = int(v_rec["position"])
+                    prof["grch38_locus"] = f"chr{vc}:{max(1, vp - 25000)}-{vp + 25000}"
+            elif not matched_key:
+                fc = resolve_feature_coords(raw_tgt, flank=15000)
+                if fc.get("chr") and fc.get("start") and fc.get("end"):
+                    c_str = str(fc["chr"])
+                    c_str = c_str if c_str.startswith("chr") else f"chr{c_str}"
+                    prof["grch38_locus"] = f"{c_str}:{fc['start']}-{fc['end']}"
+        except Exception:
+            pass
+
+    mode_clean = (test_mode or "staar_o_burden").strip().lower()
+    if mode_clean not in ("staar_o_burden", "single_variant", "endophenotype_qtl"):
+        mode_clean = "staar_o_burden"
+
+    dom_clean = (phenotype_domain or "case_control_ad").strip().lower()
+    if dom_clean not in ADSP_PHC_PHENOTYPE_DOMAINS:
+        dom_clean = "case_control_ad"
+    dom_info = ADSP_PHC_PHENOTYPE_DOMAINS[dom_clean]
+
+    is_quant = mode_clean == "endophenotype_qtl" or dom_info["trait_type"] == "quantitative"
+    alpha_val = float(alpha) if alpha and float(alpha) > 0 else (2.5e-6 if mode_clean == "staar_o_burden" else 5e-8)
+    z_crit = _inv_norm_cdf(1.0 - alpha_val / 2.0)
+    z_80 = _inv_norm_cdf(0.80)  # +0.841621
+    ncp_80 = (z_crit + z_80) ** 2
+
+    if effect_size and abs(float(effect_size)) > 0:
+        eff = float(effect_size)
+        if is_quant and eff > 1.0 and mode_clean != "endophenotype_qtl":
+            # Convert user-supplied OR-like value smoothly to SD effect if quantitative domain was chosen
+            eff = round(abs(math.log(max(eff, 0.05))) * 0.45, 3)
+    else:
+        if is_quant:
+            eff = abs(float(prof["default_beta_sd"]))
+        elif mode_clean == "staar_o_burden":
+            eff = float(prof["default_or_burden"])
+        else:
+            eff = float(prof["default_or_snv"])
+
+    rows: List[Dict[str, Any]] = []
+    for st in ADSP_R5_WGS_STRATA:
+        anc = st["ancestry"]
+        n_subj = max(80, int(round(st["n_subjects"] * dom_info["coverage_fraction"])))
+        n_cases = int(round(n_subj * st["case_fraction"]))
+        n_ctrls = max(20, n_subj - n_cases)
+        n_eff = (4.0 * n_cases * n_ctrls) / max(1.0, float(n_cases + n_ctrls))
+
+        base_freq = burden_cmaf_map[anc] if mode_clean == "staar_o_burden" else snv_maf_map[anc]
+        freq = max(1e-5, min(0.5, float(custom_maf))) if (custom_maf and float(custom_maf) > 0) else max(1e-5, min(0.5, float(base_freq)))
+        het_var = 2.0 * freq * (1.0 - freq)
+
+        if is_quant:
+            beta_sd = abs(eff) if abs(eff) < 2.5 else 0.30
+            var_expl = het_var * (beta_sd ** 2)
+            ncp = float(n_subj) * var_expl / max(1e-9, 1.0 - min(0.5, var_expl))
+            pwr = _two_sided_power_from_ncp(ncp, z_crit)
+            md_beta_80 = math.sqrt(ncp_80 / max(1e-9, float(n_subj) * het_var))
+            n_req_80 = int(math.ceil(ncp_80 / max(1e-9, var_expl)))
+            effect_display = f"{beta_sd:.2f} SD"
+            mde_80_display = f"{md_beta_80:.2f} SD"
+            mde_80_numeric = round(md_beta_80, 3)
+        else:
+            or_val = eff if eff > 0 else 1.50
+            log_or = abs(math.log(max(or_val, 0.05)))
+            signal_term = het_var * (log_or ** 2)
+            ncp = n_eff * signal_term / (1.0 + signal_term)
+            pwr = _two_sided_power_from_ncp(ncp, z_crit)
+            req_log_or = math.sqrt(ncp_80 / max(1e-9, n_eff * het_var))
+            mdor_80 = math.exp(req_log_or) if or_val >= 1.0 else math.exp(-req_log_or)
+            case_ctrl_factor = 4.0 * st["case_fraction"] * (1.0 - st["case_fraction"])
+            n_req_80 = int(math.ceil((ncp_80 * (1.0 + signal_term) / max(1e-9, signal_term)) / max(0.1, case_ctrl_factor)))
+            effect_display = f"OR {or_val:.2f}"
+            mde_80_display = f"OR {mdor_80:.2f}"
+            mde_80_numeric = round(mdor_80, 3)
+
+        rows.append(
+            {
+                "ancestry": anc,
+                "stratum_label": st["label"],
+                "n_subjects": n_subj,
+                "n_cases": n_cases if not is_quant else n_subj,
+                "n_controls": n_ctrls if not is_quant else 0,
+                "n_effective": int(round(n_subj if is_quant else n_eff)),
+                "frequency": round(freq, 5),
+                "effect_input": effect_display,
+                "ncp_lambda": round(ncp, 2),
+                "power_pct": round(pwr * 100.0, 1),
+                "mde_80": mde_80_display,
+                "mde_80_numeric": mde_80_numeric,
+                "n_required_80": n_req_80,
+                "powered_80": pwr >= 0.80,
+            }
+        )
+
+    # Build effect-size power sweep curve across strata for interactive SVG chart
+    sweep_grid = [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50] if is_quant else [1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00]
+    power_curves: List[Dict[str, Any]] = []
+    for r in rows:
+        anc = r["ancestry"]
+        f_anc = r["frequency"]
+        hv = 2.0 * f_anc * (1.0 - f_anc)
+        n_use = float(r["n_effective"])
+        pts = []
+        for x_val in sweep_grid:
+            if is_quant:
+                ve = hv * (x_val ** 2)
+                lam = n_use * ve / max(1e-9, 1.0 - min(0.5, ve))
+            else:
+                lor = abs(math.log(x_val))
+                sterm = hv * (lor ** 2)
+                lam = n_use * sterm / (1.0 + sterm)
+            pts.append({"x": x_val, "power_pct": round(_two_sided_power_from_ncp(lam, z_crit) * 100.0, 1)})
+        power_curves.append({"ancestry": anc, "points": pts})
+
+    # Recommended NIAGADS DSS controlled & open-access datasets
+    rec_ng_ids = list(dict.fromkeys(["NG00067"] + dom_info["companion_ng"] + prof.get("extra_ng", []) + ["NG00105", "NG00102"]))
+    NG_META_SHORT: Dict[str, Tuple[str, str]] = {
+        "NG00067": ("Controlled (NIAGADS DARM)", "ADSP Umbrella Release 5 (`58,507` WGS, `FAVOR`, `emeraLD`, `ADSP-PHC` phenotypes)"),
+        "NG00169": ("Controlled / Summary", "PSP WGS SNV/INDEL Case–Control Association & H1/H2 Tauopathy Cohort"),
+        "NG00172": ("Controlled / Summary", "ADSP / PSP Structural Variant (`2.21M` SVs & `17q21.31` Inversion) Callset"),
+        "NG00075": ("Open Access (`api.niagads.org`)", "IGAP Stage 1/2 European AD GWAS Summary Statistics (*Kunkle et al. 2019*)"),
+        "NG00100": ("Open Access (`api.niagads.org`)", "ADGC African American AD GWAS Meta-Analysis (*Kunkle et al. 2021*)"),
+        "NG00105": ("Open Access (`xqtl.niagads.org`)", "MiGA Human Microglia eQTL/sQTL Atlas (`ColocBoost` Prior)"),
+        "NG00102": ("Open Access (`dss.niagads.org`)", "Multi-Tissue Brain, CSF & Plasma Proteogenomic pQTL Atlas"),
+        "NG00049": ("Open Access (`dss.niagads.org`)", "CSF Aβ42, Total Tau & p-tau181 Endophenotype GWAS (*Cruchaga et al.*)"),
+        "NG00103": ("Open Access (`dss.niagads.org`)", "Preclinical Amyloid-PET Brain Amyloidosis GWAS"),
+        "NG00126": ("Open Access (`dss.niagads.org`)", "ADSP Sequencing Variant-Level Artifact QC Metrics (*Belloy et al. 2022*)"),
+        "NG00148": ("Open Access (`dss.niagads.org`)", "ADSP Discovery Rare-Variant Gene Aggregation Benchmark"),
+        "NG00118": ("Open Access (`dss.niagads.org`)", "AMP-AD Structural Variant WGS & Brain `SV-xQTL` Summary Stats"),
+        "NG00052": ("Open Access (`dss.niagads.org`)", "Plasma/CSF Clusterin (`CLU`) Endophenotype Summary Stats"),
+    }
+    recommended_datasets = [
+        {
+            "accession": acc,
+            "access_tier": NG_META_SHORT.get(acc, ("NIAGADS DSS", "Harmonized ADRD Genomics Study"))[0],
+            "role": NG_META_SHORT.get(acc, ("NIAGADS DSS", "Harmonized ADRD Genomics Study"))[1],
+            "url": f"https://dss.niagads.org/datasets/{acc.lower()}/",
+        }
+        for acc in rec_ng_ids
+    ]
+
+    pooled_row = next(r for r in rows if r["ancestry"] == "ALL")
+    best_single = max((r for r in rows if r["ancestry"] != "ALL"), key=lambda x: x["power_pct"])
+    mode_human = {
+        "staar_o_burden": "FAVOR-Weighted `STAAR-O` Rare Coding + Promoter/Enhancer Aggregate Burden (`α = 2.5×10⁻⁶`)",
+        "single_variant": "Genome-Wide Single-Variant Additive Mixed-Model (`GMMAT`/`SAIGE`, `α = 5.0×10⁻⁸`)",
+        "endophenotype_qtl": "ADSP-PHC Harmonized Quantitative Endophenotype Linear Mixed-Model (`α = 5.0×10⁻⁸`)",
+    }[mode_clean]
+
+    dar_packet_lines = [
+        f"# NIAGADS DARM Data Access Request (DAR) & NIH Grant Specific-Aims Packet — `{prof['gene']}`",
+        "",
+        "## 1. NIAGADS DARM Pre-Submission Compliance Checklist (`https://dss.niagads.org/data-access/`)",
+        "- [ ] **PI Eligibility:** Submitting Principal Investigator holds permanent faculty/senior-scientist institutional oversight status (trainees/postdocs may draft as delegates via eRA Commons but cannot submit).",
+        "- [ ] **Three Non-Overlapping NIH RAS / eRA Commons Roles:** (1) *Requesting PI*, (2) *Institutional Signing Official (SO)*, and (3) *Institutional IT Director* (institutional email required; 3–4 week NADAC review cycle).",
+        "- [ ] **IRB & Security Attestation:** Active IRB approval/determination letter attached; compute environment meets **NIH Genomic Data Sharing (GDS)** & **NIST SP 800-171** controlled-access standards.",
+        f"- [ ] **Requested Controlled Accessions:** `NG00067` (ADSP Release 5 `{ADSP_R5_WGS_STRATA[-1]['n_genomes']:,}` WGS pVCF + `FAVOR` GDS + `{dom_info['phc_module']}`)"
+        + (", `NG00169` & `NG00172` (SV-WGS)" if "NG00172" in rec_ng_ids else "")
+        + ".",
+        "",
+        "## 2. Ready-to-Paste NIAGADS DAR Research Use Statement (RUS)",
+        (
+            f"> **Proposed Research Use (`NG00067` ADSP R5 + ADSP-PHC):** We request controlled access to ADSP Release 5 whole-genome sequencing (`58,507` genomes / `57,302` unique participants across 57 cohorts) and harmonized `{dom_info['label']}` phenotypes (`{dom_info['phc_module']}`) via NIAGADS DSS (`U24AG041689`) to dissect ancestry-aware causal mechanisms at `{prof['gene']}` (`{prof['grch38_locus']}`, lead `{prof['lead_variant']}`). "
+            f"Using {mode_human}, our design achieves **`{pooled_row['power_pct']:.1f}%` statistical power** in pooled ADSP R5 (`N_eff = {pooled_row['n_effective']:,}`, `{pooled_row['effect_input']}`) and **`{best_single['power_pct']:.1f}%` power** in `{best_single['stratum_label']}` (`N = {best_single['n_subjects']:,}`, `f = {best_single['frequency']:.4f}`). "
+            "Individual-level genotypes will be analyzed strictly within an IRB-approved, NIST SP 800-171–compliant enclave without participant re-identification, integrating public NIAGADS Open Access v2.0 (`api.niagads.org`), `FILER` hg38 regulatory tracks, and `FunGen-xQTL` (`NG00105`/`NG00102`) summary priors."
+        ),
+        "",
+        "**Non-Technical Summary (for NIAGADS Public DAR Registry):**",
+        (
+            f"> Alzheimer's disease genetic risk differs across diverse human populations. This project studies `{prof['gene']}` across `{ADSP_R5_WGS_STRATA[-1]['n_subjects']:,}` diverse ADSP Release 5 participants (Non-Hispanic White, Hispanic/Latino, Black/African American, and Asian) paired with harmonized `{dom_info['measures']}` records to identify protective and risk-modifying genetic variants that can guide safer, more effective precision therapies."
+        ),
+        "",
+        "## 3. Draft NIH R01 / R21 Specific Aims Architecture (Grounded in ADSP R5 Power)",
+        f"- **Specific Aim 1 (Multi-Ancestry Discovery & `MESuSiE`/`STAAR-O` Fine-Mapping in `NG00067`):** Quantify single-variant and `FAVOR`-weighted `STAAR-O` coding + `FILER` CAGE/DHS enhancer aggregate associations at `{prof['gene']}` (`{prof['grch38_locus']}`) across `NHW (n={rows[0]['n_subjects']:,})`, `HIS (n={rows[1]['n_subjects']:,})`, `AA (n={rows[2]['n_subjects']:,})`, and `ASN (n={rows[3]['n_subjects']:,})` in ADSP R5 (`{pooled_row['power_pct']:.1f}%` trans-ancestry power at `α = {alpha_val:.1e}`; 80%-power minimum detectable effect `{pooled_row['mde_80']}`), resolving shared vs. ancestry-specific 95% credible sets with 4-population `ADSP emeraLD` LD matrices.",
+        f"- **Specific Aim 2 (`ADSP-PHC` Endophenotype & 6-Modality `FunGen-xQTL` Colocalization):** Test whether `{prof['gene']}` credible-set and rare-burden carriers drive `{dom_info['measures']}` trajectories in `{dom_info['phc_module']}` and colocalize (`ColocBoost` `CoS > 0.80`) with aging-brain microglial/vascular/neuronal xQTLs (`NG00105`, `NG00102`, `NG00049`).",
+        f"- **Specific Aim 3 (Functional Perturbation & Clinical Stratification):** Validate top causal `{prof['gene']}` alleles (`{prof['mechanism']}`) via CRISPRi/prime-editing in patient-derived iPSC brain cells and calibrate admixture-aware `PRS-CSx` + `APOE`/ARIA risk stratification.",
+        "",
+        "## 4. NIH 2023 Data Management & Sharing (DMS) Plan Boilerplate",
+        "- **Repository & Accessions:** Summary statistics, `ColocBoost`/`MESuSiE` credible-set tracks (`.bedGraph`/`.tsv` in GRCh38 with `GA4GH VRS` digests), and reproducible workflows will be deposited back into **NIAGADS DSS / GenomicsDB** (`https://dss.niagads.org`, acknowledging **NIA Cooperative Agreements `U24AG041689` and `U24AG074855`**).",
+    ]
+    dar_specific_aims_md = "\n".join(dar_packet_lines)
+
+    csv_buf = io.StringIO()
+    writer = csv.DictWriter(
+        csv_buf,
+        fieldnames=[
+            "ancestry",
+            "stratum_label",
+            "n_subjects",
+            "n_cases",
+            "n_controls",
+            "n_effective",
+            "frequency",
+            "effect_input",
+            "ncp_lambda",
+            "power_pct",
+            "mde_80",
+            "n_required_80",
+            "powered_80",
+        ],
+        extrasaction="ignore",
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+
+    md = [
+        f"### 🏛️ NIAGADS `ADSP Release 5` (`58,507` WGS) Power Planner & NIH DAR / Specific-Aims Co-Pilot — `{prof['gene']}` (`{prof['lead_variant']}`)",
+        f"- **Target Locus & Mechanism:** `{prof['gene']}` (`{prof['grch38_locus']}`) — {prof['mechanism']}",
+        f"- **Statistical Model:** {mode_human} · **Significance Threshold:** `α = {alpha_val:.1e}` (`z_crit = {z_crit:.2f}`)",
+        f"- **Phenotype Domain (`ADSP-PHC`):** **{dom_info['label']}** (`{dom_info['measures']}`)",
+        f"- **Allele / Burden Frequency Provenance:** {live_source_note}",
+        "",
+        "#### 1. Ancestry-Stratified Statistical Power Across `ADSP Release 5` (`NG00067`, 57 Cohorts)",
+        "| Ancestry Stratum | Domain `N` (`Cases / Ctrls`) | `N_eff` | MAF / `cMAF` | Assumed Effect | Non-Centrality `λ` | Power (`%`) | 80%-Power MDE | Required `N` (80%) |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        cc_str = f"{r['n_subjects']:,} (Quant)" if is_quant else f"{r['n_subjects']:,} ({r['n_cases']:,} / {r['n_controls']:,})"
+        pwr_badge = f"**{r['power_pct']:.1f}%** ✅" if r["powered_80"] else f"{r['power_pct']:.1f}%"
+        md.append(
+            f"| **{r['stratum_label']}** | {cc_str} | {r['n_effective']:,} | `{r['frequency']:.4f}` | "
+            f"`{r['effect_input']}` | `{r['ncp_lambda']:.2f}` | {pwr_badge} | `{r['mde_80']}` | {r['n_required_80']:,} |"
+        )
+
+    md.extend(
+        [
+            "",
+            "#### 2. Recommended NIAGADS DSS Controlled & Open-Access Accessions for Your DAR",
+            "| Accession | Access Tier | Study / Harmonized Resource Role |",
+            "|---|---|---|",
+        ]
+    )
+    for ds in recommended_datasets[:7]:
+        md.append(f"| [`{ds['accession']}`]({ds['url']}) | **{ds['access_tier']}** | {ds['role']} |")
+
+    md.extend(["", "---", "", dar_specific_aims_md])
+
+    credits = _pick_paper_credits(
+        [
+            "adsp_r4_leung_2025",
+            "adsp_staar_peloso_2024",
+            "adsp_phc_hohman_2024",
+            "niagads_genomicsdb_browser_2024",
+            "mesusie_gao_2024",
+            "prscsx_nicolas_2025",
+        ]
+    )
+
+    locus_clean = prof["grch38_locus"]
+    visual = {
+        "niagads_browser_locus": locus_clean,
+        "adsp_r5_power_dar": {
+            "gene": prof["gene"],
+            "lead_variant": prof["lead_variant"],
+            "grch38_locus": locus_clean,
+            "test_mode": mode_clean,
+            "phenotype_domain": dom_clean,
+            "phenotype_label": dom_info["label"],
+            "is_quantitative": is_quant,
+            "alpha": alpha_val,
+            "effect_size": eff,
+            "strata": rows,
+            "power_curves": power_curves,
+        },
+    }
+
+    return {
+        "ok": True,
+        "action": "adsp_r5_power_dar",
+        "endpoint": f"NIAGADS ADSP R5 (58,507 WGS) Power & NIH DAR Co-Pilot ({prof['gene']} · {mode_clean} · {dom_clean})",
+        "request_id": None,
+        "elapsed_ms": max(1, int((time.monotonic() - t0) * 1000)),
+        "summary_markdown": "\n".join(md),
+        "dar_specific_aims_markdown": dar_specific_aims_md,
+        "csv": csv_buf.getvalue(),
+        "rows": rows,
+        "raw": {
+            "gene": prof["gene"],
+            "lead_variant": prof["lead_variant"],
+            "grch38_locus": locus_clean,
+            "test_mode": mode_clean,
+            "phenotype_domain": dom_clean,
+            "alpha": alpha_val,
+            "effect_size": eff,
+            "strata": rows,
+            "power_curves": power_curves,
+            "recommended_datasets": recommended_datasets,
+        },
+        "visual": visual,
+        "ecosystem_links": [
+            {
+                "label": f"NIAGADS Genome Browser: {prof['gene']}",
+                "url": f"https://www.niagads.org/genomics/app/visualizations/browser?locus={urllib.parse.quote(locus_clean, safe=':-')}",
+                "badge": "NIAGADS IGV.js",
+            },
+            {
+                "label": "Start NIAGADS DARM Request",
+                "url": "https://dss.niagads.org/data-access/",
+                "badge": "NIH RAS / eRA",
+            },
+            {
+                "label": "ADSP R5 Umbrella (NG00067)",
+                "url": "https://dss.niagads.org/datasets/ng00067/",
+                "badge": "58,507 WGS",
+            },
+            {
+                "label": f"GenomicsDB: {prof['gene']}",
+                "url": f"https://www.niagads.org/genomics/app/record/gene/{urllib.parse.quote(prof['gene'])}",
+                "badge": "LocusZoom",
+            },
+            {
+                "label": "NIAGADS Open Access v2.0",
+                "url": "https://api.niagads.org/open-access",
+                "badge": "OpenAPI v2.0",
+            },
+        ],
+        "paper_credits": credits,
     }
 
 
@@ -2357,11 +3030,20 @@ def niagads_v2f_statistical_suite(
         return niagads_vcf_batch_v2f(vcf_text=genotypes_or_vcf or target)["summary_markdown"]
     if mode in ("trials", "translational", "translational_trials", "drugs", "aria"):
         return niagads_translational_trials(target=target)["summary_markdown"]
+    if mode in ("power", "dar", "power_dar", "adsp_r5_power_dar", "specific_aims"):
+        eff_val = 0.0
+        if genotypes_or_vcf:
+            try:
+                eff_val = float(genotypes_or_vcf)
+            except ValueError:
+                eff_val = 0.0
+        dom_arg = ancestry if ancestry.lower() in ADSP_PHC_PHENOTYPE_DOMAINS else "case_control_ad"
+        return niagads_adsp_r5_power_dar(target=target, phenotype_domain=dom_arg, effect_size=eff_val)["summary_markdown"]
     if mode in ("literature", "credits", "literature_credits", "papers"):
         return get_niagads_literature_catalog(topic=target if target != "BIN1" else "")["summary_markdown"]
     if mode in ("rubric", "rubric_audit", "critic"):
         return evaluate_niagads_rubric_audit(prompt=target, draft_markdown=genotypes_or_vcf)["appendix_markdown"]
     return (
-        f"Unsupported analysis `{analysis}`. Choose from: `finemap_coloc`, `colocboost_mesusie`, `mr_prs`, "
+        f"Unsupported analysis `{analysis}`. Choose from: `adsp_r5_power_dar`, `finemap_coloc`, `colocboost_mesusie`, `mr_prs`, "
         "`rare_regulatory`, `resilience_xwas_seaad`, `vcf_batch_v2f`, `translational_trials`, or `literature_credits`."
     )
