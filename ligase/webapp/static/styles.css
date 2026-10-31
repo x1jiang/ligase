@@ -3662,6 +3662,180 @@ dialog::backdrop {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
+/* ── v0.5.1 Featured 1-Minute Grok-Narrated Video Tour Card ──────────────── */
+.video-showcase-card {
+  margin: 0 0 1.4rem;
+  padding: 1rem 1.15rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, var(--border-subtle));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-accent-soft) 42%, var(--bg-surface)) 0%,
+    var(--bg-surface) 100%
+  );
+  box-shadow: var(--shadow-md);
+  transition: max-inline-size 180ms ease;
+}
+
+.video-showcase-card.is-wide {
+  inline-size: min(1160px, 94vw);
+  margin-inline: 50%;
+  transform: translateX(-50%);
+}
+
+.video-showcase-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-block-end: 0.75rem;
+}
+
+.video-showcase-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.video-voice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  inline-size: fit-content;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  background: var(--bg-accent-soft);
+  color: var(--brand-primary);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 32%, transparent);
+}
+
+.video-showcase-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 750;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.video-showcase-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.video-frame-shell {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: #090e16;
+  aspect-ratio: 16 / 9;
+}
+
+.showcase-video-player {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 9;
+  background: #090e16;
+}
+
+.video-chapter-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-block-start: 0.7rem;
+}
+
+.video-chapter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-block-size: 30px;
+  padding: 0.25rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.video-chapter-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--text-primary);
+}
+
+.video-chapter-btn.active {
+  background: var(--bg-accent-soft);
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.vc-time {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+
+.video-transcript-details {
+  margin-block-start: 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.video-transcript-details summary {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.79rem;
+  font-weight: 650;
+  color: var(--text-secondary);
+  cursor: pointer;
+  min-block-size: 32px;
+}
+
+.video-transcript-details[open] summary {
+  color: var(--text-primary);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.video-transcript-details::details-content {
+  padding: 0.65rem 0.9rem 0.8rem;
+}
+
+.video-transcript-body {
+  font-size: 0.81rem;
+  color: var(--text-secondary);
+  line-height: 1.52;
+}
+
+.vt-note {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+}
+
+.vt-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+@media (pointer: coarse) {
+  .video-chapter-btn {
+    min-block-size: 38px;
+    padding: 0.38rem 0.78rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),
   ::view-transition-old(*),

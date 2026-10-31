@@ -1166,7 +1166,7 @@
       "  title        = {NIAGADS Alzheimer's GenomicsDB \\& Open Access API v2.0},",
       "  organization = {National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS)},",
       "  url          = {https://api.niagads.org/open-access},",
-      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.0}",
+      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.1}",
       "}",
     ].join("\n");
   }
@@ -3911,6 +3911,7 @@
 
     // Portal Views & Actions
     const navItems = [
+      { title: "Watch 1-Minute Grok-Narrated Video Tour (Ara & Rex)", sub: "60s 1080p showcase of NIAGADS Open Access v2.0, BIN1 94.6% PIP, ABCA7 8.7x PAF & PSP 56.8x shift", badge: "1:00 Video", run: () => focusAndPlayShowcaseVideo() },
       { title: "Switch to Research Studio", sub: "Streaming gpt-6-luna co-scientist & grounded tool trace", badge: "Tab 1", run: () => switchPortalTab("studio", { focusHeading: true }) },
       { title: "Switch to Capabilities Mindmap", sub: "Interactive 6-pillar · 36-component SVG graph & accessible matrix", badge: "Tab 2", run: () => switchPortalTab("mindmap", { focusHeading: true }) },
       { title: "Switch to NIAGADS Open Access v2.0 Explorer", sub: "Interactive REST console + SVG genomics charts", badge: "Tab 3", run: () => switchPortalTab("niagads-api", { focusHeading: true }) },
@@ -4088,12 +4089,188 @@
     });
   }
 
+  function hydrateDeferredMedia(media) {
+    if (!media) return;
+    let mutated = false;
+    if (media.dataset.poster) {
+      media.poster = media.dataset.poster;
+      delete media.dataset.poster;
+      mutated = true;
+    }
+    if (media.dataset.preload) {
+      media.preload = media.dataset.preload;
+      delete media.dataset.preload;
+      mutated = true;
+    }
+    if (media.dataset.src) {
+      media.src = media.dataset.src;
+      delete media.dataset.src;
+      mutated = true;
+    }
+    for (const source of media.querySelectorAll("source[data-src]")) {
+      source.src = source.dataset.src;
+      delete source.dataset.src;
+      mutated = true;
+    }
+    if (mutated) {
+      media.load();
+    }
+  }
+
+  async function focusAndPlayShowcaseVideo(seekTimeSec = null) {
+    if (state.activeTab !== "studio") {
+      await switchPortalTab("studio", { focusHeading: false });
+    }
+    if (el.welcomeView?.hidden) {
+      el.newStudyBtn?.click();
+    }
+    const card = document.getElementById("video-showcase-card");
+    const video = document.getElementById("ligase-showcase-video");
+    if (!video) return;
+
+    hydrateDeferredMedia(video);
+    if (video.preload === "none") {
+      video.preload = "metadata";
+    }
+    card?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    if (typeof seekTimeSec === "number" && Number.isFinite(seekTimeSec)) {
+      const applySeek = () => {
+        try {
+          video.currentTime = seekTimeSec;
+        } catch {
+          /* wait for metadata */
+        }
+      };
+      if (video.readyState >= 1) {
+        applySeek();
+      } else {
+        video.addEventListener("loadedmetadata", applySeek, { once: true });
+      }
+    }
+
+    try {
+      await video.play();
+    } catch {
+      video.focus();
+    }
+  }
+
+  function initShowcaseVideo() {
+    const video = document.getElementById("ligase-showcase-video");
+    const card = document.getElementById("video-showcase-card");
+    const heroBtn = document.getElementById("hero-watch-video-btn");
+    const playToggleBtn = document.getElementById("video-play-toggle-btn");
+    const wideToggleBtn = document.getElementById("video-wide-toggle-btn");
+    const chapterBtns = Array.from(document.querySelectorAll(".video-chapter-btn[data-video-seek]"));
+
+    if (!video) return;
+
+    // Cross-browser lazy-media fallback per modern-web-guidance (Firefox & Safari lack HTMLMediaElement.prototype.loading)
+    const supportsLazyMedia =
+      typeof HTMLMediaElement !== "undefined" && Object.hasOwn(HTMLMediaElement.prototype, "loading");
+    if (!supportsLazyMedia && typeof IntersectionObserver !== "undefined") {
+      const lazyMediaElements = document.querySelectorAll('video[loading="lazy"], audio[loading="lazy"][controls]');
+      const mediaObserver = new IntersectionObserver(
+        (entries, observer) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            hydrateDeferredMedia(entry.target);
+            observer.unobserve(entry.target);
+          }
+        },
+        { rootMargin: "200px 0px" }
+      );
+      for (const media of lazyMediaElements) {
+        if (media.hasAttribute("poster")) {
+          media.dataset.poster = media.getAttribute("poster");
+          media.removeAttribute("poster");
+        }
+        if (media.hasAttribute("preload") && media.getAttribute("preload") !== "none") {
+          media.dataset.preload = media.getAttribute("preload");
+        }
+        media.preload = "none";
+        mediaObserver.observe(media);
+      }
+    }
+
+    // Honor prefers-reduced-motion on any autoplaying motion media
+    if (typeof window.matchMedia === "function") {
+      const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const syncReducedMotion = (prefersReduced) => {
+        for (const v of document.querySelectorAll("video[autoplay]")) {
+          if (prefersReduced) {
+            v.removeAttribute("autoplay");
+            v.pause();
+          }
+        }
+      };
+      syncReducedMotion(reducedMotionQuery.matches);
+      reducedMotionQuery.addEventListener?.("change", (ev) => syncReducedMotion(ev.matches));
+    }
+
+    heroBtn?.addEventListener("click", () => focusAndPlayShowcaseVideo());
+
+    playToggleBtn?.addEventListener("click", async () => {
+      hydrateDeferredMedia(video);
+      if (video.paused) {
+        try {
+          await video.play();
+        } catch {
+          video.focus();
+        }
+      } else {
+        video.pause();
+      }
+    });
+
+    const syncPlayLabel = () => {
+      if (!playToggleBtn) return;
+      playToggleBtn.textContent = video.paused ? "▶ Play 1-Min Tour" : "⏸ Pause Tour";
+    };
+    video.addEventListener("play", syncPlayLabel);
+    video.addEventListener("pause", syncPlayLabel);
+    video.addEventListener("ended", syncPlayLabel);
+
+    wideToggleBtn?.addEventListener("click", () => {
+      if (!card) return;
+      const expanded = card.classList.toggle("is-wide");
+      wideToggleBtn.setAttribute("aria-pressed", expanded ? "true" : "false");
+      wideToggleBtn.textContent = expanded ? "🗗 Standard View" : "⛶ Wide View";
+    });
+
+    for (const btn of chapterBtns) {
+      btn.addEventListener("click", () => {
+        const sec = parseFloat(btn.dataset.videoSeek || "0");
+        for (const b of chapterBtns) b.classList.toggle("active", b === btn);
+        focusAndPlayShowcaseVideo(sec);
+      });
+    }
+
+    video.addEventListener("timeupdate", () => {
+      const t = video.currentTime || 0;
+      for (const btn of chapterBtns) {
+        const s = parseFloat(btn.dataset.videoSeek || "0");
+        const e = parseFloat(btn.dataset.videoEnd || "999");
+        btn.classList.toggle("active", t >= s - 0.15 && t < e);
+      }
+    });
+
+    // Pause video cleanly if user switches to another portal tab
+    el.portalTablist?.addEventListener("click", () => {
+      if (state.activeTab !== "studio" && !video.paused) {
+        video.pause();
+      }
+    });
+  }
+
   async function boot() {
     syncThemeButtons();
     syncWorkflowHint();
     syncUsageExportLinks();
     initFeedbackController();
     initBondAndCommandPalette();
+    initShowcaseVideo();
 
     const bootstrap = readServerBootstrap();
     if (bootstrap?.mindmap) {

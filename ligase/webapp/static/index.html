@@ -28,7 +28,7 @@
     [hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.5.0">
+  <link rel="stylesheet" href="/static/styles.css?v=0.5.1">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.0</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.1</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -236,8 +236,11 @@
                 PSP WGS (<code>NG00169</code>/<code>NG00172</code>), 180+ Biomni tools, and sandboxed Python bioinformatics.
               </p>
               <div class="hero-quick-pills">
-                <button type="button" class="hero-pill-btn" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> View Interactive Capabilities Mindmap (6 Pillars · 36 Components)
+                <button type="button" class="hero-pill-btn" id="hero-watch-video-btn">
+                  <span aria-hidden="true">🎬</span> Watch 1-Min Video Tour (Grok Voice)
+                </button>
+                <button type="button" class="hero-pill-btn secondary" data-goto-tab="mindmap">
+                  <span aria-hidden="true">🧠</span> Capabilities Mindmap (6 Pillars · 36 Components)
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
                   <span aria-hidden="true">🌐</span> Live NIAGADS V2F Locus Dossier
@@ -291,6 +294,113 @@
                 </button>
               </div>
             </section>
+
+            <!-- Featured 1-Minute Grok-Narrated Video Tour (Lazy-Loaded, Zero Cold-Start Overhead) -->
+            <figure class="video-showcase-card" id="video-showcase-card" aria-labelledby="video-showcase-title">
+              <figcaption class="video-showcase-head">
+                <div class="video-showcase-meta">
+                  <span class="video-voice-badge">🎬 1-MIN KEYNOTE · GROK VOICE (ARA &amp; REX)</span>
+                  <h2 class="video-showcase-title" id="video-showcase-title">
+                    Ligase &amp; NIAGADS Open Access v2.0 Architecture Tour
+                  </h2>
+                </div>
+                <div class="video-showcase-actions">
+                  <button type="button" class="tool-chip-btn" id="video-play-toggle-btn">
+                    ▶ Play 1-Min Tour
+                  </button>
+                  <button type="button" class="tool-chip-btn" id="video-wide-toggle-btn" aria-pressed="false">
+                    ⛶ Wide View
+                  </button>
+                </div>
+              </figcaption>
+
+              <div class="video-frame-shell">
+                <video
+                  id="ligase-showcase-video"
+                  class="showcase-video-player"
+                  controls
+                  loading="lazy"
+                  preload="none"
+                  playsinline
+                  width="1280"
+                  height="720"
+                  poster="/static/media/ligase-showcase-poster.webp?v=0.5.1"
+                  aria-labelledby="video-showcase-title"
+                  aria-details="showcase-video-transcript"
+                >
+                  <source src="/static/media/ligase-showcase.mp4?v=0.5.1" type="video/mp4">
+                  <track
+                    src="/static/media/ligase-showcase-en.vtt?v=0.5.1"
+                    kind="captions"
+                    srclang="en"
+                    label="English (Grok Voice Verbatim)"
+                    default
+                  >
+                </video>
+              </div>
+
+              <div class="video-chapter-strip" role="group" aria-label="Jump to video chapter">
+                <button type="button" class="video-chapter-btn active" data-video-seek="0.2" data-video-end="9.79">
+                  <span class="vc-time">0:00</span> V2F Mission
+                </button>
+                <button type="button" class="video-chapter-btn" data-video-seek="9.79" data-video-end="20.29">
+                  <span class="vc-time">0:10</span> Live NIAGADS v2.0
+                </button>
+                <button type="button" class="video-chapter-btn" data-video-seek="20.29" data-video-end="31.48">
+                  <span class="vc-time">0:20</span> BIN1 94.6% PIP
+                </button>
+                <button type="button" class="video-chapter-btn" data-video-seek="31.48" data-video-end="41.58">
+                  <span class="vc-time">0:31</span> ABCA7 8.7× &amp; PSP 56.8×
+                </button>
+                <button type="button" class="video-chapter-btn" data-video-seek="41.58" data-video-end="50.89">
+                  <span class="vc-time">0:42</span> 36-Node Mindmap
+                </button>
+                <button type="button" class="video-chapter-btn" data-video-seek="50.89" data-video-end="60.51">
+                  <span class="vc-time">0:51</span> &lt;120 ms Cloud Run
+                </button>
+              </div>
+
+              <details id="showcase-video-transcript" class="video-transcript-details">
+                <summary>Read Verbatim Grok Voice Narration &amp; Visual Scene Transcript (1:00)</summary>
+                <div class="video-transcript-body">
+                  <p class="vt-note">
+                    <em>Audio &amp; visual context:</em> Warm ambient harmonic synth bed plays softly beneath dual-speaker xAI Grok Voice narration (Ara &amp; Rex), accompanied by soft chime transitions and live captures of the Ligase v0.5 portal.
+                  </p>
+                  <ol class="vt-list">
+                    <li>
+                      <strong>[00:00 – 00:10] Grok Voice — Ara (Lead Architect):</strong>
+                      “90% of Alzheimer's risk variants are non-coding. Meet Ligase: a quantitative co-scientist uniting <code>gpt-6-luna</code> with live NIAGADS genomics.”
+                      <em>(Visual: Research Studio hero, NIAGADS Bonded Genomic Architecture strip, and <code>⌘K</code> Quick Locus &amp; Cohort Jump palette.)</em>
+                    </li>
+                    <li>
+                      <strong>[00:10 – 00:20] Grok Voice — Ara (Lead Architect):</strong>
+                      “One click launches 4-way parallel Locus Dossiers on NIAGADS Open Access v2.0: fusing GenomicsDB, ADSP variants, and 58,000+ FILER tracks.”
+                      <em>(Visual: Live NIAGADS Open Access Explorer executing <code>rs6733839</code> dossier with <code>-log10(p) = 8.4</code> SVG bar chart and GA4GH VRS allele digests.)</em>
+                    </li>
+                    <li>
+                      <strong>[00:20 – 00:31] Grok Voice — Rex (Genomics Co-Scientist):</strong>
+                      “Intersecting microglia PU.1 enhancers concentrates <code>BIN1</code> <code>rs6733839</code> causal probability from 52.8% to 94.6%.”
+                      <em>(Visual: Animated Bayesian PIP bar concentrating from 52.8% IGAP prior to 94.6% microglia posterior, plus <code>TREM2 R47H × PLCG2 P522R</code> phagocytosis rescue from 38% to 94% WT.)</em>
+                    </li>
+                    <li>
+                      <strong>[00:31 – 00:42] Grok Voice — Rex (Genomics Co-Scientist):</strong>
+                      “Across diverse cohorts, Ligase uncovers an 8.7× <code>ABCA7</code> burden in African ancestry, and a 56.8× <code>APOE</code> ε2 reversal in PSP.”
+                      <em>(Visual: Comparative PAF bars showing 7.22% African vs. 0.83% European attributable risk in <code>NG00100</code>, alongside <code>APOE ε2/ε2 + MAPT H1/H1</code> shifting from AD protection OR = 0.26 to PSP risk OR = 2.41 / combined 13.6.)</em>
+                    </li>
+                    <li>
+                      <strong>[00:42 – 00:51] Grok Voice — Ara (Lead Architect):</strong>
+                      “Navigate 36 components on the interactive Mindmap, linking UniProt, Ensembl, ChEMBL, ClinVar, and AST-verified Python with live traces.”
+                      <em>(Visual: 6-pillar SVG Capabilities Mindmap and 24-cohort NIAGADS DSS reference catalog.)</em>
+                    </li>
+                    <li>
+                      <strong>[00:51 – 01:00] Grok Voice — Ara (Lead Architect):</strong>
+                      “Built on Cloud Run with sub-120 ms cold starts, scale-to-zero efficiency, persistent telemetry, and screenshot feedback. Discover faster with Ligase.”
+                      <em>(Visual: Persistent GCS Usage &amp; Volume Ledger and closing architectural summary card citing NIH/NIA Cooperative Agreement <code>U24AG041689</code>.)</em>
+                    </li>
+                  </ol>
+                </div>
+              </details>
+            </figure>
 
             <div class="starter-section-head">
               <span>Ready-Made Quantitative &amp; Live API Studies</span>
@@ -1179,6 +1289,6 @@
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.5.0" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.5.1" defer fetchpriority="high"></script>
 </body>
 </html>

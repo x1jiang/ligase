@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ligase"
-version = "0.5.0"
+version = "0.5.1"
 description = "Ligase: local-first biomedical research agent that joins community tools, private models and hosted data"
 readme = "README.md"
 license = { text = "MIT" }
@@ -95,4 +95,4 @@ where = ["."]
 include = ["ligase*"]
 
 [tool.setuptools.package-data]
-ligase = ["resources/*.json", "webapp/static/*"]
+ligase = ["resources/*.json", "webapp/static/*", "webapp/static/media/*"]

@@ -232,7 +232,7 @@ def test_portal_polish_security_headers_landmarks_and_provenance(tmp_path: Path)
     boot_bytes = m.group(1).encode("utf-8")
     assert len(boot_bytes) < 12_000
     parsed = json.loads(m.group(1))
-    assert parsed["boot"]["version"] == "0.5.0"
+    assert parsed["boot"]["version"] == "0.5.1"
 
     mm = build_capabilities_mindmap()
     assert mm["stats"]["components"] >= 36
@@ -250,3 +250,47 @@ def test_portal_polish_security_headers_landmarks_and_provenance(tmp_path: Path)
     )
     assert "U24AG041689" in rep
     assert "NIAGADS Data Attribution & Provenance" in rep
+
+
+def test_grok_narrated_showcase_video_embed_and_range_streaming(tmp_path: Path) -> None:
+    webapp = create_webapp(state_dir=tmp_path / "state", runs_root=tmp_path / "runs")
+    client = TestClient(webapp)
+
+    html = client.get("/").text
+    assert 'id="ligase-showcase-video"' in html
+    assert 'loading="lazy"' in html
+    assert 'preload="none"' in html
+    assert 'width="1280"' in html
+    assert 'height="720"' in html
+    assert 'kind="captions"' in html
+    assert 'srclang="en"' in html
+    assert 'aria-details="showcase-video-transcript"' in html
+    assert 'id="showcase-video-transcript"' in html
+    assert "data-video-seek=" in html
+
+    # Verify poster WebP
+    poster_res = client.get("/static/media/ligase-showcase-poster.webp?v=0.5.1")
+    assert poster_res.status_code == 200
+    assert "image/webp" in poster_res.headers.get("content-type", "")
+    assert "immutable" in poster_res.headers.get("cache-control", "")
+
+    # Verify synchronous WebVTT captions
+    vtt_res = client.get("/static/media/ligase-showcase-en.vtt?v=0.5.1")
+    assert vtt_res.status_code == 200
+    assert "text/vtt" in vtt_res.headers.get("content-type", "")
+    assert vtt_res.text.startswith("WEBVTT")
+    assert "Grok Voice (Ara)" in vtt_res.text
+    assert "Grok Voice (Rex)" in vtt_res.text
+
+    # Verify byte-range 206 Partial Content video streaming without gzip interference
+    range_res = client.get(
+        "/static/media/ligase-showcase.mp4?v=0.5.1",
+        headers={"Range": "bytes=0-1023", "Accept-Encoding": "gzip"},
+    )
+    assert range_res.status_code == 206
+    assert "video/mp4" in range_res.headers.get("content-type", "")
+    assert range_res.headers.get("content-encoding") is None
+    assert len(range_res.content) == 1024
+
+    pyproject_txt = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert "webapp/static/media/*" in pyproject_txt

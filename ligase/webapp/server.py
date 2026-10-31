@@ -12,6 +12,7 @@ import html
 import inspect
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
@@ -54,17 +55,24 @@ def _get_create_agent() -> Any:
     return _real_create_agent
 
 
+mimetypes.add_type("video/mp4", ".mp4")
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("text/vtt", ".vtt")
+
+
 class _SSESafeGZipMiddleware:
-    """Apply GZip compression to HTML/CSS/JS/JSON while keeping SSE (/api/chat/stream) unbuffered."""
+    """Apply GZip compression to HTML/CSS/JS/JSON while keeping SSE (/api/chat/stream) and binary media unbuffered."""
 
     def __init__(self, app: Any, minimum_size: int = 500) -> None:
         self.app = app
         self._gzip = GZipMiddleware(app, minimum_size=minimum_size)
 
     async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
-        if scope.get("type") == "http" and scope.get("path") == "/api/chat/stream":
-            await self.app(scope, receive, send)
-            return
+        if scope.get("type") == "http":
+            path = scope.get("path") or ""
+            if path == "/api/chat/stream" or path.startswith("/static/media/") or path.endswith((".mp4", ".webp")):
+                await self.app(scope, receive, send)
+                return
         await self._gzip(scope, receive, send)
 
 logger = logging.getLogger("ligase.webapp")
