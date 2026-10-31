@@ -607,10 +607,12 @@ def gemma_extra_tools() -> list[BiomniTool]:
                 "action": {
                     "type": "string",
                     "description": (
-                        "Endpoint action: 'auto' (smart dispatch), 'gene', 'gene_associations', 'gene_structure', "
-                        "'variant', 'variant_associations', 'region_associations', 'region_variants', "
-                        "'track', 'track_data', 'search', 'search_tracks', 'search_genes', 'search_variants', "
-                        "'feature', or 'filer_overlap'."
+                        "Endpoint action: 'auto' (smart dispatch), 'locus_dossier' (4-way parallel V2F synthesis: "
+                        "record + GWAS associations + GRCh38 exons/regional variants + FILER overlap), 'gene' "
+                        "(single or comma-separated batch), 'gene_associations', 'gene_structure', 'variant' "
+                        "(single or comma-separated batch), 'variant_associations', 'region_associations', "
+                        "'region_variants', 'track', 'track_data', 'search', 'search_tracks', 'search_genes', "
+                        "'search_variants', 'feature', or 'filer_overlap'."
                     ),
                     "required": False,
                 },

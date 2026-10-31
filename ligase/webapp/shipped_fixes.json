@@ -1,5 +1,13 @@
 [
   {
+    "id": "ship-v050-niagads-bond-polish",
+    "category": "niagads_data",
+    "problem": "Deepen the NIAGADS ecosystem bond with one-click V2F locus dossiers, interactive genomics charts, global quick-jump navigation, and NIH/NIA data citations.",
+    "resolution": "Shipped parallel NIAGADS V2F Locus Dossiers (gene/variant + GWAS -log10(p) + GRCh38 exons + FILER overlaps), interactive SVG genomics charts, GenomicsDB/TopGenes/ADVP/FILER/DSS cross-links, a Cmd/Ctrl+K Command Palette, and one-click U24AG041689 provenance citations.",
+    "raised_at": "2026-10-30T23:30:00Z",
+    "resolved_at": "2026-10-31T04:45:00Z"
+  },
+  {
     "id": "ship-v041-feedback-email",
     "category": "feature_request",
     "problem": "Provide a dedicated Comments & Feedback portal tab with clipboard screenshot paste, figure uploads, and automated improvement-brief email delivery.",

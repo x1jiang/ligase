@@ -28,7 +28,7 @@
     [hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.4.1">
+  <link rel="stylesheet" href="/static/styles.css?v=0.5.0">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.4.1</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.0</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -175,6 +175,17 @@
         </div>
 
         <div class="topbar-right">
+          <button
+            type="button"
+            class="cmdk-trigger-btn"
+            id="open-cmdk-btn"
+            aria-keyshortcuts="Meta+K Control+K"
+            title="Quick Jump across AD genes, rsIDs, NIAGADS NG* cohorts, and live API endpoints (⌘K / Ctrl+K)"
+          >
+            <span aria-hidden="true">⌕</span>
+            <span class="cmdk-trigger-label">Quick Jump</span>
+            <kbd>⌘K</kbd>
+          </button>
           <div class="segmented" id="studio-profile-group" role="group" aria-label="Agent specialist profile">
             <button type="button" class="seg-btn active" data-profile="ad1" id="profile-ad1-btn">
               AD1 · NIAGADS
@@ -226,10 +237,13 @@
               </p>
               <div class="hero-quick-pills">
                 <button type="button" class="hero-pill-btn" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> View Interactive Capabilities Mindmap (6 Pillars · 32 Components)
+                  <span aria-hidden="true">🧠</span> View Interactive Capabilities Mindmap (6 Pillars · 36 Components)
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
-                  <span aria-hidden="true">🌐</span> Live NIAGADS Open Access API v2.0
+                  <span aria-hidden="true">🌐</span> Live NIAGADS V2F Locus Dossier
+                </button>
+                <button type="button" class="hero-pill-btn secondary" id="hero-open-cmdk-btn">
+                  <span aria-hidden="true">⌕</span> Quick Locus &amp; Cohort Jump (<kbd>⌘K</kbd>)
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="usage">
                   <span aria-hidden="true">📊</span> Usage &amp; Volume Ledger
@@ -237,11 +251,60 @@
               </div>
             </div>
 
+            <!-- NIAGADS Ecosystem Bond Ribbon -->
+            <section class="niagads-bond-strip" aria-label="Bonded NIAGADS genomic data ecosystem">
+              <div class="niagads-bond-head">
+                <div class="niagads-bond-title">
+                  <span class="niagads-bond-pulse" aria-hidden="true"></span>
+                  <strong>NIAGADS Bonded Genomic Architecture</strong>
+                  <span class="niagads-bond-tag">Live OpenAPI v2.0 + Curated Multi-Cohort Panels</span>
+                </div>
+                <button type="button" class="link-btn" id="copy-niagads-ack-btn" title="Copy NIH/NIA U24AG041689 acknowledgment &amp; BibTeX">
+                  📜 Cite NIAGADS (U24AG041689)
+                </button>
+              </div>
+              <div class="niagads-bond-grid">
+                <button type="button" class="niagads-bond-chip" data-bond-action="locus_dossier" data-bond-target="BIN1">
+                  <span class="bond-chip-kicker">LIVE · 19 PATHS</span>
+                  <strong>Open Access API v2.0</strong>
+                  <span>4-way parallel V2F Dossier (<code>BIN1</code>) →</span>
+                </button>
+                <button type="button" class="niagads-bond-chip" data-bond-action="gene" data-bond-target="APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2">
+                  <span class="bond-chip-kicker">ADSP GVC · GRCh38</span>
+                  <strong>GenomicsDB &amp; TopGenes</strong>
+                  <span>Batch AD 6-Gene Panel →</span>
+                </button>
+                <button type="button" class="niagads-bond-chip" data-bond-action="variant" data-bond-target="rs429358,rs7412,rs6733839,rs75932628">
+                  <span class="bond-chip-kicker">GA4GH VRS · AFs</span>
+                  <strong>ADSP Release 5 WGS</strong>
+                  <span>SNVs/INDELs &amp; VRS Panel →</span>
+                </button>
+                <button type="button" class="niagads-bond-chip" data-bond-action="filer_overlap" data-bond-target="chr2:127135200-127135300">
+                  <span class="bond-chip-kicker">GIGGLE · hg38</span>
+                  <strong>FILER 58k+ Tracks</strong>
+                  <span>Microglia ATAC / ChIP Overlap →</span>
+                </button>
+                <button type="button" class="niagads-bond-chip" data-bond-catalog="1">
+                  <span class="bond-chip-kicker">24 COHORTS · NG*</span>
+                  <strong>NIAGADS DSS &amp; ADVP</strong>
+                  <span>IGAP · MiGA · ADSP · PSP →</span>
+                </button>
+              </div>
+            </section>
+
             <div class="starter-section-head">
               <span>Ready-Made Quantitative &amp; Live API Studies</span>
               <button type="button" class="link-btn" id="inspect-catalog-inline">Explore 24 NIAGADS Cohorts &amp; 9 Tool Suites →</button>
             </div>
             <div class="starter-grid" id="starter-grid"><!-- LIGASE_STARTERS_SSR --></div>
+
+            <div class="niagads-attribution-bar">
+              <span>
+                <strong>Data Provenance:</strong> Grounded in the National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site
+                (<a href="https://www.niagads.org" target="_blank" rel="noopener noreferrer">NIAGADS</a>, NIA Cooperative Agreement <code>U24AG041689</code>)
+                &amp; <a href="https://api.niagads.org/open-access" target="_blank" rel="noopener noreferrer">NIAGADS Open Access API v2.0</a> (Apache 2.0).
+              </span>
+            </div>
           </div>
 
           <div class="transcript" id="transcript" hidden></div>
@@ -311,15 +374,17 @@
             <div class="mindmap-pillar-filters" id="mindmap-pillar-filters" role="group" aria-label="Filter mindmap by architectural pillar"></div>
 
             <div class="mindmap-right-controls">
-              <form id="mindmap-filter-form" class="inline-search-form">
-                <label for="mindmap-search-input" class="visually-hidden">Filter components by keyword</label>
-                <input
-                  id="mindmap-search-input"
-                  type="search"
-                  placeholder="Filter nodes (e.g. VRS, FILER, TREM2, UniProt)…"
-                >
-                <button type="submit" class="tool-chip-btn">Filter</button>
-              </form>
+              <search>
+                <form id="mindmap-filter-form" class="inline-search-form">
+                  <label for="mindmap-search-input" class="visually-hidden">Filter components by keyword</label>
+                  <input
+                    id="mindmap-search-input"
+                    type="search"
+                    placeholder="Filter nodes (e.g. VRS, FILER, TREM2, UniProt)…"
+                  >
+                  <button type="submit" class="tool-chip-btn">Filter</button>
+                </form>
+              </search>
 
               <div class="segmented compact" role="group" aria-label="Mindmap display mode">
                 <button type="button" class="seg-btn active" id="mm-view-graph-btn" aria-pressed="true">
@@ -420,10 +485,11 @@
                 <label for="oa-action-select">Endpoint Action</label>
                 <select id="oa-action-select" name="action">
                   <option value="auto">Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
-                  <option value="gene">Gene Record &amp; GVC TopGenes (/record/gene/{gene})</option>
+                  <option value="locus_dossier">🔬 Full V2F Locus Dossier (4-Way Parallel: Record + GWAS + Exons + FILER)</option>
+                  <option value="gene">Gene Record, TopGenes &amp; Batch Panel (/record/gene/{gene})</option>
                   <option value="gene_associations">Gene GWAS Associations (/record/gene/{gene}/associations)</option>
                   <option value="gene_structure">Gene Transcripts &amp; Exons (/record/gene/{gene}/structure)</option>
-                  <option value="variant">Variant Record · ADSP R5 &amp; VRS (/record/variant/{variant})</option>
+                  <option value="variant">Variant Record · ADSP R5, VRS &amp; Batch (/record/variant/{variant})</option>
                   <option value="variant_associations">Variant GWAS Associations (/record/variant/{variant}/associations)</option>
                   <option value="region_associations">Region Associations &lt;100 kb (/record/region/{region}/associations)</option>
                   <option value="region_variants">Region ADSP R5 Variants &lt;100 kb (/record/region/{region}/variants)</option>
@@ -489,15 +555,20 @@
                 <button type="button" class="plan-approve-btn" id="oa-send-studio-btn">
                   🔬 Analyze in Research Studio (gpt-6-luna)
                 </button>
+                <button type="button" class="artifact-btn" id="oa-cite-btn">
+                  📜 Cite NIAGADS
+                </button>
                 <button type="button" class="artifact-btn" id="oa-copy-json-btn">
                   📋 Copy Raw JSON
                 </button>
               </div>
             </div>
+            <div class="oa-ecosystem-links" id="oa-ecosystem-links" aria-label="NIAGADS ecosystem cross-links" hidden></div>
+            <div class="oa-visual-container" id="oa-visual-container" aria-label="Interactive genomics visualization" hidden></div>
             <div class="md-body" id="oa-result-markdown"></div>
             <details class="oa-raw-details">
               <summary>Inspect Raw NIAGADS Open Access v2.0 JSON Payload</summary>
-              <pre><code id="oa-result-json"></code></pre>
+              <pre tabindex="0"><code id="oa-result-json"></code></pre>
             </details>
           </div>
 
@@ -754,13 +825,15 @@
                   <button type="button" class="seg-btn" data-ledger-type="plan_triage">Plan/Triage</button>
                 </div>
 
-                <label for="usage-ledger-search" class="visually-hidden">Search studies and API targets</label>
-                <input
-                  id="usage-ledger-search"
-                  type="search"
-                  class="usage-search-input"
-                  placeholder="Filter by gene, rsID, cohort, or workspace…"
-                >
+                <search class="usage-search-wrap">
+                  <label for="usage-ledger-search" class="visually-hidden">Search studies and API targets</label>
+                  <input
+                    id="usage-ledger-search"
+                    type="search"
+                    class="usage-search-input"
+                    placeholder="Filter by gene, rsID, cohort, or workspace…"
+                  >
+                </search>
               </div>
             </div>
 
@@ -1071,10 +1144,41 @@
     </div>
   </dialog>
 
+  <!-- Native Modal Dialog: Global Cmd/Ctrl+K Biomedical & NIAGADS Command Palette -->
+  <dialog id="command-palette-dialog" class="cmdk-dialog" closedby="any" aria-labelledby="cmdk-dialog-title">
+    <div class="cmdk-header">
+      <h2 id="cmdk-dialog-title" class="visually-hidden">Ligase Biomedical &amp; NIAGADS Quick Jump Command Palette</h2>
+      <search class="cmdk-search-bar">
+        <span class="cmdk-search-icon" aria-hidden="true">⌕</span>
+        <label for="cmdk-input" class="visually-hidden">Search AD genes, rsIDs, NIAGADS NG* cohorts, live APIs, and portal actions</label>
+        <input
+          type="search"
+          id="cmdk-input"
+          class="cmdk-input"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="Jump to AD gene (APOE, BIN1, TREM2), rsID (rs6733839), NIAGADS NG* cohort, or portal view…"
+        >
+        <form method="dialog">
+          <button type="submit" class="cmdk-esc-btn" aria-label="Close command palette">ESC</button>
+        </form>
+      </search>
+    </div>
+    <div class="cmdk-results" id="cmdk-results" role="listbox" aria-label="Quick jump suggestions"></div>
+    <div class="cmdk-footer">
+      <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+      <span><kbd>↵</kbd> Launch Action</span>
+      <span><kbd>ESC</kbd> Dismiss</span>
+      <span class="cmdk-footer-brand">NIAGADS Open Access v2.0 + 24 DSS Cohorts</span>
+    </div>
+  </dialog>
+
   <!-- Shared Hover Tooltip for Usage & Volume Charts / Tile Wall -->
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.4.1" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.5.0" defer fetchpriority="high"></script>
 </body>
 </html>

@@ -24,6 +24,27 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
             ),
             "components": [
                 {
+                    "id": "mm_oa_dossier",
+                    "title": "4-Way Parallel V2F Locus Dossier",
+                    "badge": "New v0.5 · Parallel×4",
+                    "status": "live",
+                    "summary": (
+                        "Executes 4 concurrent NIAGADS Open Access v2.0 + FILER hg38 queries (canonical GVC/VRS "
+                        "record, ranked GWAS `-log10(p)` signals, GRCh38 exons or +/-2.5 kb ADSP R5 density, and "
+                        "regulatory track overlaps) with interactive SVG genomics charts and GenomicsDB cross-links."
+                    ),
+                    "backing": [
+                        "niagads_open_access_api(action='locus_dossier')",
+                        "GET /api/niagads/live?action=locus_dossier",
+                    ],
+                    "sample_prompt": (
+                        "Run a complete NIAGADS V2F Locus Dossier (`action='locus_dossier'`) on `BIN1` and "
+                        "`rs6733839`, synthesizing GVC TopGenes status, multi-cohort GWAS `-log10(p)` signals, "
+                        "GRCh38 exon architecture, and live FILER hg38 regulatory track overlaps."
+                    ),
+                    "live_api_preset": {"action": "locus_dossier", "target": "BIN1", "loc": ""},
+                },
+                {
                     "id": "mm_oa_genes",
                     "title": "Gene Records & GVC TopGenes",
                     "badge": "Available Now · v2.0",
@@ -609,6 +630,56 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                         "Generate a publication-ready executive brief comparing AD genetic architecture across "
                         "European and African ancestry cohorts in NIAGADS."
                     ),
+                },
+                {
+                    "id": "mm_ui_usage_gcs",
+                    "title": "Executive Usage Ledger & Persistent GCS FUSE",
+                    "badge": "Cloud Run GCS · Export",
+                    "status": "live",
+                    "summary": (
+                        "Tracks prompt/output/cached tokens, TTFT, per-tool call volume, and NIAGADS API calls "
+                        "across Cloud Run container lifecycles on lock-free persistent GCS FUSE storage."
+                    ),
+                    "backing": [
+                        "GET /api/usage",
+                        "GET /api/usage/export.{json,md,csv}",
+                        "gs://sbmi-jiang-ai-testing01-ligase-data",
+                    ],
+                    "sample_prompt": (
+                        "Summarize how Ligase tracks grounding verification and NIAGADS Open Access API v2.0 "
+                        "telemetry across multi-cohort Alzheimer's studies."
+                    ),
+                },
+                {
+                    "id": "mm_ui_feedback_smtp",
+                    "title": "Comments, Screenshots & Automated Email Briefs",
+                    "badge": "Cmd+V Paste · SMTP",
+                    "status": "live",
+                    "summary": (
+                        "Captures researcher comments, pasted screenshots, and uploaded figures into persistent "
+                        "GCS storage with instant inline-CID HTML email briefs and daily Cloud Scheduler digests."
+                    ),
+                    "backing": ["POST /api/feedback", "POST /api/cron/digest", "ligase/webapp/feedback.py"],
+                    "sample_prompt": (
+                        "Draft a structured improvement checklist for adding new multi-omic endophenotype tracks "
+                        "from NIAGADS DSS into a variant-to-function workflow."
+                    ),
+                },
+                {
+                    "id": "mm_ui_cmdk",
+                    "title": "Global Cmd/Ctrl+K Biomedical Command Palette",
+                    "badge": "⌘K Quick Jump",
+                    "status": "live",
+                    "summary": (
+                        "Instant keyboard-driven search across AD genes, RefSNP/VRS variants, 24 NIAGADS `NG*` "
+                        "cohorts, 16 live Open Access API actions, and one-click NIH/NIA `U24AG041689` citations."
+                    ),
+                    "backing": ["<dialog id='command-palette-dialog'>", "ligase/webapp/static/app.js"],
+                    "sample_prompt": (
+                        "Profile the canonical AD risk genes `APOE`, `BIN1`, `TREM2`, `ABCA7`, `SORL1`, and `PLCG2` "
+                        "using batch NIAGADS Open Access v2.0 gene records."
+                    ),
+                    "live_api_preset": {"action": "gene", "target": "APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2", "loc": ""},
                 },
             ],
         },

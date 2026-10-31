@@ -35,11 +35,12 @@
   };
 
   const OA_PRESETS = [
+    { label: "🔬 BIN1 Full V2F Locus Dossier", action: "locus_dossier", target: "BIN1", loc: "", flank: 10000 },
+    { label: "🔬 rs6733839 Full V2F Dossier", action: "locus_dossier", target: "rs6733839", loc: "", flank: 0 },
+    { label: "🧬 AD 6-Gene Panel (Batch)", action: "gene", target: "APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2", loc: "", flank: 0 },
+    { label: "🧪 APOE + TREM2 + BIN1 Variants (Batch)", action: "variant", target: "rs429358,rs7412,rs6733839,rs75932628", loc: "", flank: 0 },
     { label: "🧬 APOE Gene + GVC TopGenes", action: "gene", target: "APOE", loc: "", flank: 0 },
-    { label: "⚡ rs6733839 Auto (ADSP R5 + GWAS + FILER)", action: "auto", target: "rs6733839", loc: "", flank: 0 },
-    { label: "🧪 rs429358 ADSP R5 & GA4GH VRS", action: "variant", target: "rs429358", loc: "", flank: 0 },
     { label: "📐 TREM2 Exon Structure", action: "gene_structure", target: "TREM2", loc: "", flank: 0 },
-    { label: "📊 BIN1 GWAS Associations", action: "gene_associations", target: "BIN1", loc: "", flank: 0 },
     { label: "🗺️ APOE Locus ADSP R5 Variants", action: "region_variants", target: "chr19:44908500-44909000", loc: "", flank: 0 },
     { label: "🎯 Track Slice: NG00166 @ BIN1", action: "track_data", target: "NG00166_04BE648F_STD_OA", loc: "chr2:127134000-127136000", flank: 0 },
     { label: "🔎 Search Tracks: African American", action: "search_tracks", target: "African American", loc: "", flank: 0 },
@@ -160,11 +161,21 @@
     oaSubmitBtn: document.getElementById("oa-submit-btn"),
     oaResultCard: document.getElementById("oa-result-card"),
     oaResultMeta: document.getElementById("oa-result-meta"),
+    oaEcosystemLinks: document.getElementById("oa-ecosystem-links"),
+    oaVisualContainer: document.getElementById("oa-visual-container"),
     oaResultMarkdown: document.getElementById("oa-result-markdown"),
     oaResultJson: document.getElementById("oa-result-json"),
     oaSendStudioBtn: document.getElementById("oa-send-studio-btn"),
+    oaCiteBtn: document.getElementById("oa-cite-btn"),
     oaCopyJsonBtn: document.getElementById("oa-copy-json-btn"),
     oaEndpointsTbody: document.getElementById("oa-endpoints-tbody"),
+    // Command Palette & NIAGADS Bond elements
+    openCmdkBtn: document.getElementById("open-cmdk-btn"),
+    heroOpenCmdkBtn: document.getElementById("hero-open-cmdk-btn"),
+    copyNiagadsAckBtn: document.getElementById("copy-niagads-ack-btn"),
+    cmdkDialog: document.getElementById("command-palette-dialog"),
+    cmdkInput: document.getElementById("cmdk-input"),
+    cmdkResults: document.getElementById("cmdk-results"),
     // Usage & Volume Dashboard elements
     usageWindowSub: document.getElementById("usage-window-sub"),
     usageRangeGroup: document.getElementById("usage-range-group"),
@@ -444,20 +455,45 @@
   }
 
   // ── Accessible Multi-Tab Navigation (with Same-Document View Transitions) ──
-  function runMaybeViewTransition(mutateDom) {
+  function runMaybeViewTransition(mutateDom, afterFocusEl = null) {
+    const shiftFocus = () => {
+      if (afterFocusEl && typeof afterFocusEl.focus === "function") {
+        if (!afterFocusEl.hasAttribute("tabindex")) {
+          afterFocusEl.setAttribute("tabindex", "-1");
+        }
+        afterFocusEl.focus({ preventScroll: true });
+      }
+    };
     const reduceMotion =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!reduceMotion && typeof document.startViewTransition === "function") {
       try {
-        document.startViewTransition(mutateDom);
+        const vt = document.startViewTransition(mutateDom);
+        if (vt && vt.finished && typeof vt.finished.then === "function") {
+          vt.finished.then(shiftFocus).catch(() => {});
+        } else {
+          shiftFocus();
+        }
         return;
       } catch {}
     }
     mutateDom();
+    shiftFocus();
   }
 
-  async function switchPortalTab(tabId, { focusTab = false, updateHash = true } = {}) {
+  function resolvePanelHeading(validTab) {
+    const map = {
+      studio: el.heroTitle,
+      mindmap: el.panelMindmap?.querySelector(".page-heading"),
+      "niagads-api": el.panelNiagadsApi?.querySelector(".page-heading"),
+      usage: el.panelUsage?.querySelector(".page-heading"),
+      feedback: el.panelFeedback?.querySelector(".page-heading"),
+    };
+    return map[validTab] || null;
+  }
+
+  async function switchPortalTab(tabId, { focusTab = false, focusHeading = false, updateHash = true } = {}) {
     const valid =
       tabId === "mindmap" || tabId === "niagads-api" || tabId === "usage" || tabId === "feedback"
         ? tabId
@@ -501,10 +537,15 @@
       }
     };
 
+    const headingTarget = focusHeading && !focusTab ? resolvePanelHeading(valid) : null;
     if (changed) {
-      runMaybeViewTransition(applyTabVisibility);
+      runMaybeViewTransition(applyTabVisibility, headingTarget);
     } else {
       applyTabVisibility();
+      if (headingTarget) {
+        if (!headingTarget.hasAttribute("tabindex")) headingTarget.setAttribute("tabindex", "-1");
+        headingTarget.focus({ preventScroll: true });
+      }
     }
 
     document.title = TAB_TITLES[valid] || TAB_TITLES.studio;
@@ -560,7 +601,7 @@
 
   for (const gotoBtn of document.querySelectorAll("[data-goto-tab]")) {
     gotoBtn.addEventListener("click", () => {
-      switchPortalTab(gotoBtn.dataset.gotoTab);
+      switchPortalTab(gotoBtn.dataset.gotoTab, { focusHeading: true });
     });
   }
 
@@ -1094,6 +1135,355 @@
     }
   }
 
+  // ── Toast & NIH/NIA U24AG041689 Citation Helpers ──────────────────────────
+  let activeToastTimer = null;
+  function showToast(message) {
+    let banner = document.getElementById("ligase-toast-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "ligase-toast-banner";
+      banner.className = "toast-banner";
+      banner.setAttribute("role", "status");
+      banner.setAttribute("aria-live", "polite");
+      document.body.appendChild(banner);
+    }
+    banner.textContent = message;
+    banner.hidden = false;
+    if (activeToastTimer) clearTimeout(activeToastTimer);
+    activeToastTimer = setTimeout(() => {
+      banner.hidden = true;
+    }, 2800);
+  }
+
+  function buildNiagadsCitationText(contextLabel = "Ligase NIAGADS Study", identifiers = []) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const idLine = identifiers.length ? `\nQueried Accessions / Loci: ${identifiers.join(", ")}` : "";
+    return [
+      `NIH / NIA NIAGADS Data Acknowledgment (${contextLabel}, accessed ${stamp}):${idLine}`,
+      "Data used in preparation of this analysis were obtained from the National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS, https://www.niagads.org) and the NIAGADS Open Access API v2.0 (https://api.niagads.org/open-access, Apache 2.0). NIAGADS is supported by the National Institute on Aging under Cooperative Agreement U24AG041689.",
+      "",
+      "@misc{niagads_open_access_v2,",
+      "  title        = {NIAGADS Alzheimer's GenomicsDB \\& Open Access API v2.0},",
+      "  organization = {National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS)},",
+      "  url          = {https://api.niagads.org/open-access},",
+      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.0}",
+      "}",
+    ].join("\n");
+  }
+
+  async function copyNiagadsCitation(contextLabel, identifiers = []) {
+    const text = buildNiagadsCitationText(contextLabel, identifiers);
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("✓ Copied NIH/NIA NIAGADS U24AG041689 acknowledgment & BibTeX");
+    } catch {
+      showToast("Citation ready — clipboard permission unavailable in this context");
+    }
+  }
+
+  // ── Programmatic SVG Genomics Visualizer & Ecosystem Cross-Links ──────────
+  function svgNode(tag, attrs = {}, text = "") {
+    const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== null && v !== undefined) n.setAttribute(k, String(v));
+    }
+    if (text) n.textContent = text;
+    return n;
+  }
+
+  function renderOaEcosystemAndVisuals(res) {
+    if (el.oaEcosystemLinks) {
+      el.oaEcosystemLinks.replaceChildren();
+      const links = Array.isArray(res?.ecosystem_links) ? res.ecosystem_links : [];
+      if (links.length) {
+        const lbl = document.createElement("span");
+        lbl.className = "oa-eco-label";
+        lbl.textContent = "Bonded Ecosystem:";
+        el.oaEcosystemLinks.appendChild(lbl);
+        for (const item of links) {
+          const a = document.createElement("a");
+          a.className = "oa-eco-pill";
+          a.href = String(item.url || "https://www.niagads.org");
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          const txt = document.createElement("span");
+          txt.textContent = `↗ ${item.label || "NIAGADS"}`;
+          a.appendChild(txt);
+          if (item.badge) {
+            const b = document.createElement("span");
+            b.className = "oa-eco-badge";
+            b.textContent = String(item.badge);
+            a.appendChild(b);
+          }
+          el.oaEcosystemLinks.appendChild(a);
+        }
+        el.oaEcosystemLinks.hidden = false;
+      } else {
+        el.oaEcosystemLinks.hidden = true;
+      }
+    }
+
+    if (!el.oaVisualContainer) return;
+    el.oaVisualContainer.replaceChildren();
+    const vis = res?.visual || {};
+    const cards = [];
+
+    // 1. GWAS / WGS Associations -log10(p) or Track Count SVG Chart
+    if (vis.associations && Array.isArray(vis.associations.items) && vis.associations.items.length) {
+      const card = document.createElement("div");
+      card.className = "oa-vis-card";
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+
+      const items = vis.associations.items.slice(0, 8);
+      const isPval = vis.associations.mode === "pvalues";
+      title.textContent = isPval
+        ? "NIAGADS Multi-Cohort GWAS / WGS Signals (−log10 p)"
+        : "NIAGADS Association Track Coverage";
+      sub.textContent = isPval ? "Dashed line: p = 5×10⁻⁸ (−log10 p = 7.30)" : `Top ${items.length} tracks`;
+      head.append(title, sub);
+
+      const rowH = 24;
+      const topPad = 14;
+      const botPad = 16;
+      const leftPad = 158;
+      const rightPad = 56;
+      const width = 500;
+      const height = topPad + items.length * rowH + botPad;
+      const plotW = width - leftPad - rightPad;
+      const maxVal = Math.max(
+        isPval ? 8.5 : 1,
+        ...items.map((it) => Number(isPval ? it.neg_log10_p : it.count) || 0)
+      );
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": title.textContent,
+      });
+
+      if (isPval) {
+        const threshX = leftPad + Math.min(1, 7.3 / maxVal) * plotW;
+        svg.appendChild(
+          svgNode("line", {
+            x1: threshX.toFixed(1),
+            y1: topPad - 6,
+            x2: threshX.toFixed(1),
+            y2: height - botPad + 4,
+            stroke: "#e11d48",
+            "stroke-width": "1.3",
+            "stroke-dasharray": "4 3",
+          })
+        );
+      }
+
+      items.forEach((it, idx) => {
+        const y = topPad + idx * rowH;
+        const val = Number(isPval ? it.neg_log10_p : it.count) || 0;
+        const barW = Math.max(3, (val / maxVal) * plotW);
+        const labelStr = isPval
+          ? `${it.variant || "?"} · ${(it.study || it.track || "").slice(0, 12)}`
+          : String(it.track || "?").slice(0, 22);
+        const isSig = isPval && val >= 7.3;
+
+        svg.appendChild(
+          svgNode(
+            "text",
+            {
+              x: leftPad - 8,
+              y: y + 13,
+              "text-anchor": "end",
+              "font-size": "10.5",
+              fill: "currentColor",
+              opacity: "0.88",
+            },
+            labelStr
+          )
+        );
+        const rect = svgNode("rect", {
+          x: leftPad,
+          y: y + 3,
+          width: barW.toFixed(1),
+          height: 14,
+          rx: 4,
+          fill: isSig ? "#0f766e" : "#4f46e5",
+          opacity: isSig ? "0.92" : "0.75",
+        });
+        rect.appendChild(
+          svgNode(
+            "title",
+            {},
+            isPval
+              ? `${it.variant} | Track: ${it.track} | p=${it.pvalue} (-log10p=${val}) | ${it.traits}`
+              : `${it.track}: ${val} associations (${it.traits})`
+          )
+        );
+        svg.appendChild(rect);
+        svg.appendChild(
+          svgNode(
+            "text",
+            {
+              x: (leftPad + barW + 6).toFixed(1),
+              y: y + 13,
+              "font-size": "10.5",
+              "font-weight": "700",
+              fill: "currentColor",
+            },
+            isPval ? val.toFixed(1) : String(val)
+          )
+        );
+      });
+
+      card.append(head, svg);
+      cards.push(card);
+    }
+
+    // 2. GRCh38 Canonical Transcript & Exon Architecture Track
+    if (vis.gene_structure && Array.isArray(vis.gene_structure.exons) && vis.gene_structure.exons.length) {
+      const gs = vis.gene_structure;
+      const card = document.createElement("div");
+      card.className = "oa-vis-card";
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      title.textContent = `${gs.gene} GRCh38 Exon Architecture (${gs.transcript_name || gs.transcript_id})`;
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+      const spanKb = Math.max(0.1, (Number(gs.end) - Number(gs.start)) / 1000).toFixed(1);
+      sub.textContent = `${gs.chrom}:${Number(gs.start).toLocaleString()}–${Number(gs.end).toLocaleString()} (${spanKb} kb · ${gs.exon_count} exons)`;
+      head.append(title, sub);
+
+      const width = 500;
+      const height = 74;
+      const padX = 18;
+      const plotW = width - padX * 2;
+      const gStart = Number(gs.start) || 0;
+      const gSpan = Math.max(1, (Number(gs.end) || gStart + 1) - gStart);
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": `${gs.gene} canonical transcript exon diagram`,
+      });
+
+      // Intron backbone
+      svg.appendChild(
+        svgNode("line", {
+          x1: padX,
+          y1: 34,
+          x2: width - padX,
+          y2: 34,
+          stroke: "currentColor",
+          "stroke-opacity": "0.35",
+          "stroke-width": "2",
+        })
+      );
+
+      // Exon blocks
+      for (const ex of gs.exons) {
+        const x1 = padX + ((Number(ex.start) - gStart) / gSpan) * plotW;
+        const x2 = padX + ((Number(ex.end) - gStart) / gSpan) * plotW;
+        const w = Math.max(3.2, x2 - x1);
+        const r = svgNode("rect", {
+          x: x1.toFixed(1),
+          y: 20,
+          width: w.toFixed(1),
+          height: 28,
+          rx: 2,
+          fill: "#0f766e",
+        });
+        r.appendChild(
+          svgNode(
+            "title",
+            {},
+            `Exon ${ex.rank} (${ex.id}): ${gs.chrom}:${Number(ex.start).toLocaleString()}-${Number(ex.end).toLocaleString()} (${Number(ex.end) - Number(ex.start) + 1} bp)`
+          )
+        );
+        svg.appendChild(r);
+      }
+
+      svg.appendChild(
+        svgNode("text", { x: padX, y: 64, "font-size": "10", fill: "currentColor", opacity: "0.7" }, `5' ${gs.chrom}:${gStart.toLocaleString()}`)
+      );
+      svg.appendChild(
+        svgNode(
+          "text",
+          { x: width - padX, y: 64, "text-anchor": "end", "font-size": "10", fill: "currentColor", opacity: "0.7" },
+          `${gs.chrom}:${Number(gs.end).toLocaleString()} (${gs.total_transcripts || 1} isoforms)`
+        )
+      );
+
+      card.append(head, svg);
+      cards.push(card);
+    }
+
+    // 3. Population Allele Frequencies SVG Bars
+    if (Array.isArray(vis.allele_frequencies) && vis.allele_frequencies.length) {
+      const freqs = vis.allele_frequencies;
+      const card = document.createElement("div");
+      card.className = "oa-vis-card";
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      title.textContent = `Reference Population Allele Frequencies (${freqs[0].variant})`;
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+      sub.textContent = "NIAGADS / ALFA / gnomAD / TOPMed";
+      head.append(title, sub);
+
+      const rowH = 22;
+      const leftPad = 128;
+      const rightPad = 64;
+      const width = 460;
+      const height = 10 + freqs.length * rowH + 8;
+      const plotW = width - leftPad - rightPad;
+      const maxAf = Math.max(0.05, ...freqs.map((f) => Number(f.af) || 0));
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": title.textContent,
+      });
+
+      freqs.forEach((f, idx) => {
+        const y = 8 + idx * rowH;
+        const val = Number(f.af) || 0;
+        const w = Math.max(2.5, (val / maxAf) * plotW);
+        svg.appendChild(
+          svgNode("text", { x: leftPad - 8, y: y + 13, "text-anchor": "end", "font-size": "10.5", fill: "currentColor", opacity: "0.85" }, f.population)
+        );
+        svg.appendChild(
+          svgNode("rect", { x: leftPad, y: y + 3, width: w.toFixed(1), height: 13, rx: 3.5, fill: "#7c3aed", opacity: "0.85" })
+        );
+        svg.appendChild(
+          svgNode("text", { x: (leftPad + w + 6).toFixed(1), y: y + 13, "font-size": "10.5", "font-weight": "700", fill: "currentColor" }, `${(val * 100).toFixed(2)}%`)
+        );
+      });
+
+      card.append(head, svg);
+      cards.push(card);
+    }
+
+    if (cards.length) {
+      const grid = document.createElement("div");
+      grid.className = "oa-vis-grid";
+      for (const c of cards) grid.appendChild(c);
+      el.oaVisualContainer.appendChild(grid);
+      el.oaVisualContainer.hidden = false;
+    } else {
+      el.oaVisualContainer.hidden = true;
+    }
+  }
+
   function applyAndRunOaPreset(action, target, loc = "", flank = 0) {
     el.oaActionSelect.value = action;
     el.oaTargetInput.value = target;
@@ -1112,6 +1502,8 @@
     el.oaSubmitBtn.disabled = true;
     el.oaSubmitBtn.textContent = "Querying api.niagads.org…";
     el.oaResultCard.hidden = false;
+    if (el.oaEcosystemLinks) el.oaEcosystemLinks.hidden = true;
+    if (el.oaVisualContainer) el.oaVisualContainer.hidden = true;
     el.oaResultMeta.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>Fetching live NIAGADS Open Access v2.0 record…</span>`;
     el.oaResultMarkdown.innerHTML = `<p style="color:var(--text-muted)">Contacting <code>https://api.niagads.org/api</code>…</p>`;
 
@@ -1130,10 +1522,13 @@
         <span class="oa-status-pill">✓ HTTP 200 OK · ${escapeHtml(res.elapsed_ms)} ms</span>
         <span>Endpoint: <code>${escapeHtml(res.endpoint)}</code>${reqBadge}</span>
       `;
+      renderOaEcosystemAndVisuals(res);
       el.oaResultMarkdown.innerHTML = renderMarkdown(res.summary_markdown || "");
       el.oaResultJson.textContent = JSON.stringify(res.raw, null, 2);
       state.usageData = null;
     } catch (err) {
+      if (el.oaEcosystemLinks) el.oaEcosystemLinks.hidden = true;
+      if (el.oaVisualContainer) el.oaVisualContainer.hidden = true;
       el.oaResultMeta.innerHTML = `<span class="oa-status-pill staged" style="color:var(--danger)">✗ Query Error</span>`;
       el.oaResultMarkdown.innerHTML = `<p style="color:var(--danger)">${escapeHtml(err.message)}</p>`;
       el.oaResultJson.textContent = "";
@@ -1146,6 +1541,12 @@
   el.oaForm.addEventListener("submit", (ev) => {
     ev.preventDefault();
     runLiveNiagadsQuery();
+  });
+
+  el.oaCiteBtn?.addEventListener("click", () => {
+    const r = state.lastOaResult;
+    const ids = r?.target ? [r.target] : [];
+    copyNiagadsCitation(`NIAGADS Open Access v2.0 (${r?.action || "live"})`, ids);
   });
 
   el.oaCopyJsonBtn.addEventListener("click", async () => {
@@ -1419,6 +1820,88 @@
     return wrap;
   }
 
+  const CANONICAL_AD_GENES = [
+    "APOE",
+    "BIN1",
+    "TREM2",
+    "ABCA7",
+    "SORL1",
+    "PLCG2",
+    "ABI3",
+    "MAPT",
+    "CLU",
+    "CR1",
+    "PICALM",
+    "SPI1",
+    "CD33",
+    "MS4A6A",
+    "RELN",
+    "ADAM10",
+  ];
+
+  function extractGroundedProvenance(markdownText, meta = {}) {
+    const traceStr = (meta.tool_trace || [])
+      .map((t) => `${t.tool_name || ""} ${t.args_preview || ""} ${t.output_preview || ""}`)
+      .join(" ");
+    const hay = `${markdownText || ""} ${traceStr}`;
+    const ngs = Array.from(new Set((hay.match(/\bNG00\d{3}\b/gi) || []).map((x) => x.toUpperCase()))).slice(0, 6);
+    const rsids = Array.from(new Set((hay.match(/\brs\d{3,12}\b/gi) || []).map((x) => x.toLowerCase()))).slice(0, 6);
+    const genes = CANONICAL_AD_GENES.filter((g) => new RegExp(`\\b${g}\\b`).test(hay)).slice(0, 6);
+    return { ngs, rsids, genes, all: [...ngs, ...genes, ...rsids] };
+  }
+
+  function buildProvenanceStrip(markdownText, meta = {}) {
+    const prov = extractGroundedProvenance(markdownText, meta);
+    if (!prov.all.length) return null;
+
+    const strip = document.createElement("div");
+    strip.className = "provenance-strip";
+
+    const lbl = document.createElement("span");
+    lbl.className = "prov-label";
+    lbl.textContent = "Grounded NIAGADS Entities:";
+    strip.appendChild(lbl);
+
+    for (const ng of prov.ngs) {
+      const a = document.createElement("a");
+      a.className = "prov-pill";
+      a.href = `https://dss.niagads.org/datasets/${ng.toLowerCase()}/`;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = `Open NIAGADS DSS Study ${ng}`;
+      a.textContent = `🏛️ ${ng}`;
+      strip.appendChild(a);
+    }
+
+    for (const g of prov.genes) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "prov-pill";
+      btn.title = `Inspect ${g} V2F Locus Dossier in NIAGADS Explorer`;
+      btn.textContent = `🧬 ${g}`;
+      btn.addEventListener("click", async () => {
+        await switchPortalTab("niagads-api", { focusHeading: true });
+        applyAndRunOaPreset("locus_dossier", g, "", 10000);
+      });
+      strip.appendChild(btn);
+    }
+
+    for (const rs of prov.rsids) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "prov-pill";
+      btn.title = `Inspect ${rs} V2F Variant Dossier in NIAGADS Explorer`;
+      btn.textContent = `🧪 ${rs}`;
+      btn.addEventListener("click", async () => {
+        await switchPortalTab("niagads-api", { focusHeading: true });
+        applyAndRunOaPreset("locus_dossier", rs, "", 0);
+      });
+      strip.appendChild(btn);
+    }
+
+    return strip;
+  }
+
   function buildArtifactBar(markdownText, meta = {}) {
     const bar = document.createElement("div");
     bar.className = "artifact-bar";
@@ -1437,6 +1920,17 @@
       } catch {}
     });
     bar.appendChild(copyBtn);
+
+    const prov = extractGroundedProvenance(markdownText, meta);
+    const citeBtn = document.createElement("button");
+    citeBtn.type = "button";
+    citeBtn.className = "artifact-btn";
+    citeBtn.textContent = "📜 Cite NIAGADS";
+    citeBtn.title = "Copy NIH/NIA U24AG041689 acknowledgment & BibTeX";
+    citeBtn.addEventListener("click", () => {
+      copyNiagadsCitation(meta.run_id || "Ligase Biomedical Study", prov.all);
+    });
+    bar.appendChild(citeBtn);
 
     if (meta.report_url) {
       const repLink = document.createElement("a");
@@ -1500,6 +1994,8 @@
       card.appendChild(gal);
     }
 
+    const provStrip = buildProvenanceStrip(markdownText, meta);
+    if (provStrip) card.appendChild(provStrip);
     card.appendChild(buildArtifactBar(markdownText, meta));
     el.transcript.appendChild(card);
   }
@@ -1848,6 +2344,8 @@
             const toolCount = (payload.tool_trace || []).length;
             const ttftBadge = payload.ttft_ms ? ` · TTFT ${payload.ttft_ms} ms` : "";
             statusRight.textContent = `${payload.elapsed_s}s${ttftBadge} · ${payload.iterations} round${payload.iterations === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}`;
+            const provStrip = buildProvenanceStrip(finalMd, payload);
+            if (provStrip) card.appendChild(provStrip);
             card.appendChild(buildArtifactBar(finalMd, payload));
             state.usageData = null;
             await refreshThreads();
@@ -3350,11 +3848,252 @@
     await Promise.all([loadShippedImprovements(), loadWorkspaceRecentFeedback()]);
   }
 
+  // ── NIAGADS Bond Strip & Global Cmd/Ctrl+K Command Palette ────────────────
+  const CMDK_LOCI = [
+    { id: "loc_bin1", group: "NIAGADS V2F Locus Dossiers", title: "BIN1 — 4-Way Parallel V2F Locus Dossier", sub: "2q14.3 microglia enhancer locus · GVC TopGene + GWAS + GRCh38 exons + FILER", badge: "Dossier · BIN1", action: "locus_dossier", target: "BIN1", flank: 10000 },
+    { id: "loc_apoe", group: "NIAGADS V2F Locus Dossiers", title: "APOE — 4-Way Parallel V2F Locus Dossier", sub: "19q13.32 canonical AD locus · TopGenes + multi-ancestry GWAS + exons + FILER", badge: "Dossier · APOE", action: "locus_dossier", target: "APOE", flank: 10000 },
+    { id: "loc_trem2", group: "NIAGADS V2F Locus Dossiers", title: "TREM2 — 4-Way Parallel V2F Locus Dossier", sub: "6p21.1 microglial receptor · exon architecture + GWAS + FILER", badge: "Dossier · TREM2", action: "locus_dossier", target: "TREM2", flank: 10000 },
+    { id: "loc_abca7", group: "NIAGADS V2F Locus Dossiers", title: "ABCA7 — 4-Way Parallel V2F Locus Dossier", sub: "19p13.3 lipid transporter · African ancestry PAF enrichment + GWAS + exons", badge: "Dossier · ABCA7", action: "locus_dossier", target: "ABCA7", flank: 10000 },
+    { id: "loc_sorl1", group: "NIAGADS V2F Locus Dossiers", title: "SORL1 — 4-Way Parallel V2F Locus Dossier", sub: "11q24.1 endosomal sorting receptor · coding & GWAS architecture", badge: "Dossier · SORL1", action: "locus_dossier", target: "SORL1", flank: 10000 },
+    { id: "loc_rs6733839", group: "NIAGADS V2F Locus Dossiers", title: "rs6733839 — BIN1 Microglia Enhancer SNV Dossier", sub: "ADSP R5 VRS digest + GWAS p-values + +/-2.5 kb R5 SNVs + FILER SPI1/MEF2C", badge: "Dossier · SNV", action: "locus_dossier", target: "rs6733839", flank: 0 },
+    { id: "loc_rs429358", group: "NIAGADS V2F Locus Dossiers", title: "rs429358 — APOE ε4 (Cys112Arg) Variant Dossier", sub: "chr19:44908684:T:C · GA4GH VRS + gnomAD/TOPMed AFs + GWAS", badge: "Dossier · SNV", action: "locus_dossier", target: "rs429358", flank: 0 },
+    { id: "loc_rs7412", group: "NIAGADS V2F Locus Dossiers", title: "rs7412 — APOE ε2 (Arg158Cys) Variant Dossier", sub: "chr19:44908822:C:T · AD protective vs. PSP risk reversal", badge: "Dossier · SNV", action: "locus_dossier", target: "rs7412", flank: 0 },
+    { id: "loc_batch_genes", group: "NIAGADS V2F Locus Dossiers", title: "AD 6-Gene Panel (APOE, BIN1, TREM2, ABCA7, SORL1, PLCG2)", sub: "Single-request NIAGADS Open Access v2.0 batch gene lookup", badge: "Batch ×6", action: "gene", target: "APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2", flank: 0 },
+  ];
+
+  let cmdkInitialized = false;
+  let cmdkActiveIndex = 0;
+  let cmdkVisibleItems = [];
+
+  function buildCmdkCatalogItems(queryRaw) {
+    const q = (queryRaw || "").trim();
+    const qLow = q.toLowerCase();
+    const allItems = [];
+
+    // Dynamic custom NIAGADS target when user types a gene, rsID, region, or NG* track
+    if (q.length >= 2 && /^(rs\d+|chr[\w:,-]+|ng\d{5}\w*|ensg\d+|[a-z][a-z0-9-]{1,11})$/i.test(q)) {
+      allItems.push({
+        group: "Instant Live NIAGADS Lookup",
+        title: `Run Live NIAGADS V2F Locus Dossier on "${q}"`,
+        sub: "Parallel Open Access v2.0 record + GWAS signals + structure/variants + FILER overlap",
+        badge: "Live API ↵",
+        run: async () => {
+          await switchPortalTab("niagads-api", { focusHeading: true });
+          applyAndRunOaPreset("locus_dossier", q, "", 0);
+        },
+      });
+      allItems.push({
+        group: "Instant Live NIAGADS Lookup",
+        title: `Synthesize "${q}" in Research Studio (${state.meta?.model || "gpt-6-luna"})`,
+        sub: "Grounded AD1 study combining NIAGADS Open Access v2.0, multi-cohort panels & UniProt",
+        badge: "Studio ↵",
+        run: () => {
+          launchPromptInStudio(
+            `Run a quantitative NIAGADS V2F analysis on \`${q}\` using \`niagads_open_access_api\` (action='locus_dossier') and \`query_niagads\`, summarizing genetic risk, functional genomics, and cross-ancestry evidence.`,
+            "niagads_api"
+          );
+        },
+      });
+    }
+
+    for (const loc of CMDK_LOCI) {
+      allItems.push({
+        group: loc.group,
+        title: loc.title,
+        sub: loc.sub,
+        badge: loc.badge,
+        run: async () => {
+          await switchPortalTab("niagads-api", { focusHeading: true });
+          applyAndRunOaPreset(loc.action, loc.target, "", loc.flank);
+        },
+      });
+    }
+
+    // Portal Views & Actions
+    const navItems = [
+      { title: "Switch to Research Studio", sub: "Streaming gpt-6-luna co-scientist & grounded tool trace", badge: "Tab 1", run: () => switchPortalTab("studio", { focusHeading: true }) },
+      { title: "Switch to Capabilities Mindmap", sub: "Interactive 6-pillar · 36-component SVG graph & accessible matrix", badge: "Tab 2", run: () => switchPortalTab("mindmap", { focusHeading: true }) },
+      { title: "Switch to NIAGADS Open Access v2.0 Explorer", sub: "Interactive REST console + SVG genomics charts", badge: "Tab 3", run: () => switchPortalTab("niagads-api", { focusHeading: true }) },
+      { title: "Switch to Usage & Volume Ledger", sub: "Persistent Cloud Storage telemetry, token volume & CSV/MD exports", badge: "Tab 4", run: () => switchPortalTab("usage", { focusHeading: true }) },
+      { title: "Switch to Comments, Screenshots & Feedback", sub: "Paste screenshots (Cmd+V) & email structured engineering briefs", badge: "Tab 5", run: () => switchPortalTab("feedback", { focusHeading: true }) },
+      { title: "Copy NIH/NIA NIAGADS Citation & BibTeX (U24AG041689)", sub: "Official NIAGADS Open Access v2.0 + Cooperative Agreement U24AG041689 attribution", badge: "Provenance", run: () => copyNiagadsCitation("Ligase Portal") },
+      { title: "Open Full NIAGADS 24-Cohort & Tool Reference Catalog", sub: "Inspect NG00049–NG00182 datasets and 180+ Biomni modules", badge: "Catalog", run: async () => { await ensureFullMetaLoaded(); el.catalogDialog?.showModal(); } },
+    ];
+    for (const nav of navItems) {
+      allItems.push({ group: "Portal Views & Provenance", ...nav });
+    }
+
+    // 24 NIAGADS NG* DSS Datasets (when hydrated)
+    const datasets = state.meta?.niagads?.datasets || [];
+    for (const ds of datasets) {
+      allItems.push({
+        group: "NIAGADS DSS Cohorts (NG00049–NG00182)",
+        title: `${ds.id} — ${ds.title}`,
+        sub: ds.description || "NIAGADS Data Sharing Service curated cohort",
+        badge: ds.access === "open" ? "Open DSS" : "NIAGADS DSS",
+        run: () => {
+          launchPromptInStudio(
+            `Summarize NIAGADS study \`${ds.id}\` (${ds.title}) using \`query_niagads\` and cross-reference any live open-access summary tracks on \`niagads_open_access_api\`.`,
+            "niagads_api"
+          );
+        },
+      });
+    }
+
+    if (!qLow) {
+      return allItems.slice(0, 18);
+    }
+    return allItems
+      .filter((item) => `${item.title} ${item.sub} ${item.badge} ${item.group}`.toLowerCase().includes(qLow))
+      .slice(0, 24);
+  }
+
+  function renderCmdkList() {
+    if (!el.cmdkResults) return;
+    el.cmdkResults.replaceChildren();
+    cmdkVisibleItems = buildCmdkCatalogItems(el.cmdkInput?.value || "");
+    if (cmdkActiveIndex >= cmdkVisibleItems.length) cmdkActiveIndex = 0;
+
+    if (!cmdkVisibleItems.length) {
+      const empty = document.createElement("div");
+      empty.className = "cmdk-empty";
+      empty.textContent = "No matching genes, variants, NIAGADS cohorts, or actions found.";
+      el.cmdkResults.appendChild(empty);
+      return;
+    }
+
+    let currentGroup = "";
+    cmdkVisibleItems.forEach((item, idx) => {
+      if (item.group !== currentGroup) {
+        currentGroup = item.group;
+        const grp = document.createElement("div");
+        grp.className = "cmdk-group-label";
+        grp.textContent = currentGroup;
+        el.cmdkResults.appendChild(grp);
+      }
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cmdk-item" + (idx === cmdkActiveIndex ? " active" : "");
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", idx === cmdkActiveIndex ? "true" : "false");
+
+      const main = document.createElement("div");
+      main.className = "cmdk-item-main";
+      const t = document.createElement("span");
+      t.className = "cmdk-item-title";
+      t.textContent = item.title;
+      const s = document.createElement("span");
+      s.className = "cmdk-item-sub";
+      s.textContent = item.sub;
+      main.append(t, s);
+
+      const b = document.createElement("span");
+      b.className = "cmdk-item-badge";
+      b.textContent = item.badge;
+
+      btn.append(main, b);
+      btn.addEventListener("mouseenter", () => {
+        cmdkActiveIndex = idx;
+        for (const [i, node] of Array.from(el.cmdkResults.querySelectorAll(".cmdk-item")).entries()) {
+          node.classList.toggle("active", i === cmdkActiveIndex);
+          node.setAttribute("aria-selected", i === cmdkActiveIndex ? "true" : "false");
+        }
+      });
+      btn.addEventListener("click", () => {
+        el.cmdkDialog?.close();
+        item.run();
+      });
+      el.cmdkResults.appendChild(btn);
+    });
+  }
+
+  async function openCommandPalette() {
+    if (!el.cmdkDialog) return;
+    ensureFullMetaLoaded().then(() => {
+      if (el.cmdkDialog.open) renderCmdkList();
+    });
+    cmdkActiveIndex = 0;
+    if (el.cmdkInput) el.cmdkInput.value = "";
+    renderCmdkList();
+    if (!el.cmdkDialog.open) {
+      el.cmdkDialog.showModal();
+    }
+    requestAnimationFrame(() => el.cmdkInput?.focus());
+  }
+
+  function initBondAndCommandPalette() {
+    if (cmdkInitialized) return;
+    cmdkInitialized = true;
+
+    el.openCmdkBtn?.addEventListener("click", openCommandPalette);
+    el.heroOpenCmdkBtn?.addEventListener("click", openCommandPalette);
+    el.copyNiagadsAckBtn?.addEventListener("click", () => copyNiagadsCitation("Ligase NIAGADS Bonded Portal"));
+
+    for (const chip of document.querySelectorAll("[data-bond-action]")) {
+      chip.addEventListener("click", async () => {
+        const act = chip.dataset.bondAction || "locus_dossier";
+        const tgt = chip.dataset.bondTarget || "BIN1";
+        await switchPortalTab("niagads-api", { focusHeading: true });
+        applyAndRunOaPreset(act, tgt, "", act === "locus_dossier" && tgt === "BIN1" ? 10000 : 0);
+      });
+    }
+
+    for (const catChip of document.querySelectorAll("[data-bond-catalog]")) {
+      catChip.addEventListener("click", async () => {
+        await ensureFullMetaLoaded();
+        el.catalogDialog?.showModal();
+      });
+    }
+
+    el.cmdkInput?.addEventListener("input", () => {
+      cmdkActiveIndex = 0;
+      renderCmdkList();
+    });
+
+    el.cmdkInput?.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        if (cmdkVisibleItems.length) {
+          cmdkActiveIndex = (cmdkActiveIndex + 1) % cmdkVisibleItems.length;
+          renderCmdkList();
+          el.cmdkResults?.querySelector(".cmdk-item.active")?.scrollIntoView({ block: "nearest" });
+        }
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (cmdkVisibleItems.length) {
+          cmdkActiveIndex = (cmdkActiveIndex - 1 + cmdkVisibleItems.length) % cmdkVisibleItems.length;
+          renderCmdkList();
+          el.cmdkResults?.querySelector(".cmdk-item.active")?.scrollIntoView({ block: "nearest" });
+        }
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        const chosen = cmdkVisibleItems[cmdkActiveIndex];
+        if (chosen) {
+          el.cmdkDialog?.close();
+          chosen.run();
+        }
+      }
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") {
+        ev.preventDefault();
+        if (el.cmdkDialog?.open) {
+          el.cmdkDialog.close();
+        } else {
+          openCommandPalette();
+        }
+      }
+    });
+  }
+
   async function boot() {
     syncThemeButtons();
     syncWorkflowHint();
     syncUsageExportLinks();
     initFeedbackController();
+    initBondAndCommandPalette();
 
     const bootstrap = readServerBootstrap();
     if (bootstrap?.mindmap) {

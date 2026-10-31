@@ -396,6 +396,21 @@ def _format_markdown_report(
             lines.append(f"{idx}. **`{t.get('tool_name', 'tool')}`** ({status_icon} {dur}) — `{t.get('args_preview', '')}`")
         lines.append("")
     lines.extend(["## Scientific Synthesis", "", answer.strip(), ""])
+    used_niagads = profile == "ad1" or any(
+        "niagads" in str(t.get("tool_name") or "").lower() for t in tool_trace
+    )
+    if used_niagads:
+        lines.extend(
+            [
+                "---",
+                "",
+                "## NIAGADS Data Attribution & Provenance",
+                "",
+                "- **Primary Genomic Data Source:** National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (**NIAGADS**, https://www.niagads.org) & **NIAGADS Open Access API v2.0** (https://api.niagads.org/open-access, Apache 2.0).",
+                "- **NIH / NIA Grant Acknowledgment:** Data collection and dissemination through NIAGADS are supported by the National Institute on Aging under Cooperative Agreement **U24AG041689**.",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -840,6 +855,10 @@ def create_webapp(
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
+        resp.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+        if IS_CLOUD:
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.url.path.startswith("/static/"):
             if "v=" in (request.url.query or ""):
                 resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"

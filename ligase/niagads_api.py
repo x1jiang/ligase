@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import json
+import math
 import os
 import re
 import ssl
@@ -25,7 +26,7 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.4.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_UA = "Ligase/0.5.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
 _CACHE_TTL_S = 900.0
 _CACHE_MAX_SIZE = 512
@@ -125,12 +126,20 @@ OPEN_ACCESS_ROLLOUT_CATALOG: Dict[str, Any] = {
     ],
     "endpoints": [
         {
+            "action": "locus_dossier",
+            "method": "PARALLEL×4",
+            "path": "/record/{gene|variant} + /associations + /structure + FILER",
+            "summary": "Full NIAGADS V2F Locus Dossier (4-Way Parallel Synthesis)",
+            "example_target": "BIN1",
+            "description": "Executes 4 concurrent NIAGADS Open Access v2.0 & FILER hg38 queries (canonical GVC/VRS record, ranked GWAS -log10(p) associations, GRCh38 exons or regional ADSP R5 density, and regulatory track overlaps) with interactive visual data.",
+        },
+        {
             "action": "gene",
             "method": "GET",
-            "path": "/record/gene/{gene}",
-            "summary": "Canonical Gene Record & GVC TopGenes Status",
+            "path": "/record/gene/{gene} (or ?ids=G1,G2,...)",
+            "summary": "Canonical Gene Record, GVC TopGenes & Batch Panel",
             "example_target": "APOE",
-            "description": "Returns Ensembl/HGNC/UniProt/RefSeq xrefs, GRCh38 coordinates, AD locus flag, and KEGG/Reactome/GO pathway memberships.",
+            "description": "Returns Ensembl/HGNC/UniProt/RefSeq xrefs, GRCh38 coordinates, AD locus flag, and KEGG/Reactome/GO pathway memberships (supports comma-separated multi-gene panels).",
         },
         {
             "action": "gene_associations",
@@ -778,6 +787,346 @@ def query_filer_overlap_count(region_or_feature: str) -> Dict[str, Any]:
     }
 
 
+def _parse_genomic_span(loc_val: Any, fallback_obj: Optional[Dict[str, Any]] = None) -> Optional[Tuple[str, int, int]]:
+    if isinstance(loc_val, str):
+        cleaned_loc = re.sub(r":(?:[+-]|-?1)$", "", loc_val.strip())
+        m = _REGION_RE.match(cleaned_loc)
+        if m:
+            c = f"chr{m.group(1).upper()}"
+            s = int(m.group(2).replace(",", ""))
+            e = int(m.group(3).replace(",", ""))
+            if e < s:
+                s, e = e, s
+            return c, s, e
+    if isinstance(fallback_obj, dict):
+        chrom = str(fallback_obj.get("chromosome") or fallback_obj.get("chr") or "").strip()
+        start = fallback_obj.get("start")
+        end = fallback_obj.get("end")
+        if chrom and start is not None and end is not None:
+            try:
+                c = chrom if chrom.lower().startswith("chr") else f"chr{chrom}"
+                s = int(str(start).replace(",", ""))
+                e = int(str(end).replace(",", ""))
+                if e < s:
+                    s, e = e, s
+                return c, s, e
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _extract_visual_associations(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = [r for r in (payload.get("data") or []) if isinstance(r, dict)]
+    if not data:
+        return {}
+    if "num_associations" in data[0] and "pvalue" not in data[0]:
+        ranked_tracks = sorted(
+            data,
+            key=lambda x: int(x.get("num_associations") or 0),
+            reverse=True,
+        )[:12]
+        return {
+            "mode": "track_counts",
+            "items": [
+                {
+                    "track": str(item.get("track") or item.get("track_id") or "?"),
+                    "study": str(item.get("track") or item.get("track_id") or "").split("_")[0],
+                    "count": int(item.get("num_associations") or 0),
+                    "traits": _trait_summary(item.get("traits")) or "AD/ADRD",
+                }
+                for item in ranked_tracks
+            ],
+        }
+
+    scored: List[Dict[str, Any]] = []
+    for r in data:
+        nlog: Optional[float] = None
+        raw_nlog = r.get("neg_log10_pvalue")
+        if raw_nlog is not None:
+            try:
+                nlog = float(raw_nlog)
+            except (TypeError, ValueError):
+                nlog = None
+        pval_raw = r.get("pvalue")
+        if nlog is None and pval_raw is not None:
+            try:
+                pv = float(pval_raw)
+                if pv > 0:
+                    nlog = -math.log10(pv)
+            except (TypeError, ValueError):
+                nlog = None
+        if nlog is None:
+            continue
+        trk = str(r.get("track") or r.get("track_id") or "—")
+        scored.append(
+            {
+                "variant": str(r.get("variant") or r.get("ref_snp_id") or "?"),
+                "allele": str(r.get("test_allele") or r.get("alt") or "—"),
+                "pvalue": str(pval_raw if pval_raw is not None else "—"),
+                "neg_log10_p": round(nlog, 2),
+                "direction": str(r.get("effect_direction") or "—"),
+                "track": trk,
+                "study": trk.split("_")[0] if trk.upper().startswith("NG") else "",
+                "traits": _trait_summary(r.get("traits")) or "AD/ADRD",
+            }
+        )
+    if not scored:
+        return {}
+    scored.sort(key=lambda x: x["neg_log10_p"], reverse=True)
+    return {
+        "mode": "pvalues",
+        "genome_wide_threshold": 7.30,
+        "items": scored[:12],
+    }
+
+
+def _extract_visual_structure(payload: Optional[Dict[str, Any]], gene_hint: str = "") -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data") or []
+    if not data or not isinstance(data[0], dict):
+        return {}
+    first = data[0]
+    transcripts = [tx for tx in (first.get("transcripts") or []) if isinstance(tx, dict)]
+    if not transcripts:
+        return {}
+
+    def _tx_priority(tx: Dict[str, Any]) -> Tuple[int, int]:
+        is_canon = 1 if (tx.get("is_canonical") or "-201" in str(tx.get("name") or "")) else 0
+        return (is_canon, len(tx.get("exons") or []))
+
+    chosen = sorted(transcripts, key=_tx_priority, reverse=True)[0]
+    tx_span = _parse_genomic_span(chosen.get("location") or first.get("location"), chosen)
+    exons_out: List[Dict[str, Any]] = []
+    for idx, ex in enumerate(chosen.get("exons") or [], 1):
+        if not isinstance(ex, dict):
+            continue
+        sp = _parse_genomic_span(ex.get("location"), ex)
+        if not sp:
+            continue
+        exons_out.append(
+            {
+                "rank": idx,
+                "id": str(ex.get("id") or f"Exon {idx}"),
+                "start": sp[1],
+                "end": sp[2],
+            }
+        )
+    if not exons_out:
+        return {}
+    chrom = tx_span[0] if tx_span else "chr?"
+    min_s = tx_span[1] if tx_span else min(e["start"] for e in exons_out)
+    max_e = tx_span[2] if tx_span else max(e["end"] for e in exons_out)
+    return {
+        "gene": (gene_hint or str(first.get("gene_symbol") or first.get("id") or "GENE")).upper(),
+        "transcript_id": str(chosen.get("id") or ""),
+        "transcript_name": str(chosen.get("name") or chosen.get("id") or ""),
+        "chrom": chrom,
+        "start": min_s,
+        "end": max_e,
+        "strand": str(first.get("strand") or chosen.get("strand") or "+"),
+        "total_transcripts": len(transcripts),
+        "exon_count": len(exons_out),
+        "exons": exons_out,
+    }
+
+
+def _extract_visual_frequencies(payload: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    records = [r for r in (payload.get("data") or []) if isinstance(r, dict)]
+    if not records:
+        return []
+    rec = records[0]
+    vlabel = str(rec.get("ref_snp_id") or rec.get("id") or "Variant")
+    freqs = rec.get("allele_frequency") or {}
+    if not isinstance(freqs, dict):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    seen_keys: set[str] = set()
+
+    def _add(pop_label: str, raw_key: str, raw_val: Any) -> None:
+        if raw_val is None or raw_key in seen_keys:
+            return
+        try:
+            val = float(raw_val)
+            seen_keys.add(raw_key)
+            out.append({"population": pop_label, "key": raw_key, "af": round(val, 6), "variant": vlabel})
+        except (TypeError, ValueError):
+            return
+
+    alfa = freqs.get("ALFA")
+    if isinstance(alfa, dict):
+        for key, label in (
+            ("GnomAD_genomes", "gnomAD Genomes"),
+            ("GnomAD_exomes", "gnomAD Exomes"),
+            ("TOPMED", "TOPMed"),
+            ("1000Genomes", "1000 Genomes"),
+            ("ExAC", "ExAC"),
+        ):
+            if key in alfa:
+                _add(label, key, alfa[key])
+
+    gnomad = freqs.get("GnomAD")
+    if isinstance(gnomad, dict):
+        for key, label in (
+            ("afr", "gnomAD AFR (African)"),
+            ("nfe", "gnomAD NFE (European)"),
+            ("amr", "gnomAD AMR (Admixed Amer.)"),
+            ("sas", "gnomAD SAS (South Asian)"),
+            ("eas", "gnomAD EAS (East Asian)"),
+        ):
+            if key in gnomad:
+                _add(label, f"gnomad_{key}", gnomad[key])
+
+    return out
+
+
+def _build_visual_and_links(
+    *,
+    action: str,
+    target: str,
+    gene_payload: Optional[Dict[str, Any]] = None,
+    variant_payload: Optional[Dict[str, Any]] = None,
+    assoc_payload: Optional[Dict[str, Any]] = None,
+    structure_payload: Optional[Dict[str, Any]] = None,
+    filer_info: Optional[Dict[str, Any]] = None,
+    track_payload: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Any], List[Dict[str, str]]]:
+    visual: Dict[str, Any] = {}
+    assoc_vis = _extract_visual_associations(assoc_payload)
+    if assoc_vis:
+        visual["associations"] = assoc_vis
+
+    gene_sym = ""
+    ensg_id = ""
+    if isinstance(gene_payload, dict):
+        g_list = [g for g in (gene_payload.get("data") or []) if isinstance(g, dict)]
+        if g_list:
+            gene_sym = str(g_list[0].get("gene_symbol") or "").strip().upper()
+            ensg_id = str(g_list[0].get("id") or "").strip().upper()
+
+    rsid = ""
+    pos_id = ""
+    if isinstance(variant_payload, dict):
+        v_list = [v for v in (variant_payload.get("data") or []) if isinstance(v, dict)]
+        if v_list:
+            v0 = v_list[0]
+            rsid = str(v0.get("ref_snp_id") or "").strip()
+            pos_id = str(v0.get("id") or v0.get("normalized_positional_id") or "").strip()
+            if not gene_sym:
+                msc_gene = (((v0.get("most_severe_consequence") or {}).get("feature") or {}).get("gene") or {})
+                gene_sym = str(msc_gene.get("gene_symbol") or "").strip().upper()
+                ensg_id = str(msc_gene.get("id") or "").strip().upper()
+
+    tgt_clean = (target or "").strip().split(",")[0].strip()
+    if not gene_sym and _GENE_SYMBOL_RE.match(tgt_clean.upper()) and not _RSID_RE.match(tgt_clean) and not _TRACK_ID_RE.match(tgt_clean):
+        gene_sym = tgt_clean.upper()
+    if not ensg_id and _ENSEMBL_GENE_RE.match(tgt_clean):
+        ensg_id = tgt_clean.upper()
+    if not rsid and _RSID_RE.match(tgt_clean):
+        rsid = tgt_clean.lower()
+
+    struct_vis = _extract_visual_structure(structure_payload, gene_hint=gene_sym or tgt_clean)
+    if struct_vis:
+        visual["gene_structure"] = struct_vis
+
+    freq_vis = _extract_visual_frequencies(variant_payload)
+    if freq_vis:
+        visual["allele_frequencies"] = freq_vis
+
+    if isinstance(filer_info, dict) and "overlapping_tracks" in filer_info:
+        visual["filer"] = {
+            "region": str(filer_info.get("region") or ""),
+            "overlapping_tracks": int(filer_info.get("overlapping_tracks") or 0),
+            "overlapping_intervals": int(filer_info.get("overlapping_intervals") or 0),
+        }
+
+    links: List[Dict[str, str]] = []
+    seen_urls: set[str] = set()
+
+    def _add_link(label: str, url: str, badge: str) -> None:
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            links.append({"label": label, "url": url, "badge": badge})
+
+    gene_ref = ensg_id or gene_sym
+    if gene_ref:
+        _add_link(
+            f"GenomicsDB: {gene_sym or gene_ref}",
+            f"https://www.niagads.org/genomics/app/record/gene/{urllib.parse.quote(gene_ref)}",
+            "NIAGADS GenomicsDB",
+        )
+        _add_link(
+            "ADSP GVC TopGenes",
+            "https://topgenes.niagads.org/",
+            "NIAGADS GVC",
+        )
+
+    var_ref = pos_id or rsid
+    if var_ref:
+        _add_link(
+            f"GenomicsDB: {rsid or var_ref}",
+            f"https://www.niagads.org/genomics/app/record/variant/{urllib.parse.quote(var_ref, safe=':')}",
+            "NIAGADS GenomicsDB",
+        )
+        _add_link("ADVP Variant Portal", "https://advp.niagads.org/", "NIAGADS ADVP")
+    if rsid and rsid.lower().startswith("rs"):
+        _add_link(f"dbSNP: {rsid}", f"https://www.ncbi.nlm.nih.gov/snp/{urllib.parse.quote(rsid)}", "NCBI dbSNP")
+    if pos_id:
+        m_pos = _POS_VARIANT_COLON_RE.match(pos_id)
+        if m_pos:
+            gnomad_vid = f"{m_pos.group(1)}-{m_pos.group(2)}-{m_pos.group(3).upper()}-{m_pos.group(4).upper()}"
+            _add_link(
+                f"gnomAD v4: {rsid or gnomad_vid}",
+                f"https://gnomad.broadinstitute.org/variant/{gnomad_vid}?dataset=gnomad_r4",
+                "gnomAD GRCh38",
+            )
+
+    # Detect NG* study accession from target, tracks, or top association
+    ng_acc = ""
+    if _TRACK_ID_RE.match(tgt_clean):
+        ng_acc = tgt_clean.split("_")[0].upper()
+    elif isinstance(track_payload, dict):
+        t_list = [t for t in (track_payload.get("data") or []) if isinstance(t, dict)]
+        if t_list:
+            prov = t_list[0].get("provenance") or {}
+            cand = str(prov.get("study_accession") or str(t_list[0].get("id") or "").split("_")[0]).upper()
+            if cand.startswith("NG"):
+                ng_acc = cand
+    elif assoc_vis.get("items"):
+        cand = str(assoc_vis["items"][0].get("study") or "").upper()
+        if cand.startswith("NG"):
+            ng_acc = cand
+
+    if ng_acc:
+        _add_link(
+            f"NIAGADS DSS: {ng_acc}",
+            f"https://dss.niagads.org/datasets/{ng_acc.lower()}/",
+            "NIAGADS DSS",
+        )
+
+    if gene_ref:
+        _add_link(
+            f"Ensembl: {gene_sym or gene_ref}",
+            f"https://www.ensembl.org/Homo_sapiens/Gene/Summary?g={urllib.parse.quote(gene_ref)}",
+            "Ensembl GRCh38",
+        )
+        if not var_ref:
+            _add_link(
+                f"gnomAD v4: {gene_sym or gene_ref}",
+                f"https://gnomad.broadinstitute.org/gene/{urllib.parse.quote(gene_ref)}?dataset=gnomad_r4",
+                "gnomAD GRCh38",
+            )
+
+    _add_link("FILER 58k+ Regulatory Tracks", "https://tf.lisanwanglab.org/FILER/", "NIAGADS FILER")
+    _add_link("NIAGADS Open Access v2.0", NIAGADS_PORTAL_URL, "Open Access API")
+    return visual, links
+
+
 def execute_niagads_action(
     *,
     action: str = "auto",
@@ -811,11 +1160,214 @@ def execute_niagads_action(
             "summary_markdown": "error: `target` (gene symbol, rsID, region `chrN:start-end`, track ID, or search phrase) is required.",
             "rows": [],
             "raw": None,
+            "visual": {},
+            "ecosystem_links": [],
         }
 
     t0 = time.monotonic()
 
     try:
+        # 4-way parallel NIAGADS V2F Locus Dossier synthesis
+        if act == "locus_dossier":
+            norm_v = normalize_variant_id(tgt)
+            if _RSID_RE.match(norm_v) or _POS_VARIANT_COLON_RE.match(norm_v):
+                v_url = f"{NIAGADS_API_BASE}/record/variant/{urllib.parse.quote(norm_v, safe=':')}?content=full"
+                a_url = f"{NIAGADS_API_BASE}/record/variant/{urllib.parse.quote(norm_v, safe=':')}/associations?content=full&flank={flank_bp}&page={page_num}"
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    fut_v = pool.submit(_http_get_json, v_url)
+                    fut_a = pool.submit(_http_get_json, a_url)
+                    v_payload = fut_v.result()
+                    a_payload: Dict[str, Any] = {}
+                    try:
+                        a_payload = fut_a.result()
+                    except Exception:
+                        a_payload = {}
+
+                v_first = (v_payload.get("data") or [{}])[0]
+                filer_info: Optional[Dict[str, Any]] = None
+                rv_payload: Dict[str, Any] = {}
+                reg_window = ""
+                if isinstance(v_first, dict) and v_first.get("chromosome") and v_first.get("position"):
+                    pos = int(v_first["position"])
+                    chrom = str(v_first["chromosome"]).lstrip("chr")
+                    filer_reg = f"chr{chrom}:{max(1, pos - 250)}-{pos + 250}"
+                    reg_window = f"chr{chrom}:{max(1, pos - 2500)}-{pos + 2500}"
+                    rv_url = f"{NIAGADS_API_BASE}/record/region/{urllib.parse.quote(reg_window, safe=':-')}/variants?content=summary&page=1"
+                    with ThreadPoolExecutor(max_workers=2) as pool2:
+                        fut_f = pool2.submit(query_filer_overlap_count, filer_reg)
+                        fut_rv = pool2.submit(_http_get_json, rv_url)
+                        try:
+                            filer_info = fut_f.result()
+                        except Exception:
+                            filer_info = None
+                        try:
+                            rv_payload = fut_rv.result()
+                        except Exception:
+                            rv_payload = {}
+
+                v_md, v_rows = _summarize_variant_record(v_payload)
+                sections = [f"## NIAGADS V2F Locus Dossier — `{norm_v}`", v_md]
+                combined_rows = list(v_rows)
+                if a_payload:
+                    a_md, a_rows = _summarize_associations(a_payload, norm_v)
+                    sections.append(a_md)
+                    if a_rows:
+                        combined_rows = a_rows
+                if rv_payload and reg_window:
+                    rv_md, _ = _summarize_region_variants(rv_payload, reg_window)
+                    sections.append(rv_md)
+                if filer_info:
+                    sections.append(
+                        f"### Live FILER Functional Genomics Overlap (`{filer_info['region']}`, GRCh38)\n"
+                        f"- **Overlapping Harmonized Regulatory Tracks:** **{filer_info['overlapping_tracks']:,}** "
+                        f"({filer_info['overlapping_intervals']:,} intervals across ENCODE/Roadmap/brain/immune tracks)"
+                    )
+
+                visual, links = _build_visual_and_links(
+                    action="locus_dossier",
+                    target=norm_v,
+                    variant_payload=v_payload,
+                    assoc_payload=a_payload,
+                    filer_info=filer_info,
+                )
+                elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
+                return {
+                    "ok": True,
+                    "action": "locus_dossier",
+                    "endpoint": f"/record/variant/{norm_v} + /associations + /region/variants + FILER",
+                    "request_id": ((v_payload.get("request") or {}).get("request_id")),
+                    "elapsed_ms": elapsed_ms,
+                    "summary_markdown": "\n\n".join(sections),
+                    "rows": combined_rows,
+                    "raw": {
+                        "variant": v_payload,
+                        "associations": a_payload,
+                        "region_variants": rv_payload,
+                        "filer": filer_info,
+                    },
+                    "visual": visual,
+                    "ecosystem_links": links,
+                }
+
+            if _REGION_RE.match(tgt):
+                reg_str, reg_note = normalize_region(tgt)
+                r_url = f"{NIAGADS_API_BASE}/record/region/{urllib.parse.quote(reg_str, safe=':-')}/associations?content=full&page={page_num}"
+                v_url = f"{NIAGADS_API_BASE}/record/region/{urllib.parse.quote(reg_str, safe=':-')}/variants?content=summary&page=1"
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    fut_r = pool.submit(_http_get_json, r_url)
+                    fut_v = pool.submit(_http_get_json, v_url)
+                    fut_f = pool.submit(query_filer_overlap_count, reg_str)
+                    r_payload = fut_r.result()
+                    try:
+                        rv_payload = fut_v.result()
+                    except Exception:
+                        rv_payload = {}
+                    try:
+                        filer_info = fut_f.result()
+                    except Exception:
+                        filer_info = None
+                r_md, r_rows = _summarize_associations(r_payload, reg_str)
+                sections = [f"## NIAGADS V2F Genomic Region Dossier — `{reg_str}`"]
+                if reg_note:
+                    sections.append(f"> {reg_note}")
+                sections.append(r_md)
+                if rv_payload:
+                    rv_md, _ = _summarize_region_variants(rv_payload, reg_str)
+                    sections.append(rv_md)
+                if filer_info:
+                    sections.append(
+                        f"### Live FILER Functional Genomics Overlap (`{filer_info['region']}`, GRCh38)\n"
+                        f"- **Overlapping Harmonized Regulatory Tracks:** **{filer_info['overlapping_tracks']:,}** "
+                        f"({filer_info['overlapping_intervals']:,} intervals)"
+                    )
+                visual, links = _build_visual_and_links(
+                    action="locus_dossier",
+                    target=reg_str,
+                    assoc_payload=r_payload,
+                    filer_info=filer_info,
+                )
+                elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
+                return {
+                    "ok": True,
+                    "action": "locus_dossier",
+                    "endpoint": f"/record/region/{reg_str}/associations + /variants + FILER",
+                    "request_id": ((r_payload.get("request") or {}).get("request_id")),
+                    "elapsed_ms": elapsed_ms,
+                    "summary_markdown": "\n\n".join(sections),
+                    "rows": r_rows,
+                    "raw": {"associations": r_payload, "variants_summary": rv_payload, "filer": filer_info},
+                    "visual": visual,
+                    "ecosystem_links": links,
+                }
+
+            g_sym = tgt.split(",")[0].strip().upper()
+            eff_flank = flank_bp if flank_bp > 0 else 10_000
+            g_url = f"{NIAGADS_API_BASE}/record/gene/{urllib.parse.quote(g_sym)}?content=full"
+            ga_url = f"{NIAGADS_API_BASE}/record/gene/{urllib.parse.quote(g_sym)}/associations?content=full&flank={eff_flank}&page={page_num}"
+            gs_url = f"{NIAGADS_API_BASE}/record/gene/{urllib.parse.quote(g_sym)}/structure"
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                fut_g = pool.submit(_http_get_json, g_url)
+                fut_ga = pool.submit(_http_get_json, ga_url)
+                fut_gs = pool.submit(_http_get_json, gs_url)
+                fut_f = pool.submit(query_filer_overlap_count, g_sym)
+                g_payload = fut_g.result()
+                try:
+                    ga_payload = fut_ga.result()
+                except Exception:
+                    ga_payload = {}
+                try:
+                    gs_payload = fut_gs.result()
+                except Exception:
+                    gs_payload = {}
+                try:
+                    filer_info = fut_f.result()
+                except Exception:
+                    filer_info = None
+
+            g_md, g_rows = _summarize_gene_record(g_payload)
+            sections = [f"## NIAGADS V2F Locus Dossier — `{g_sym}`", g_md]
+            out_rows = list(g_rows)
+            if ga_payload:
+                ga_md, ga_rows = _summarize_associations(ga_payload, g_sym)
+                sections.append(ga_md)
+                if ga_rows:
+                    out_rows = ga_rows
+            if gs_payload:
+                gs_md, _ = _summarize_gene_structure(gs_payload, g_sym)
+                sections.append(gs_md)
+            if filer_info:
+                sections.append(
+                    f"### Live FILER Functional Genomics Overlap (`{filer_info['region']}`, GRCh38)\n"
+                    f"- **Overlapping Harmonized Regulatory Tracks:** **{filer_info['overlapping_tracks']:,}** "
+                    f"({filer_info['overlapping_intervals']:,} intervals across ENCODE/Roadmap/brain/immune tracks)"
+                )
+            visual, links = _build_visual_and_links(
+                action="locus_dossier",
+                target=g_sym,
+                gene_payload=g_payload,
+                assoc_payload=ga_payload,
+                structure_payload=gs_payload,
+                filer_info=filer_info,
+            )
+            elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
+            return {
+                "ok": True,
+                "action": "locus_dossier",
+                "endpoint": f"/record/gene/{g_sym} + /associations + /structure + FILER",
+                "request_id": ((g_payload.get("request") or {}).get("request_id")),
+                "elapsed_ms": elapsed_ms,
+                "summary_markdown": "\n\n".join(sections),
+                "rows": out_rows,
+                "raw": {
+                    "gene": g_payload,
+                    "associations": ga_payload,
+                    "structure": gs_payload,
+                    "filer": filer_info,
+                },
+                "visual": visual,
+                "ecosystem_links": links,
+            }
+
         # Auto-routing across all NIAGADS Open Access v2.0 entity types
         if act == "auto":
             norm_v = normalize_variant_id(tgt)
@@ -826,7 +1378,7 @@ def execute_niagads_action(
                     fut_v = pool.submit(_http_get_json, v_url)
                     fut_a = pool.submit(_http_get_json, a_url)
                     v_payload = fut_v.result()
-                    a_payload: Dict[str, Any] = {}
+                    a_payload = {}
                     assoc_err: Optional[Exception] = None
                     try:
                         a_payload = fut_a.result()
@@ -845,20 +1397,28 @@ def execute_niagads_action(
                     sections.append(f"_Association lookup note: {assoc_err}_")
 
                 # Add live FILER hg38 regulatory track overlap at variant coordinate
+                auto_filer: Optional[Dict[str, Any]] = None
                 v_first = (v_payload.get("data") or [{}])[0]
                 if isinstance(v_first, dict) and v_first.get("chromosome") and v_first.get("position"):
                     pos = int(v_first["position"])
                     chrom = str(v_first["chromosome"]).lstrip("chr")
                     try:
-                        filer_info = query_filer_overlap_count(f"chr{chrom}:{max(1, pos - 250)}-{pos + 250}")
+                        auto_filer = query_filer_overlap_count(f"chr{chrom}:{max(1, pos - 250)}-{pos + 250}")
                         sections.append(
-                            f"### Live FILER Functional Genomics Overlap (`{filer_info['region']}`, GRCh38)\n"
-                            f"- **Overlapping Harmonized Regulatory Tracks:** **{filer_info['overlapping_tracks']:,}** "
-                            f"({filer_info['overlapping_intervals']:,} intervals across ENCODE/Roadmap/brain/immune tracks)"
+                            f"### Live FILER Functional Genomics Overlap (`{auto_filer['region']}`, GRCh38)\n"
+                            f"- **Overlapping Harmonized Regulatory Tracks:** **{auto_filer['overlapping_tracks']:,}** "
+                            f"({auto_filer['overlapping_intervals']:,} intervals across ENCODE/Roadmap/brain/immune tracks)"
                         )
                     except Exception:
                         pass
 
+                visual, links = _build_visual_and_links(
+                    action="auto_variant",
+                    target=norm_v,
+                    variant_payload=v_payload,
+                    assoc_payload=a_payload,
+                    filer_info=auto_filer,
+                )
                 elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
                 req_id = ((v_payload.get("request") or {}).get("request_id"))
                 return {
@@ -870,6 +1430,8 @@ def execute_niagads_action(
                     "summary_markdown": "\n\n".join(sections),
                     "rows": combined_rows,
                     "raw": {"variant": v_payload, "associations": a_payload},
+                    "visual": visual,
+                    "ecosystem_links": links,
                 }
 
             if _REGION_RE.match(tgt):
@@ -885,6 +1447,11 @@ def execute_niagads_action(
                     sections.append(rv_md)
                 except Exception:
                     rv_payload = {}
+                visual, links = _build_visual_and_links(
+                    action="auto_region",
+                    target=reg_str,
+                    assoc_payload=r_payload,
+                )
                 elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
                 return {
                     "ok": True,
@@ -895,6 +1462,8 @@ def execute_niagads_action(
                     "summary_markdown": "\n\n".join(sections),
                     "rows": r_rows,
                     "raw": {"associations": r_payload, "variants_summary": rv_payload},
+                    "visual": visual,
+                    "ecosystem_links": links,
                 }
 
             if _TRACK_ID_RE.match(tgt):
@@ -908,7 +1477,7 @@ def execute_niagads_action(
                         fut_g = pool.submit(_http_get_json, g_url)
                         fut_ga = pool.submit(_http_get_json, ga_url)
                         g_payload = fut_g.result()
-                        ga_payload: Dict[str, Any] = {}
+                        ga_payload = {}
                         try:
                             ga_payload = fut_ga.result()
                         except Exception:
@@ -920,6 +1489,12 @@ def execute_niagads_action(
                         sections.append(ga_md)
                         if ga_rows:
                             g_rows = ga_rows
+                    visual, links = _build_visual_and_links(
+                        action="auto_gene",
+                        target=g_sym,
+                        gene_payload=g_payload,
+                        assoc_payload=ga_payload,
+                    )
                     elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
                     return {
                         "ok": True,
@@ -930,6 +1505,8 @@ def execute_niagads_action(
                         "summary_markdown": "\n\n".join(sections),
                         "rows": g_rows,
                         "raw": {"gene": g_payload, "associations": ga_payload},
+                        "visual": visual,
+                        "ecosystem_links": links,
                     }
                 except Exception:
                     # Not an exact gene ID; fall through to semantic search
@@ -1106,11 +1683,21 @@ def execute_niagads_action(
 
         else:
             raise ValueError(
-                f"Unsupported action `{act}`. Choose from: auto, gene, gene_associations, gene_structure, "
-                "variant, variant_associations, region_associations, region_variants, track, track_data, "
-                "search, search_tracks, search_genes, search_variants, feature, filer_overlap."
+                f"Unsupported action `{act}`. Choose from: auto, locus_dossier, gene, gene_associations, "
+                "gene_structure, variant, variant_associations, region_associations, region_variants, "
+                "track, track_data, search, search_tracks, search_genes, search_variants, feature, filer_overlap."
             )
 
+        visual, links = _build_visual_and_links(
+            action=act,
+            target=tgt,
+            gene_payload=payload if act == "gene" else None,
+            variant_payload=payload if act == "variant" else None,
+            assoc_payload=payload if act in ("gene_associations", "variant_associations", "region_associations", "track_data") else None,
+            structure_payload=payload if act == "gene_structure" else None,
+            filer_info=payload if act == "filer_overlap" else None,
+            track_payload=payload if act == "track" else None,
+        )
         elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
         req_id = ((payload.get("request") or {}).get("request_id")) if isinstance(payload, dict) else None
         return {
@@ -1122,6 +1709,8 @@ def execute_niagads_action(
             "summary_markdown": md,
             "rows": rows,
             "raw": payload,
+            "visual": visual,
+            "ecosystem_links": links,
         }
 
     except Exception as exc:
@@ -1135,6 +1724,8 @@ def execute_niagads_action(
             "summary_markdown": f"error: NIAGADS Open Access API ({act} on `{tgt}`): {exc}",
             "rows": [],
             "raw": None,
+            "visual": {},
+            "ecosystem_links": [],
         }
 
 
