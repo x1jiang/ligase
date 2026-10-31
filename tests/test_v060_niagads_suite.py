@@ -105,7 +105,7 @@ def test_niagads_benchmark_and_mcp_server_jsonrpc(monkeypatch: pytest.MonkeyPatc
     init_resp = handle_mcp_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     assert init_resp is not None
     assert init_resp["result"]["serverInfo"]["name"] == "ligase-niagads-mcp"
-    assert init_resp["result"]["serverInfo"]["version"] == "0.6.0"
+    assert init_resp["result"]["serverInfo"]["version"] == "0.7.0"
 
     tools_resp = handle_mcp_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     assert tools_resp is not None
@@ -117,6 +117,9 @@ def test_niagads_benchmark_and_mcp_server_jsonrpc(monkeypatch: pytest.MonkeyPatc
         "niagads_rare_regulatory_score",
         "niagads_vcf_batch_v2f",
         "niagads_translational_trials",
+        "niagads_colocboost_mesusie",
+        "niagads_resilience_xwas_seaad",
+        "niagads_literature_credits",
         "query_niagads_catalog",
     } == tool_names
 
@@ -156,7 +159,7 @@ def test_webapp_v060_routes_notebook_permalink_critic_and_2d_panning(
     assert "NIAGADS Statistical Genetics & Multi-Ancestry Critic Audit" in CRITIC_EXECUTION_DIRECTIVE
 
     mm = build_capabilities_mindmap()
-    assert mm["stats"]["components"] == 42
+    assert mm["stats"]["components"] == 48
 
     app = create_webapp(state_dir=tmp_path / "state", runs_root=tmp_path / "runs")
     client = TestClient(app)
@@ -165,10 +168,10 @@ def test_webapp_v060_routes_notebook_permalink_critic_and_2d_panning(
     home_html = client.get("/").text
     assert 'id="speed-critic-btn"' in home_html
     assert 'id="niagads-vcf-drawer"' in home_html
-    css_txt = client.get("/static/styles.css?v=0.6.0").text
+    css_txt = client.get("/static/styles.css?v=0.7.0").text
     assert "scroll-axis-lock: none;" in css_txt
     assert "overscroll-behavior: contain;" in css_txt
-    js_txt = client.get("/static/app.js?v=0.6.0").text
+    js_txt = client.get("/static/app.js?v=0.7.0").text
     assert '"modelContext" in document' in js_txt
     assert "document.modelContext.registerTool" in js_txt
 

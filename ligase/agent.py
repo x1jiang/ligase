@@ -82,15 +82,16 @@ FAST_EXECUTION_DIRECTIVE = (
 )
 
 CRITIC_EXECUTION_DIRECTIVE = (
-    "### NIAGADS MULTI-AGENT STATISTICAL GENETICS & MULTI-ANCESTRY CRITIC PROTOCOL\n"
-    "1. Ground claims in `[Pre-Grounded Verified Evidence]`, `niagads_open_access_api`, `niagads_v2f_statistical_suite`, and `query_niagads` in a single parallel tool pass.\n"
-    "2. Deliver the primary quantitative synthesis first (exact GRCh38 coordinates, GA4GH VRS IDs, ORs, p-values, PIPs, coloc PP.H4, or MR/PRS metrics).\n"
-    "3. Conclude EVERY response with a dedicated `## 🏛️ NIAGADS Statistical Genetics & Multi-Ancestry Critic Audit` Markdown table evaluating five mandatory failure modes:\n"
-    "   - **LD Hitchhiking & `APOE` Shadow Confounding** (`r^2` structure, conditional independence on chr19q13.32 or local enhancer peaks)\n"
-    "   - **`NG*` Cohort Sample Overlap & Winner's Curse** (IGAP `NG00075` vs. ADSP `NG00067` / EADB discovery inflation)\n"
-    "   - **Cross-Ancestry Transferability (`EUR` vs. `AFR`/`AMR`/`EAS`)** (allele-frequency shifts, e.g., `ABCA7` `NG00100` PAF enrichment or `APOE` e4 attenuation on African local ancestry)\n"
-    "   - **Horizontal Pleiotropy & Cell-Type / Isoform Specificity** (MR-Egger intercept, `FunGen-xQTL` `NG00105` microglia vs. bulk cortex, or `MAPT` exon 10 4R:3R splicing)\n"
-    "   - **Falsifiable Functional Validation Experiment** (concrete CRISPRi/base-editing assay in iPSC-microglia/iAstrocytes or CSF biomarker readout in `NG00102`/`NG00049`)."
+    "### NIAGADS MULTI-AGENT STATISTICAL GENETICS & MULTI-ANCESTRY CRITIC PROTOCOL (v0.7 CLOSED-LOOP RUBRIC)\n"
+    "1. Ground claims in `[Pre-Grounded Verified Evidence]`, `niagads_open_access_api`, `niagads_v2f_statistical_suite` (`colocboost_mesusie`, `resilience_xwas_seaad`, `finemap_coloc`, `mr_prs`, `rare_regulatory`), and `query_niagads` in a single parallel tool pass.\n"
+    "2. Deliver the primary quantitative synthesis first (exact GRCh38 coordinates, GA4GH VRS IDs, ORs, p-values, ColocBoost CoS / MESuSiE PIPs, coloc PP.H4, AlphaGenome 1-Mb directional deltas, or MR/PRS-CSx metrics) with explicit scholarly citations (author, year, journal/DOI).\n"
+    "3. Conclude EVERY response with a dedicated `## 🏛️ NIAGADS Statistical Genetics & Multi-Ancestry Critic Audit` Markdown table evaluating six mandatory failure modes:\n"
+    "   - **LD Hitchhiking, TAD Enhancer Loops & `APOE` Shadow Confounding** (`r^2` across `ADSP emeraLD`, `±500 kb` cis-TAD contacts such as `SEC61G`→`EGFR`, or conditional independence on chr19q13.32)\n"
+    "   - **`NG*` Cohort Sample Overlap & Winner's Curse** (IGAP `NG00075` vs. ADSP `NG00067` / EADB Bellenguez et al. 2022 discovery inflation)\n"
+    "   - **Cross-Ancestry `MESuSiE` & `PRS-CSx` Admixture Transferability (`EUR` vs. `AFR`/`AMR`/`EAS`)** (Gao et al. 2024 `MESuSiE`, `ABCA7` `NG00100` PAF enrichment, `APOE` e4 local-ancestry attenuation, and Nicolas et al. 2025 `EUR→AFR` non-`APOE` `OR → 1.09` decay)\n"
+    "   - **`APOEε4` Resilience Modifiers, Sex-Aware `chrX` (`XWAS`/`XCI`) & `SEA-AD` Epoch Staging** (`FN1 rs140926439` BBB protection Bhattarai et al. 2024, Belloy et al. 2024 `SLC9A7`/`MID1` XCI escape, and Gabitto et al. 2024 `SEA-AD` CPS pseudoprogression)\n"
+    "   - **Horizontal Pleiotropy, 6-Modality `FunGen-xQTL` `ColocBoost` & Cryptic Splicing** (MR-Egger intercept, Li et al. 2025 `ColocBoost` across `NG00105` microglia vs. bulk cortex, or `TSPAN14`/`MAPT` splicing)\n"
+    "   - **Falsifiable Functional Validation Experiment** (concrete CRISPRi/base-editing assay in iPSC-microglia/iAstrocytes/BBB-pericytes or CSF `AT(N)` readout in `NG00102`/`NG00049`)."
 )
 
 

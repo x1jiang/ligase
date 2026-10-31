@@ -4145,6 +4145,117 @@ dialog::backdrop {
   color: var(--text-primary);
 }
 
+/* ── v0.7 Grounded Paper Credits & Literature Disclosure Group ────────────── */
+.oa-paper-credits {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  padding: 0.55rem 0.85rem;
+  margin-block-end: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: light-dark(#f8fafc, rgba(15, 23, 32, 0.72));
+}
+
+.oa-paper-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--brand-primary);
+  margin-inline-end: 0.2rem;
+}
+
+.paper-credit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.14s ease, color 0.14s ease;
+}
+
+.paper-credit-pill:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.paper-credit-venue {
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.lit-accordion-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-block-end: 1.35rem;
+}
+
+.lit-pillar-disclosure {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.lit-pillar-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.lit-pillar-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lit-pillar-disclosure[open] > .lit-pillar-summary {
+  border-block-end: 1px solid var(--border-subtle);
+  background: light-dark(#f8fafc, rgba(20, 30, 41, 0.85));
+}
+
+.lit-pillar-body {
+  padding: 0.75rem 1.15rem 0.85rem;
+}
+
+.lit-credit-list {
+  margin: 0;
+  padding-inline-start: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.48rem;
+  font-size: 0.81rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.lit-credit-list a {
+  color: var(--brand-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.lit-credit-list a:hover {
+  text-decoration: underline;
+}
+
 @media (pointer: coarse) {
   .video-chapter-btn,
   .studio-shelf-btn,

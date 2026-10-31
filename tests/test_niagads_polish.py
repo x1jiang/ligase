@@ -232,7 +232,7 @@ def test_portal_polish_security_headers_landmarks_and_provenance(tmp_path: Path)
     boot_bytes = m.group(1).encode("utf-8")
     assert len(boot_bytes) < 12_000
     parsed = json.loads(m.group(1))
-    assert parsed["boot"]["version"] == "0.6.0"
+    assert parsed["boot"]["version"] == "0.7.0"
 
     # Organized 3-shelf Studio Home architecture preserving Find-in-Page indexing
     assert 'id="studio-home-shelf"' in html
@@ -278,13 +278,13 @@ def test_grok_narrated_showcase_video_embed_and_range_streaming(tmp_path: Path) 
     assert "data-video-seek=" in html
 
     # Verify poster WebP
-    poster_res = client.get("/static/media/ligase-showcase-poster.webp?v=0.6.0")
+    poster_res = client.get("/static/media/ligase-showcase-poster.webp?v=0.7.0")
     assert poster_res.status_code == 200
     assert "image/webp" in poster_res.headers.get("content-type", "")
     assert "immutable" in poster_res.headers.get("cache-control", "")
 
     # Verify synchronous WebVTT captions
-    vtt_res = client.get("/static/media/ligase-showcase-en.vtt?v=0.6.0")
+    vtt_res = client.get("/static/media/ligase-showcase-en.vtt?v=0.7.0")
     assert vtt_res.status_code == 200
     assert "text/vtt" in vtt_res.headers.get("content-type", "")
     assert vtt_res.text.startswith("WEBVTT")
@@ -293,7 +293,7 @@ def test_grok_narrated_showcase_video_embed_and_range_streaming(tmp_path: Path) 
 
     # Verify byte-range 206 Partial Content video streaming without gzip interference
     range_res = client.get(
-        "/static/media/ligase-showcase.mp4?v=0.6.0",
+        "/static/media/ligase-showcase.mp4?v=0.7.0",
         headers={"Range": "bytes=0-1023", "Accept-Encoding": "gzip"},
     )
     assert range_res.status_code == 206

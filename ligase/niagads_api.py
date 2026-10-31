@@ -26,7 +26,7 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.6.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_UA = "Ligase/0.7.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
 _CACHE_TTL_S = 900.0
 _CACHE_MAX_SIZE = 512
@@ -125,6 +125,30 @@ OPEN_ACCESS_ROLLOUT_CATALOG: Dict[str, Any] = {
         },
     ],
     "endpoints": [
+        {
+            "action": "colocboost_mesusie",
+            "method": "COLOCBOOST+MESuSiE",
+            "path": "FunGen-xQTL 6-Modality TAD ColocBoost + ADSP emeraLD 4-Ancestry MESuSiE",
+            "summary": "TAD-Window (±500 kb) 6-Modality ColocBoost + 4-Ancestry MESuSiE",
+            "example_target": "BIN1",
+            "description": "Jointly fine-maps eQTL, sQTL, pQTL, mQTL, haQTL, and snuc-eQTL/ieQTL colocalized confidence sets (CoS) across ±500 kb cis-TAD windows alongside 4-ancestry ADSP emeraLD MESuSiE credible sets (NHW, AA, HIS, ASN) with scholarly paper attribution.",
+        },
+        {
+            "action": "resilience_xwas_seaad",
+            "method": "FN1+XWAS+SEA-AD",
+            "path": "APOEε4 FN1 Resilience + chrX XWAS/XCI + SEA-AD CPS Pseudoprogression",
+            "summary": "APOEε4 BBB Resilience (FN1) + Sex-Aware chrX XWAS + SEA-AD CPS Staging",
+            "example_target": "APOE",
+            "description": "Evaluates APOEε4/ε4 blood-brain barrier protective modifiers (FN1 rs140926439 OR=0.29, COL6A2), sex-stratified chrX XWAS & XCI escape loci (SLC9A7, MID1), and SEA-AD continuous pseudoprogression (CPS 0.0-1.0) spatial myelin staging.",
+        },
+        {
+            "action": "literature_credits",
+            "method": "CITATION-GRAPH",
+            "path": "/api/niagads/literature (14 Foundational Papers + DOIs)",
+            "summary": "Grounded Scientific Literature & Methodological Credits (14 Papers)",
+            "example_target": "all",
+            "description": "Returns structured scholarly attributions, DOIs, Europe PMC/arXiv links, and NIAGADS/ADSP anchors for all 14 foundational methods and discovery papers integrated into Ligase v0.7.",
+        },
         {
             "action": "locus_dossier",
             "method": "PARALLEL×4",
@@ -1181,6 +1205,8 @@ def execute_niagads_action(
 
     if not tgt and loc_clean:
         tgt = loc_clean
+    if not tgt and act == "literature_credits":
+        tgt = "all"
 
     if not tgt:
         return {
@@ -1199,16 +1225,34 @@ def execute_niagads_action(
     t0 = time.monotonic()
 
     try:
-        # NIAGADS v0.6 Quantitative V2F, Fine-Mapping/Coloc, 2SMR/PRS, Rare Regulatory, VCF & Translational Suite
-        if act in ("finemap_coloc", "mr_prs", "rare_regulatory", "vcf_batch_v2f", "translational_trials"):
+        # NIAGADS v0.7 Literature-Grounded Quantitative V2F, ColocBoost/MESuSiE, Resilience/XWAS/SEA-AD, Fine-Mapping, 2SMR/PRS, Rare Regulatory, VCF & Translational Suite
+        if act in (
+            "colocboost_mesusie",
+            "resilience_xwas_seaad",
+            "literature_credits",
+            "finemap_coloc",
+            "mr_prs",
+            "rare_regulatory",
+            "vcf_batch_v2f",
+            "translational_trials",
+        ):
             from ligase.niagads_v2f_engine import (
+                get_niagads_literature_catalog,
+                niagads_colocboost_mesusie,
                 niagads_finemap_coloc,
                 niagads_mendelian_randomization_prs,
                 niagads_rare_regulatory_score,
+                niagads_resilience_xwas_seaad,
                 niagads_translational_trials,
                 niagads_vcf_batch_v2f,
             )
 
+            if act == "colocboost_mesusie":
+                return niagads_colocboost_mesusie(target=tgt, ancestry=loc_clean or "ALL")
+            if act == "resilience_xwas_seaad":
+                return niagads_resilience_xwas_seaad(target=tgt, apoe_genotype=loc_clean or "e4/e4")
+            if act == "literature_credits":
+                return get_niagads_literature_catalog(topic="" if tgt.lower() == "all" else tgt)
             if act == "finemap_coloc":
                 return niagads_finemap_coloc(target=tgt, flank=flank_bp if flank_bp > 0 else 50_000)
             if act == "mr_prs":
@@ -1282,6 +1326,8 @@ def execute_niagads_action(
                     assoc_payload=a_payload,
                     filer_info=filer_info,
                 )
+                from ligase.niagads_v2f_engine import select_relevant_literature_credits
+
                 elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
                 return {
                     "ok": True,
@@ -1299,6 +1345,7 @@ def execute_niagads_action(
                     },
                     "visual": visual,
                     "ecosystem_links": links,
+                    "paper_credits": select_relevant_literature_credits(norm_v, limit=4),
                 }
 
             if _REGION_RE.match(tgt):
@@ -1401,6 +1448,8 @@ def execute_niagads_action(
                 structure_payload=gs_payload,
                 filer_info=filer_info,
             )
+            from ligase.niagads_v2f_engine import select_relevant_literature_credits
+
             elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
             return {
                 "ok": True,
@@ -1418,6 +1467,7 @@ def execute_niagads_action(
                 },
                 "visual": visual,
                 "ecosystem_links": links,
+                "paper_credits": select_relevant_literature_credits(g_sym, limit=4),
             }
 
         # Auto-routing across all NIAGADS Open Access v2.0 entity types
@@ -1828,6 +1878,11 @@ _KNOWN_AD_GENES = (
     "EIF2AK3",
     "MOBP",
     "STX6",
+    "FN1",
+    "EGFR",
+    "TSPAN14",
+    "SLC9A7",
+    "MID1",
 )
 
 

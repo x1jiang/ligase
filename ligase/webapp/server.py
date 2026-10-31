@@ -408,6 +408,9 @@ def _format_markdown_report(
         "niagads" in str(t.get("tool_name") or "").lower() for t in tool_trace
     )
     if used_niagads:
+        from ligase.niagads_v2f_engine import select_relevant_literature_credits
+
+        lit_credits = select_relevant_literature_credits(f"{prompt}\n{answer}", limit=6)
         lines.extend(
             [
                 "---",
@@ -417,8 +420,15 @@ def _format_markdown_report(
                 "- **Primary Genomic Data Source:** National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (**NIAGADS**, https://www.niagads.org) & **NIAGADS Open Access API v2.0** (https://api.niagads.org/open-access, Apache 2.0).",
                 "- **NIH / NIA Grant Acknowledgment:** Data collection and dissemination through NIAGADS are supported by the National Institute on Aging under Cooperative Agreement **U24AG041689**.",
                 "",
+                "### Grounded Foundational Literature Credits",
+                "",
             ]
         )
+        for p in lit_credits:
+            lines.append(
+                f"- **{p['short_citation']}** — *{p['title']}* ({p['venue']}, `{p['doi']}`) · [{p['url']}]({p['url']}) · `{p['niagads_anchor']}`"
+            )
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -454,6 +464,15 @@ def _format_jupyter_notebook(
         f"## Research Question\n\n{prompt.strip()}\n"
     )
 
+    from ligase.niagads_v2f_engine import select_relevant_literature_credits
+
+    lit_credits = select_relevant_literature_credits(f"{prompt}\n{answer}", limit=6)
+    lit_md_lines = ["## Grounded Scholarly Literature & NIAGADS Credits\n\n"]
+    for p in lit_credits:
+        lit_md_lines.append(
+            f"- **{p['short_citation']}** — *{p['title']}* (*{p['venue']}*, `{p['doi']}`) · [{p['url']}]({p['url']}) · `{p['niagads_anchor']}`\n"
+        )
+
     repro_code = (
         "# Standalone Python 3 reproduction against the live NIAGADS Open Access API v2.0\n"
         "import json\n"
@@ -462,7 +481,7 @@ def _format_jupyter_notebook(
         f'TARGET_GENE = "{lead_gene}"\n'
         f'TARGET_VARIANT = "{lead_rs}"\n\n'
         "def fetch_niagads(path: str) -> dict:\n"
-        '    req = urllib.request.Request(f"{NIAGADS_API}{path}", headers={"Accept": "application/json", "User-Agent": "Ligase-Notebook/0.6.0"})\n'
+        '    req = urllib.request.Request(f"{NIAGADS_API}{path}", headers={"Accept": "application/json", "User-Agent": "Ligase-Notebook/0.7.0"})\n'
         "    with urllib.request.urlopen(req, timeout=15) as resp:\n"
         '        return json.loads(resp.read().decode("utf-8"))\n\n'
         'gene_record = fetch_niagads(f"/record/gene/{TARGET_GENE}?content=full")\n'
@@ -505,6 +524,12 @@ def _format_jupyter_notebook(
             "id": f"{run_id[-6:]}_ans",
             "metadata": {},
             "source": _lines(f"## Quantitative Synthesis\n\n{answer.strip()}\n"),
+        },
+        {
+            "cell_type": "markdown",
+            "id": f"{run_id[-6:]}_lit",
+            "metadata": {},
+            "source": lit_md_lines,
         },
     ]
 
@@ -1091,6 +1116,13 @@ def create_webapp(
     async def api_niagads_endpoints() -> Dict[str, Any]:
         return OPEN_ACCESS_ROLLOUT_CATALOG
 
+    @webapp.get("/api/niagads/literature")
+    async def api_niagads_literature(topic: str = "") -> Dict[str, Any]:
+        from ligase.niagads_v2f_engine import get_niagads_literature_catalog
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: get_niagads_literature_catalog(topic=topic))
+
     @webapp.get("/api/niagads/live")
     async def api_niagads_live(
         request: Request,
@@ -1102,6 +1134,8 @@ def create_webapp(
         limit: int = 10,
         page: int = 1,
     ) -> JSONResponse:
+        if action.strip().lower() == "literature_credits" and not (target or "").strip():
+            target = "all"
         if not (target or "").strip() and not (loc or "").strip():
             raise HTTPException(
                 status_code=400,
@@ -1585,6 +1619,29 @@ def create_webapp(
                     agent.claw_agent.on_stream_event = _on_stream_event
                     final_answer = agent.go(effective_prompt)
                     final_answer = merge_tool_cards(str(final_answer or "").strip())
+                    if speed_norm == "critic":
+                        from ligase.niagads_v2f_engine import evaluate_niagads_rubric_audit
+
+                        rub_call_id = f"rubric_{uuid.uuid4().hex[:8]}"
+                        rub_t0 = time.monotonic()
+                        _record_and_emit_tool_start(
+                            rub_call_id,
+                            "niagads_rubric_verifier",
+                            {"gates": 6, "mode": "closed_loop_critic"},
+                        )
+                        rub_audit = evaluate_niagads_rubric_audit(body.prompt, final_answer)
+                        rub_ms = max(1, int((time.monotonic() - rub_t0) * 1000))
+                        _record_and_emit_tool_result(
+                            rub_call_id,
+                            "niagads_rubric_verifier",
+                            True,
+                            rub_ms,
+                            f"Rubric score {rub_audit['rubric_score']}% ({rub_audit['gates_passed']}/{rub_audit['gates_total']} gates)",
+                        )
+                        appendix_md = str(rub_audit.get("appendix_markdown") or "")
+                        if appendix_md and "Closed-Loop NIAGADS Rubric Verifier" not in final_answer:
+                            final_answer = f"{final_answer}\n{appendix_md}"
+                            _push("assistant_delta", {"delta": f"\n{appendix_md}"})
                     elapsed_s = round(time.monotonic() - t0, 2)
                     iterations = int(getattr(agent.last_state, "iterations", 1) or 1)
                     resolved_ttft_ms = ttft_holder[0] if ttft_holder else max(1, int(elapsed_s * 200))

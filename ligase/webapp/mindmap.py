@@ -217,6 +217,45 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                     ),
                     "live_api_preset": {"action": "search_tracks", "target": "African American", "loc": ""},
                 },
+                {
+                    "id": "mm_oa_colocboost_mesusie",
+                    "title": "TAD-Window 6-Modality ColocBoost + 4-Ancestry MESuSiE",
+                    "badge": "New v0.7 · Li 2025 + Gao 2024",
+                    "status": "live",
+                    "summary": (
+                        "Jointly fine-maps 6 FunGen-xQTL modalities (`eQTL`, `sQTL`, `pQTL`, `mQTL`, `haQTL`, `snuc-eQTL+ieQTL`) "
+                        "across ±500 kb cis-TAD loops (e.g. `SEC61G`→`EGFR`) with 4-ancestry ADSP `emeraLD` `MESuSiE` credible sets."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='colocboost_mesusie')",
+                        "Li et al. Nat Genet 2025 · Gao et al. Nat Genet 2024",
+                    ],
+                    "sample_prompt": (
+                        "Run `niagads_v2f_statistical_suite(analysis='colocboost_mesusie', target='BIN1')` and `'EGFR'` "
+                        "to compare 6-modality FunGen-xQTL ColocBoost confidence sets, ±500 kb TAD enhancer loops, and "
+                        "4-ancestry ADSP emeraLD MESuSiE PIP sharpening."
+                    ),
+                    "live_api_preset": {"action": "colocboost_mesusie", "target": "BIN1", "loc": "ALL"},
+                },
+                {
+                    "id": "mm_oa_alphagenome_staar",
+                    "title": "AlphaGenome 1-Mb Directional/Splice + ADSP STAAR-O & 2.21M SVs",
+                    "badge": "New v0.7 · Avsec 2026 + Leung 2025",
+                    "status": "live",
+                    "summary": (
+                        "Integrates AlphaGenome 1-Mb signed `ALT − REF` log2FC, `PSI5`/`PSI3` cryptic exon splicing "
+                        "(e.g. `TSPAN14` exon 11A), 2,048-bp chromatin contact maps, and ADSP R4/R5 `STAAR-O` + `2.21M` SVs."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='rare_regulatory')",
+                        "Avsec et al. Nature 2026 · Leung et al. 2025 · Peloso et al. 2024",
+                    ],
+                    "sample_prompt": (
+                        "Score `TSPAN14` (`rs6586028`) and `BIN1` (`rs6733839`) with `niagads_v2f_statistical_suite(analysis='rare_regulatory')` "
+                        "to compare AlphaGenome 1-Mb directional deltas, Nanopore cryptic splice PSI shifts, and ADSP STAAR-O/SV context."
+                    ),
+                    "live_api_preset": {"action": "rare_regulatory", "target": "TSPAN14", "loc": ""},
+                },
             ],
         },
         {
@@ -363,6 +402,63 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                         "to synthesize `APOE ε4` ARIA-E/ARIA-H anti-amyloid safety stratification and active NCT trials."
                     ),
                     "live_api_preset": {"action": "translational_trials", "target": "APOE", "loc": ""},
+                },
+                {
+                    "id": "mm_eco_fn1_resilience",
+                    "title": "APOEε4/ε4 FN1 Blood–Brain Barrier Resilience (OR = 0.29)",
+                    "badge": "New v0.7 · Bhattarai 2024",
+                    "status": "live",
+                    "summary": (
+                        "Models protective blood–brain barrier ECM modifiers in `APOEε4` homozygotes (`FN1 rs140926439` "
+                        "`OR = 0.29`, `+3.37 yr` onset delay; `COL6A2`) alongside `PLCG2 P522R`, `APOE3-Christchurch`, and `RELN-COLBOS`."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='resilience_xwas_seaad')",
+                        "Bhattarai et al. Acta Neuropathol 2024 (10.1007/s00401-024-02721-1)",
+                    ],
+                    "sample_prompt": (
+                        "Use `niagads_v2f_statistical_suite(analysis='resilience_xwas_seaad', target='APOE')` to quantify how "
+                        "`FN1 rs140926439` remodels cerebrovascular fibronectin deposition to confer resilience in `APOEε4/ε4` carriers."
+                    ),
+                    "live_api_preset": {"action": "resilience_xwas_seaad", "target": "APOE", "loc": "e4/e4"},
+                },
+                {
+                    "id": "mm_eco_chrx_xwas",
+                    "title": "Sex-Aware chrX XWAS & XCI Escape (SLC9A7 & MID1)",
+                    "badge": "New v0.7 · Belloy 2024 (N=1.15M)",
+                    "status": "live",
+                    "summary": (
+                        "Captures the first genome-wide significant X-chromosome AD locus `SLC9A7` (`NHE7` trans-Golgi/endosomal pH) "
+                        "and female-biased `XCI`-escaping `MID1` (`PP2A`/Tau phosphorylation) from `N = 1,152,284` XWAS."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='resilience_xwas_seaad', target='SLC9A7')",
+                        "Belloy et al. JAMA Neurol 2024 (10.1001/jamaneurol.2024.2843)",
+                    ],
+                    "sample_prompt": (
+                        "Run `niagads_v2f_statistical_suite(analysis='resilience_xwas_seaad', target='SLC9A7')` to explain "
+                        "sex-stratified chrX XWAS associations (`SLC9A7` and `XCI`-escaping `MID1`) in Alzheimer's disease."
+                    ),
+                    "live_api_preset": {"action": "resilience_xwas_seaad", "target": "SLC9A7", "loc": "e3/e4"},
+                },
+                {
+                    "id": "mm_eco_seaad_cps",
+                    "title": "SEA-AD Pseudoprogression (CPS) & Spatial White-Matter Myelin",
+                    "badge": "New v0.7 · Gabitto 2024 + Spatial 2026",
+                    "status": "live",
+                    "summary": (
+                        "Maps AD genetic risk onto the two-epoch `SEA-AD` Continuous Pseudoprogression Score (`CPS 0.0–1.0`: "
+                        "early `SST+` inhibitory vulnerability & `MOG/MOBP` remyelination failure vs. late reactive gliosis)."
+                    ),
+                    "backing": [
+                        "Gabitto et al. Nat Neurosci 2024 (10.1038/s41593-024-01774-5)",
+                        "SpatialTargetAgent bioRxiv 2026 (10.64898/2026.04.01.715950)",
+                    ],
+                    "sample_prompt": (
+                        "Map `BIN1`, `TREM2`, and `APOE` onto the two-epoch SEA-AD Continuous Pseudoprogression Score (`CPS`) "
+                        "and spatial white-matter oligodendrocyte myelin axis (`niagads_v2f_statistical_suite`, `'resilience_xwas_seaad'`)."
+                    ),
+                    "live_api_preset": {"action": "resilience_xwas_seaad", "target": "BIN1", "loc": "e3/e4"},
                 },
             ],
         },
@@ -795,6 +891,27 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                         "Prioritize the callset `rs429358, rs6733839, rs75932628, rs115550680, rs72824905` using "
                         "`niagads_v2f_statistical_suite(analysis='vcf_batch_v2f')` and summarize causal mechanisms."
                     ),
+                },
+                {
+                    "id": "mm_lit_rubric_heurekabench",
+                    "title": "Closed-Loop Rubric Verifier, AD-HeurekaBench & 14-Paper Registry",
+                    "badge": "New v0.7 · 14 Scholarly DOIs",
+                    "status": "live",
+                    "summary": (
+                        "Executes a deterministic 6-gate Python scientific rubric verifier in `🏛️ Critic` mode, "
+                        "evaluates 5 multi-step workflows in `AD-HeurekaBench v0.7`, and credits 14 foundational NIAGADS/ADSP papers."
+                    ),
+                    "backing": [
+                        "GET /api/niagads/literature",
+                        "GET /api/niagads/benchmark (NIAGADS-AD-HeurekaBench-v0.7)",
+                        "Panigrahi et al. arXiv:2601.12430 · Goel et al. arXiv:2510.09734",
+                    ],
+                    "sample_prompt": (
+                        "Retrieve the full 14-paper NIAGADS/ADSP scholarly attribution table via "
+                        "`niagads_v2f_statistical_suite(analysis='literature_credits', target='all')` and summarize "
+                        "how each paper grounds Ligase's V2F, resilience, and critic modules."
+                    ),
+                    "live_api_preset": {"action": "literature_credits", "target": "all", "loc": ""},
                 },
             ],
         },

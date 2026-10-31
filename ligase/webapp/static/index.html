@@ -28,7 +28,7 @@
     :not([hidden="until-found"])[hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.6.0">
+  <link rel="stylesheet" href="/static/styles.css?v=0.7.0">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.6.0</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.7.0</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -242,7 +242,7 @@
                   <span aria-hidden="true">🎬</span> Watch 1-Min Tour
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> 42-Node Mindmap
+                  <span aria-hidden="true">🧠</span> 48-Node Mindmap
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
                   <span aria-hidden="true">🌐</span> Live NIAGADS API
@@ -288,7 +288,7 @@
                     data-shelf-target="niagads"
                   >
                     <span aria-hidden="true">🧬</span> NIAGADS Ecosystem
-                    <span class="shelf-count-pill">19 APIs · 24 NG*</span>
+                    <span class="shelf-count-pill">22 APIs · 14 Papers</span>
                   </button>
                 </div>
 
@@ -343,13 +343,13 @@
                       playsinline
                       width="1280"
                       height="720"
-                      poster="/static/media/ligase-showcase-poster.webp?v=0.6.0"
+                      poster="/static/media/ligase-showcase-poster.webp?v=0.7.0"
                       aria-labelledby="video-showcase-title"
                       aria-details="showcase-video-transcript"
                     >
-                      <source src="/static/media/ligase-showcase.mp4?v=0.6.0" type="video/mp4">
+                      <source src="/static/media/ligase-showcase.mp4?v=0.7.0" type="video/mp4">
                       <track
-                        src="/static/media/ligase-showcase-en.vtt?v=0.6.0"
+                        src="/static/media/ligase-showcase-en.vtt?v=0.7.0"
                         kind="captions"
                         srclang="en"
                         label="English (Grok Voice Verbatim)"
@@ -657,11 +657,14 @@
               <div class="oa-field">
                 <label for="oa-action-select">Endpoint Action</label>
                 <select id="oa-action-select" name="action">
-                  <optgroup label="NIAGADS v0.6 Quantitative V2F &amp; Translational Suite">
+                  <optgroup label="NIAGADS v0.7 Literature-Grounded V2F &amp; Translational Suite">
+                    <option value="colocboost_mesusie">🔬 TAD 6-Modality ColocBoost + 4-Ancestry ADSP emeraLD MESuSiE (Li 2025 · Gao 2024)</option>
+                    <option value="resilience_xwas_seaad">🛡️ APOEε4 FN1 Resilience + chrX XWAS/XCI + SEA-AD CPS (Bhattarai · Belloy · Gabitto 2024)</option>
                     <option value="finemap_coloc">🎯 Wakefield ABF Fine-Mapping + FILER 95% CS + FunGen-xQTL Coloc</option>
-                    <option value="mr_prs">📐 Two-Sample Mendelian Randomization + 4-Ancestry NIAGADS PRS</option>
-                    <option value="rare_regulatory">🧬 ADSP R5 Rare &amp; Non-Coding Deep-Regulatory Impact (0–100)</option>
+                    <option value="mr_prs">📐 Two-Sample Mendelian Randomization + PRS-CSx Admixture Calibration</option>
+                    <option value="rare_regulatory">🧬 AlphaGenome 1-Mb + ADSP R5 STAAR/SV Regulatory Impact (0–100)</option>
                     <option value="translational_trials">💊 AD Drug Targets, APOE ARIA Safety &amp; ClinicalTrials.gov v2</option>
+                    <option value="literature_credits">📚 Grounded Scientific Literature &amp; Methodological Credits (14 Papers)</option>
                   </optgroup>
                   <optgroup label="NIAGADS Open Access v2.0 REST &amp; FILER Endpoints">
                     <option value="auto" selected>Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
@@ -746,11 +749,13 @@ chr19	44908684	rs429358	T	C
 chr2	127135234	rs6733839	C	T
 chr6	41161514	rs75932628	C	T
 chr19	1050421	rs115550680	A	G
-chr16	81908423	rs72824905	C	G</textarea>
+chr16	81908423	rs72824905	C	G
+chr2	215364112	rs140926439	G	A
+chrX	46610904	rs188959992	C	T</textarea>
               <div class="vcf-drawer-actions">
                 <button type="button" class="send-btn" id="niagads-vcf-run-btn">⚡ Run Batch NIAGADS V2F Prioritization</button>
                 <button type="button" class="artifact-btn" id="niagads-vcf-csv-btn" hidden>⬇ Download Ranked V2F .csv</button>
-                <button type="button" class="artifact-btn" id="niagads-bench-btn">🏆 Run AD-V2F-Bench (6 Gold Loci)</button>
+                <button type="button" class="artifact-btn" id="niagads-bench-btn">🏆 Run AD-HeurekaBench v0.7 (6 Loci + 5 Workflows)</button>
               </div>
               <div class="md-body" id="niagads-vcf-output" hidden></div>
             </div>
@@ -773,11 +778,63 @@ chr16	81908423	rs72824905	C	G</textarea>
               </div>
             </div>
             <div class="oa-ecosystem-links" id="oa-ecosystem-links" aria-label="NIAGADS ecosystem cross-links" hidden></div>
+            <div class="oa-paper-credits" id="oa-paper-credits" aria-label="Grounded scientific paper credits" hidden></div>
             <div class="oa-visual-container" id="oa-visual-container" aria-label="Interactive genomics visualization" hidden></div>
             <div class="md-body" id="oa-result-markdown"></div>
             <details class="oa-raw-details">
               <summary>Inspect Raw NIAGADS Open Access v2.0 JSON Payload</summary>
               <pre tabindex="0"><code id="oa-result-json"></code></pre>
+            </details>
+          </div>
+
+          <!-- Grounded Scientific Literature & Methodological Credits Accordion (search-hidden-content via <details name=...>) -->
+          <h3 class="section-subhead">Grounded Scientific Literature &amp; Methodological Credits (14 Peer-Reviewed &amp; Preprint Papers)</h3>
+          <div class="lit-accordion-group" id="niagads-lit-accordion">
+            <details class="lit-pillar-disclosure" name="niagads-lit-pillars" open>
+              <summary class="lit-pillar-summary">
+                <span>🔬 <strong>Priority 1 · TAD-Window 6-Modality ColocBoost, Multi-Ancestry MESuSiE, AlphaGenome &amp; ADSP WGS/SV</strong></span>
+                <span class="shelf-count-pill">6 Papers</span>
+              </summary>
+              <div class="lit-pillar-body">
+                <ul class="lit-credit-list">
+                  <li><strong>Li, Dey, Wang et al. &amp; ADSP FunGen-xQTL (Nature Genetics, 2025)</strong> — <em>Multi-context colocalization (ColocBoost) across 6 brain/immune xQTL modalities &amp; ±500 kb cis-TAD enhancer loops (e.g. SEC61G→EGFR rs76928645, TSPAN14 cryptic exon 11A)</em> · <a href="https://doi.org/10.1038/s41588-025-02182-6" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41588-025-02182-6</a> · <code>FunGen-xQTL NG00105/NG00102</code></li>
+                  <li><strong>Kuksa et al. / NIAGADS (NAR Genomics &amp; Bioinformatics, 2022)</strong> — <em>FILER: large-scale harmonized functional genomics repository (&gt;58,000 Giggle-indexed hg38 tracks)</em> · <a href="https://doi.org/10.1093/nargab/lqac003" target="_blank" rel="noopener noreferrer">DOI: 10.1093/nargab/lqac003</a> · <code>FILER hg38</code></li>
+                  <li><strong>Gao, Zhou et al. (Nature Genetics, 2024)</strong> — <em>MESuSiE: multiple-ancestry sum of single effects fine-mapping modeling shared &amp; ancestry-specific causal signals across 4 ADSP emeraLD LD panels</em> · <a href="https://doi.org/10.1038/s41588-023-01609-6" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41588-023-01609-6</a> · <code>ADSP emeraLD NHW/AA/HIS/ASN</code></li>
+                  <li><strong>Leung, Schellenberg, Kuksa et al. / GCAD &amp; NIAGADS (Alzheimer's &amp; Dementia, 2025)</strong> — <em>ADSP Release 4/5 36,361 multi-ancestry WGS (VCPA 2.0, FAVOR, 359M SNVs/INDELs &amp; 2.21M structural variants)</em> · <a href="https://doi.org/10.1002/alz.70237" target="_blank" rel="noopener noreferrer">DOI: 10.1002/alz.70237</a> · <code>NIAGADS NG00067</code></li>
+                  <li><strong>Peloso, Destefano, Seshadri et al. / ADSP (Nature Communications, 2024)</strong> — <em>Rare-variant sliding-window &amp; gene-centric STAAR-O WGS burden across SORL1, TREM2, ABCA7 &amp; non-coding enhancers</em> · <a href="https://doi.org/10.1038/s41467-024-49133-z" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41467-024-49133-z</a> · <code>ADSP WGS STAAR-O</code></li>
+                  <li><strong>Avsec, Latysheva, Cheng et al. (Nature, 2026)</strong> — <em>AlphaGenome: unified 1-Mb single-base regulatory model predicting signed ALT−REF log2FC, PSI5/PSI3 splice shifts &amp; 3D chromatin contact maps</em> · <a href="https://doi.org/10.1038/s41586-025-10014-0" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41586-025-10014-0</a> · <code>1-Mb Regulatory Sequence</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="lit-pillar-disclosure" name="niagads-lit-pillars">
+              <summary class="lit-pillar-summary">
+                <span>🛡️ <strong>Priority 2 · APOEε4 FN1 Resilience, Sex-Aware chrX XWAS/XCI, PRS-CSx Admixture &amp; SEA-AD CPS</strong></span>
+                <span class="shelf-count-pill">6 Papers</span>
+              </summary>
+              <div class="lit-pillar-body">
+                <ul class="lit-credit-list">
+                  <li><strong>Bellenguez, Küçükali, Jansen et al. / EADB &amp; IGAP (Nature Genetics, 2022)</strong> — <em>75-locus ADRD GWAS reference architecture (N = 788,989) &amp; microglial/endolysosomal pathway enrichment</em> · <a href="https://doi.org/10.1038/s41588-022-01024-z" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41588-022-01024-z</a> · <code>IGAP NG00075 · GVC TopGenes</code></li>
+                  <li><strong>Bhattarai, Gunasekaran, Belloy, Mayeux, Kizil et al. (Acta Neuropathologica, 2024)</strong> — <em>Rare loss-of-function FN1 rs140926439 reduces blood-brain barrier fibronectin deposition in APOEε4 homozygotes (OR = 0.29, +3.37 yr onset delay)</em> · <a href="https://doi.org/10.1007/s00401-024-02721-1" target="_blank" rel="noopener noreferrer">DOI: 10.1007/s00401-024-02721-1</a> · <code>ADSP APOEε4/ε4 WGS</code></li>
+                  <li><strong>Belloy, Le Guen, Napolioni, Greicius et al. (JAMA Neurology, 2024)</strong> — <em>X-chromosome-wide association study (N = 1,152,284) discovering SLC9A7 (NHE7 Golgi/endosomal pH) &amp; XCI-escaping female-biased MID1</em> · <a href="https://doi.org/10.1001/jamaneurol.2024.2843" target="_blank" rel="noopener noreferrer">DOI: 10.1001/jamaneurol.2024.2843</a> · <code>ADGC/ADSP chrX XWAS</code></li>
+                  <li><strong>Nicolas, Sherva, Grenier-Boley et al. (Nature Genetics, 2025)</strong> — <em>Cross-ancestry AD PRS transferability &amp; PRS-CSx admixture calibration (documenting EUR→AFR non-APOE attenuation toward OR = 1.09 &amp; MCI→AD Cox HR)</em> · <a href="https://doi.org/10.1038/s41588-025-02227-w" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41588-025-02227-w</a> · <code>ADSP NG00067 · NG00100</code></li>
+                  <li><strong>Gabitto, Travaglini, Rachleff, Lein et al. / SEA-AD (Nature Neuroscience, 2024)</strong> — <em>Two-epoch Continuous Pseudoprogression Score (CPS 0.0–1.0: early SST+ inhibitory neuron &amp; remyelination vulnerability vs. late reactive gliosis)</em> · <a href="https://doi.org/10.1038/s41593-024-01774-5" target="_blank" rel="noopener noreferrer">DOI: 10.1038/s41593-024-01774-5</a> · <code>SEA-AD snRNA/snATAC</code></li>
+                  <li><strong>SpatialTargetAgent Consortium (bioRxiv, 2026)</strong> — <em>Spatial transcriptomics AD target discovery resolving white-matter oligodendrocyte lipid/myelin remodeling niches</em> · <a href="https://doi.org/10.64898/2026.04.01.715950" target="_blank" rel="noopener noreferrer">DOI: 10.64898/2026.04.01.715950</a> · <code>Spatial Visium/Xenium AD</code></li>
+                </ul>
+              </div>
+            </details>
+
+            <details class="lit-pillar-disclosure" name="niagads-lit-pillars">
+              <summary class="lit-pillar-summary">
+                <span>🏛️ <strong>Priority 3 · Closed-Loop Scientific Rubric Critic &amp; Multi-Step AD-HeurekaBench Evaluation</strong></span>
+                <span class="shelf-count-pill">2 Papers</span>
+              </summary>
+              <div class="lit-pillar-body">
+                <ul class="lit-credit-list">
+                  <li><strong>Panigrahi, Jang et al. (arXiv, 2026)</strong> — <em>HeurekaBench: benchmarking multi-step data-grounded scientific co-scientist workflows with deterministic rubric verification</em> · <a href="https://arxiv.org/abs/2601.12430" target="_blank" rel="noopener noreferrer">arXiv:2601.12430</a> · <code>NIAGADS-AD-HeurekaBench-v0.7</code></li>
+                  <li><strong>Goel, Jain et al. (arXiv, 2025)</strong> — <em>Training &amp; auditing AI co-scientists via explicit multi-gate scientific rubric rewards and Python verification</em> · <a href="https://arxiv.org/abs/2510.09734" target="_blank" rel="noopener noreferrer">arXiv:2510.09734</a> · <code>niagads_rubric_verifier</code></li>
+                </ul>
+              </div>
             </details>
           </div>
 
@@ -1388,6 +1445,6 @@ chr16	81908423	rs72824905	C	G</textarea>
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.6.0" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.7.0" defer fetchpriority="high"></script>
 </body>
 </html>

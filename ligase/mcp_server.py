@@ -18,9 +18,12 @@ from ligase import __version__
 from ligase.gemma_tools import query_niagads
 from ligase.niagads_api import execute_niagads_action
 from ligase.niagads_v2f_engine import (
+    get_niagads_literature_catalog,
+    niagads_colocboost_mesusie,
     niagads_finemap_coloc,
     niagads_mendelian_randomization_prs,
     niagads_rare_regulatory_score,
+    niagads_resilience_xwas_seaad,
     niagads_translational_trials,
     niagads_vcf_batch_v2f,
     run_niagads_v2f_benchmark,
@@ -153,6 +156,73 @@ NIAGADS_MCP_TOOLS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "niagads_colocboost_mesusie",
+        "description": (
+            "Run TAD-window (±500 kb cis-TAD) 6-modality FunGen-xQTL ColocBoost (eQTL, sQTL, pQTL, mQTL, haQTL, "
+            "snuc-eQTL+ieQTL; Li et al. Nat Genet 2025) and 4-ancestry ADSP emeraLD MESuSiE credible sets "
+            "(NHW, AA, HIS, ASN; Gao et al. Nat Genet 2024) with grounded paper credits."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "ADRD gene symbol or variant (e.g. BIN1, EGFR, TSPAN14, ABCA7, APOE, TREM2, PLCG2, MAPT).",
+                },
+                "ancestry": {
+                    "type": "string",
+                    "enum": ["ALL", "NHW", "AA", "HIS", "ASN"],
+                    "description": "Optional ADSP emeraLD ancestry panel focus.",
+                },
+            },
+            "required": ["target"],
+        },
+    },
+    {
+        "name": "niagads_resilience_xwas_seaad",
+        "description": (
+            "Evaluate APOEe4/e4 blood-brain barrier resilience modifiers (FN1 rs140926439 OR=0.29, Bhattarai et al. "
+            "Acta Neuropathol 2024), sex-aware chrX XWAS & XCI escape loci (SLC9A7, MID1; Belloy et al. JAMA Neurol 2024), "
+            "and SEA-AD continuous pseudoprogression (CPS 0.0-1.0; Gabitto et al. Nat Neurosci 2024) spatial staging."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Gene or locus focus (e.g. APOE, FN1, SLC9A7, MID1, BIN1, TREM2).",
+                },
+                "sex": {
+                    "type": "string",
+                    "enum": ["female", "male", "all"],
+                    "description": "Sex context for chrX XWAS / XCI escape interpretation.",
+                },
+                "apoe_genotype": {
+                    "type": "string",
+                    "description": "APOE background genotype (e.g. e4/e4, e3/e4, e3/e3).",
+                },
+            },
+            "required": ["target"],
+        },
+    },
+    {
+        "name": "niagads_literature_credits",
+        "description": (
+            "Query the 14-paper NIAGADS/ADSP scholarly attribution registry (ColocBoost, FILER, MESuSiE, ADSP R4/STAAR, "
+            "AlphaGenome, EADB, FN1 resilience, chrX XWAS, PRS-CSx, SEA-AD, SpatialTargetAgent, HeurekaBench, Rubric Rewards) "
+            "with DOIs, Europe PMC / arXiv URLs, and NIAGADS dataset anchors."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "Optional filter keyword (e.g. colocboost, fn1, xwas, sea-ad, alphagenome) or empty for all 14.",
+                }
+            },
+        },
+    },
+    {
         "name": "query_niagads_catalog",
         "description": (
             "Search the curated 24-cohort NIAGADS DSS catalog (NG00049-NG00182), VCPA/FAVOR harmonization "
@@ -174,8 +244,14 @@ NIAGADS_MCP_TOOLS: List[Dict[str, Any]] = [
 NIAGADS_MCP_RESOURCES: List[Dict[str, Any]] = [
     {
         "uri": "niagads://benchmark/ad-v2f-bench",
-        "name": "NIAGADS AD-V2F-Bench v0.6 Gold-Standard Locus Suite",
-        "description": "Deterministic causal-variant PIP and FunGen-xQTL colocalization evaluation across 6 NIAGADS GVC loci.",
+        "name": "NIAGADS AD-HeurekaBench v0.7 Gold-Standard Locus & Multi-Step Workflow Suite",
+        "description": "Deterministic causal-variant PIP, FunGen-xQTL colocalization (6 GVC loci), and 5 multi-step translational workflows.",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "niagads://literature/credits",
+        "name": "NIAGADS v0.7 Grounded Literature & Methodological Credits (14 Papers)",
+        "description": "Structured scholarly citations, DOIs, Europe PMC/arXiv URLs, and NIAGADS/ADSP dataset anchors for all 14 integrated papers.",
         "mimeType": "application/json",
     },
     {
@@ -228,6 +304,22 @@ def _dispatch_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"text": txt, "isError": not bool(res.get("ok", True))}
     if name == "niagads_translational_trials":
         res = niagads_translational_trials(target=str(args.get("target") or "APOE"))
+        return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
+    if name == "niagads_colocboost_mesusie":
+        res = niagads_colocboost_mesusie(
+            target=str(args.get("target") or "BIN1"),
+            ancestry=str(args.get("ancestry") or "ALL"),
+        )
+        return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
+    if name == "niagads_resilience_xwas_seaad":
+        res = niagads_resilience_xwas_seaad(
+            target=str(args.get("target") or "APOE"),
+            sex=str(args.get("sex") or "female"),
+            apoe_genotype=str(args.get("apoe_genotype") or "e4/e4"),
+        )
+        return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
+    if name == "niagads_literature_credits":
+        res = get_niagads_literature_catalog(topic=str(args.get("topic") or ""))
         return {"text": res.get("summary_markdown") or "", "isError": not bool(res.get("ok", True))}
     if name == "query_niagads_catalog":
         out = query_niagads(str(args.get("query") or "NIAGADS"))
@@ -292,6 +384,21 @@ def handle_mcp_request(msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                                 "uri": uri,
                                 "mimeType": "application/json",
                                 "text": json.dumps(bench, indent=2),
+                            }
+                        ]
+                    },
+                }
+            if uri == "niagads://literature/credits":
+                cat = get_niagads_literature_catalog()
+                return {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": json.dumps(cat, indent=2),
                             }
                         ]
                     },
