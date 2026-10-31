@@ -31,6 +31,7 @@
     mindmap: "Capabilities Mindmap | Ligase · Biomedical & NIAGADS Co-Scientist",
     "niagads-api": "NIAGADS Open Access API | Ligase · Biomedical & NIAGADS Co-Scientist",
     usage: "Usage & Volume Ledger | Ligase · Biomedical & NIAGADS Co-Scientist",
+    feedback: "Comments & Feedback | Ligase · Biomedical & NIAGADS Co-Scientist",
   };
 
   const OA_PRESETS = [
@@ -103,6 +104,7 @@
     panelMindmap: document.getElementById("panel-mindmap"),
     panelNiagadsApi: document.getElementById("panel-niagads-api"),
     panelUsage: document.getElementById("panel-usage"),
+    panelFeedback: document.getElementById("panel-feedback"),
     canvas: document.getElementById("canvas"),
     welcomeView: document.getElementById("welcome-view"),
     heroEyebrow: document.getElementById("hero-eyebrow"),
@@ -457,8 +459,11 @@
 
   async function switchPortalTab(tabId, { focusTab = false, updateHash = true } = {}) {
     const valid =
-      tabId === "mindmap" || tabId === "niagads-api" || tabId === "usage" ? tabId : "studio";
+      tabId === "mindmap" || tabId === "niagads-api" || tabId === "usage" || tabId === "feedback"
+        ? tabId
+        : "studio";
     const changed = state.activeTab !== valid;
+    const prevTab = state.activeTab;
     state.activeTab = valid;
 
     const applyTabVisibility = () => {
@@ -480,6 +485,7 @@
       el.panelMindmap.hidden = valid !== "mindmap";
       el.panelNiagadsApi.hidden = valid !== "niagads-api";
       el.panelUsage.hidden = valid !== "usage";
+      if (el.panelFeedback) el.panelFeedback.hidden = valid !== "feedback";
 
       // Studio-specific topbar segmented switches
       const isStudio = valid === "studio";
@@ -504,8 +510,9 @@
     document.title = TAB_TITLES[valid] || TAB_TITLES.studio;
     if (updateHash) {
       try {
+        const pLower = (window.location.pathname || "").toLowerCase();
         const basePath =
-          window.location.pathname === "/usage" || window.location.pathname === "/admin"
+          pLower === "/usage" || pLower === "/admin" || pLower === "/feedback" || pLower === "/comments"
             ? "/"
             : window.location.pathname;
         history.replaceState(null, "", valid === "studio" ? basePath : `${basePath}#${valid}`);
@@ -520,6 +527,13 @@
       await ensureOaCatalogLoaded();
     } else if (valid === "usage") {
       await ensureUsageLoaded();
+    } else if (valid === "feedback") {
+      // Pre-select the portal component the user just came from!
+      const areaSelect = document.getElementById("fb-target-area");
+      if (areaSelect && prevTab && prevTab !== "feedback") {
+        areaSelect.value = prevTab;
+      }
+      await ensureFeedbackTabLoaded();
     }
   }
 
@@ -2022,9 +2036,25 @@
     const qual = data.quality || {};
     const sav = data.savings || {};
 
-    el.usageWindowSub.innerHTML =
-      `Window: <strong>${escapeHtml(win.label || "All")}</strong> · Active Engine: <code>${escapeHtml(win.model || "gpt-6-luna")}</code> · ` +
-      `Refreshed <code>${escapeHtml(win.generated_at_iso || "")}</code>`;
+    const stor = data.storage || {};
+    const subNodes = ["Window: "];
+    const winStrong = document.createElement("strong");
+    winStrong.textContent = String(win.label || "All");
+    subNodes.push(winStrong, " · Active Engine: ");
+    const modelCode = document.createElement("code");
+    modelCode.textContent = String(win.model || "gpt-6-luna");
+    subNodes.push(modelCode);
+    if (stor.label) {
+      subNodes.push(" · 💾 ");
+      const storStrong = document.createElement("strong");
+      storStrong.textContent = String(stor.label);
+      subNodes.push(storStrong, ` (${numFmt.format(stor.persisted_files || 0)} durable records)`);
+    }
+    subNodes.push(" · Refreshed ");
+    const tsCode = document.createElement("code");
+    tsCode.textContent = String(win.generated_at_iso || "");
+    subNodes.push(tsCode);
+    el.usageWindowSub.replaceChildren(...subNodes);
 
     // 1. 7-Day Pulse Sparklines
     el.usagePulseGrid.innerHTML = (data.pulse || [])
@@ -2786,10 +2816,545 @@
     });
   }
 
+  // ── Comments, Screenshots & Uploaded Figures Feedback Controller ─────────
+  const fbState = {
+    attachments: [], // [{ file, caption, objectUrl }]
+    shippedLoaded: false,
+    initialized: false,
+  };
+
+  const FB_CATEGORY_LABELS = {
+    feature_request: "Feature Request",
+    niagads_data: "NIAGADS / Genomics",
+    ui_figures: "Figures & UI",
+    agent_quality: "Agent Speed / Quality",
+    bug_report: "Bug Report",
+    general: "Improvement Brief",
+  };
+
+  function formatShortDate(iso) {
+    if (!iso) return "—";
+    const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return String(iso).slice(0, 10);
+    return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function revokeFbObjectUrls() {
+    for (const item of fbState.attachments) {
+      if (item.objectUrl) {
+        try {
+          URL.revokeObjectURL(item.objectUrl);
+        } catch {}
+        item.objectUrl = "";
+      }
+    }
+  }
+
+  function renderFbAttachments() {
+    const list = document.getElementById("fb-attachments-list");
+    if (!list) return;
+    list.replaceChildren();
+
+    fbState.attachments.forEach((entry, index) => {
+      const { file } = entry;
+      const card = document.createElement("div");
+      card.className = "fb-attachment-card";
+
+      if (file.type && file.type.startsWith("image/")) {
+        if (!entry.objectUrl) {
+          entry.objectUrl = URL.createObjectURL(file);
+        }
+        const img = document.createElement("img");
+        img.className = "fb-attachment-thumb";
+        img.src = entry.objectUrl;
+        img.alt = file.name;
+        card.appendChild(img);
+      } else {
+        const icon = document.createElement("div");
+        icon.className = "fb-attachment-icon";
+        icon.setAttribute("aria-hidden", "true");
+        const low = file.name.toLowerCase();
+        icon.textContent = low.endsWith(".pdf")
+          ? "📕"
+          : /\.(pptx?|docx?|xlsx?)$/.test(low)
+          ? "📘"
+          : "📄";
+        card.appendChild(icon);
+      }
+
+      const info = document.createElement("div");
+      info.className = "fb-attachment-info";
+
+      const metaRow = document.createElement("div");
+      metaRow.className = "fb-attachment-meta";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "fb-attachment-name";
+      nameSpan.textContent = file.name;
+      nameSpan.title = file.name;
+
+      const sizeSpan = document.createElement("span");
+      sizeSpan.className = "fb-attachment-size";
+      sizeSpan.textContent = fmtBytes(file.size);
+
+      metaRow.append(nameSpan, sizeSpan);
+
+      const capInput = document.createElement("input");
+      capInput.type = "text";
+      capInput.className = "fb-caption-input";
+      capInput.maxLength = 280;
+      capInput.placeholder = "Optional note on this screenshot or figure (included in email)…";
+      capInput.setAttribute("aria-label", `Annotation for ${file.name}`);
+      capInput.value = entry.caption || "";
+      capInput.addEventListener("input", () => {
+        entry.caption = capInput.value;
+      });
+
+      info.append(metaRow, capInput);
+      card.appendChild(info);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "fb-remove-btn";
+      removeBtn.textContent = "✕";
+      removeBtn.setAttribute("aria-label", `Remove ${file.name}`);
+      removeBtn.addEventListener("click", () => {
+        if (entry.objectUrl) {
+          try {
+            URL.revokeObjectURL(entry.objectUrl);
+          } catch {}
+        }
+        fbState.attachments.splice(index, 1);
+        renderFbAttachments();
+      });
+      card.appendChild(removeBtn);
+
+      list.appendChild(card);
+    });
+  }
+
+  function addFbFiles(rawFiles) {
+    const MAX_FILE_BYTES = 25 * 1024 * 1024;
+    const statusEl = document.getElementById("fb-status");
+    for (const f of rawFiles) {
+      if (f.size > MAX_FILE_BYTES) {
+        if (statusEl) {
+          statusEl.textContent = `File "${f.name}" exceeds the 25 MB per-file limit.`;
+          statusEl.className = "fb-status-msg is-error";
+        }
+        continue;
+      }
+      let finalFile = f;
+      if (fbState.attachments.some((a) => a.file.name === f.name)) {
+        const dotIdx = f.name.lastIndexOf(".");
+        const stem = dotIdx > 0 ? f.name.slice(0, dotIdx) : f.name;
+        const ext = dotIdx > 0 ? f.name.slice(dotIdx) : "";
+        finalFile = new File([f], `${stem}_${Date.now().toString().slice(-4)}${ext}`, {
+          type: f.type,
+        });
+      }
+      fbState.attachments.push({ file: finalFile, caption: "", objectUrl: "" });
+    }
+    renderFbAttachments();
+  }
+
+  async function captureBrowserScreenshot() {
+    const statusEl = document.getElementById("fb-status");
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      if (statusEl) {
+        statusEl.textContent = "Screen capture is not supported in this browser — press Cmd+V / Ctrl+V to paste a screenshot instead.";
+        statusEl.className = "fb-status-msg is-error";
+      }
+      return;
+    }
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { preferCurrentTab: true },
+        audio: false,
+      });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      await new Promise((r) => requestAnimationFrame(r));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 800;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (blob) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const shotFile = new File([blob], `ligase_screenshot_${stamp}.png`, { type: "image/png" });
+        addFbFiles([shotFile]);
+        if (statusEl) {
+          statusEl.textContent = "✓ Live screenshot captured and attached!";
+          statusEl.className = "fb-status-msg";
+        }
+      }
+    } catch (err) {
+      if (err?.name !== "NotAllowedError" && statusEl) {
+        statusEl.textContent = `Could not capture screenshot (${err.message || "cancelled"}).`;
+        statusEl.className = "fb-status-msg is-error";
+      }
+    } finally {
+      if (stream) {
+        for (const tr of stream.getTracks()) tr.stop();
+      }
+    }
+  }
+
+  async function loadShippedImprovements() {
+    const listEl = document.getElementById("fb-shipped-list");
+    const statusEl = document.getElementById("fb-shipped-status");
+    if (!listEl || !statusEl || fbState.shippedLoaded) return;
+    try {
+      const data = await apiFetch("/api/feedback/resolved?limit=25");
+      const items = Array.isArray(data.items) ? data.items : [];
+      listEl.replaceChildren();
+      for (const item of items) {
+        const li = document.createElement("li");
+        li.className = "fb-feed-item";
+
+        const head = document.createElement("div");
+        head.className = "fb-feed-head";
+
+        const pill = document.createElement("span");
+        pill.className = "fb-feed-pill";
+        pill.textContent = FB_CATEGORY_LABELS[item.category] || "Shipped";
+
+        const dateSpan = document.createElement("span");
+        dateSpan.className = "fb-feed-date";
+        dateSpan.textContent = `Shipped ${formatShortDate(item.resolved_at)}`;
+
+        head.append(pill, dateSpan);
+
+        const titleP = document.createElement("p");
+        titleP.className = "fb-feed-title";
+        titleP.textContent = String(item.problem || "");
+
+        li.append(head, titleP);
+        if (item.resolution) {
+          const descP = document.createElement("p");
+          descP.className = "fb-feed-desc";
+          descP.textContent = String(item.resolution);
+          li.appendChild(descP);
+        }
+        listEl.appendChild(li);
+      }
+      statusEl.textContent = items.length
+        ? `${items.length} improvement${items.length === 1 ? "" : "s"} shipped from user instructions.`
+        : "Resolved improvements appear here once deployed.";
+      fbState.shippedLoaded = true;
+    } catch (err) {
+      statusEl.textContent = `Could not load shipped list: ${err.message}`;
+    }
+  }
+
+  async function loadWorkspaceRecentFeedback() {
+    const listEl = document.getElementById("fb-recent-list");
+    const statusEl = document.getElementById("fb-recent-status");
+    if (!listEl || !statusEl) return;
+    try {
+      const data = await apiFetch("/api/feedback/recent?limit=15");
+      const items = Array.isArray(data.items) ? data.items : [];
+      listEl.replaceChildren();
+      if (!items.length) {
+        statusEl.textContent = "No submissions from this browser workspace yet.";
+        return;
+      }
+      statusEl.textContent = `${items.length} durable submission${items.length === 1 ? "" : "s"} saved from this workspace.`;
+      for (const it of items) {
+        const li = document.createElement("li");
+        li.className = "fb-feed-item";
+
+        const head = document.createElement("div");
+        head.className = "fb-feed-head";
+
+        const pill = document.createElement("span");
+        pill.className = "fb-feed-pill";
+        pill.textContent = `${FB_CATEGORY_LABELS[it.category] || "Feedback"} · ${it.target_area_label || it.target_area}`;
+
+        const badgeSpan = document.createElement("span");
+        badgeSpan.className = "fb-feed-date";
+        const mailTxt = it.emailed ? "✉️ Emailed" : "💾 Saved";
+        const attTxt = it.attachment_count ? ` · 📎 ${it.attachment_count}` : "";
+        badgeSpan.textContent = `${mailTxt}${attTxt} · ${formatShortDate(it.created_at)}`;
+
+        head.append(pill, badgeSpan);
+
+        const bodyP = document.createElement("p");
+        bodyP.className = "fb-feed-desc";
+        bodyP.textContent = String(it.comment_preview || "");
+
+        li.append(head, bodyP);
+        listEl.appendChild(li);
+      }
+    } catch (err) {
+      statusEl.textContent = `Could not load workspace submissions: ${err.message}`;
+    }
+  }
+
+  function setupFeedbackValidation(formEl) {
+    // Sync aria-invalid with native :user-invalid + provide WeakMap fallback for older engines
+    const supportsUserInvalid = typeof CSS !== "undefined" && CSS.supports && CSS.supports("selector(:user-invalid)");
+    const dirtyState = new WeakMap();
+
+    const syncField = (field) => {
+      if (!field || typeof field.checkValidity !== "function") return;
+      if (supportsUserInvalid) {
+        field.setAttribute("aria-invalid", field.matches(":user-invalid") ? "true" : "false");
+      } else {
+        const valid = field.checkValidity();
+        field.classList.toggle("user-invalid-fallback", !valid);
+        field.setAttribute("aria-invalid", valid ? "false" : "true");
+      }
+    };
+
+    formEl.addEventListener(
+      "blur",
+      (ev) => {
+        const target = ev.target;
+        if (!target || typeof target.checkValidity !== "function") return;
+        const st = dirtyState.get(target) || { interacted: false };
+        if (st.interacted || supportsUserInvalid) syncField(target);
+      },
+      true
+    );
+
+    formEl.addEventListener("input", (ev) => {
+      const target = ev.target;
+      if (!target || typeof target.checkValidity !== "function") return;
+      dirtyState.set(target, { interacted: true });
+      if (target.hasAttribute("aria-invalid") || target.classList.contains("user-invalid-fallback")) {
+        syncField(target);
+      }
+    });
+  }
+
+  function initFeedbackController() {
+    if (fbState.initialized) return;
+    fbState.initialized = true;
+
+    const formEl = document.getElementById("feedback-form");
+    const dropzone = document.getElementById("fb-dropzone");
+    const fileInput = document.getElementById("fb-file-input");
+    const captureBtn = document.getElementById("fb-capture-screen-btn");
+    const submitBtn = document.getElementById("fb-submit-btn");
+    const statusEl = document.getElementById("fb-status");
+    const successBox = document.getElementById("fb-success-box");
+    const successDetail = document.getElementById("fb-success-detail");
+    const anotherBtn = document.getElementById("fb-submit-another-btn");
+    const refreshRecentBtn = document.getElementById("fb-refresh-recent-btn");
+    const commentInput = document.getElementById("fb-comment");
+
+    if (!formEl) return;
+    setupFeedbackValidation(formEl);
+
+    // Pre-fill saved researcher name/email on this browser if previously entered
+    try {
+      const savedName = localStorage.getItem("ligase_fb_name") || "";
+      const savedEmail = localStorage.getItem("ligase_fb_email") || "";
+      const nameInput = document.getElementById("fb-name");
+      const emailInput = document.getElementById("fb-email");
+      if (nameInput && !nameInput.value && savedName) nameInput.value = savedName;
+      if (emailInput && !emailInput.value && savedEmail) emailInput.value = savedEmail;
+    } catch {}
+
+    if (dropzone && fileInput) {
+      dropzone.addEventListener("click", (ev) => {
+        if (ev.target === fileInput) return;
+        fileInput.click();
+      });
+      dropzone.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          fileInput.click();
+        }
+      });
+      dropzone.addEventListener("dragover", (ev) => {
+        ev.preventDefault();
+        dropzone.classList.add("is-dragover");
+      });
+      dropzone.addEventListener("dragleave", () => {
+        dropzone.classList.remove("is-dragover");
+      });
+      dropzone.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        dropzone.classList.remove("is-dragover");
+        if (ev.dataTransfer?.files?.length) {
+          addFbFiles(Array.from(ev.dataTransfer.files));
+        }
+      });
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files?.length) {
+          addFbFiles(Array.from(fileInput.files));
+          fileInput.value = "";
+        }
+      });
+    }
+
+    captureBtn?.addEventListener("click", () => {
+      captureBrowserScreenshot();
+    });
+
+    refreshRecentBtn?.addEventListener("click", () => {
+      loadWorkspaceRecentFeedback();
+    });
+
+    // Global clipboard paste of screenshots when the Feedback tab is active
+    document.addEventListener("paste", (ev) => {
+      if (state.activeTab !== "feedback") return;
+      const items = ev.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.startsWith("image/")) {
+          ev.preventDefault();
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+            const ext = (blob.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
+            const pastedFile = new File([blob], `pasted_screenshot_${stamp}.${ext}`, {
+              type: blob.type || "image/png",
+            });
+            addFbFiles([pastedFile]);
+            if (statusEl) {
+              statusEl.textContent = "📋 Screenshot pasted from clipboard and attached!";
+              statusEl.className = "fb-status-msg";
+            }
+          }
+          break;
+        }
+      }
+    });
+
+    // Cmd/Ctrl+Enter shortcut on comment textarea (IME-safe via isComposing check)
+    commentInput?.addEventListener("keydown", (ev) => {
+      if (ev.isComposing) return;
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+        ev.preventDefault();
+        formEl.requestSubmit();
+      }
+    });
+
+    formEl.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!formEl.checkValidity()) {
+        const firstInvalid = formEl.querySelector(":invalid");
+        if (firstInvalid) {
+          firstInvalid.classList.add("user-invalid-fallback");
+          firstInvalid.setAttribute("aria-invalid", "true");
+          firstInvalid.focus();
+        }
+        if (statusEl) {
+          statusEl.textContent = "Please complete the required comment field (and check email format if provided).";
+          statusEl.className = "fb-status-msg is-error";
+        }
+        return;
+      }
+
+      const nameVal = document.getElementById("fb-name")?.value?.trim() || "";
+      const emailVal = document.getElementById("fb-email")?.value?.trim() || "";
+      const catVal = document.getElementById("fb-category")?.value || "feature_request";
+      const areaVal = document.getElementById("fb-target-area")?.value || "portal";
+      const commentVal = commentInput?.value?.trim() || "";
+
+      try {
+        if (nameVal) localStorage.setItem("ligase_fb_name", nameVal);
+        if (emailVal) localStorage.setItem("ligase_fb_email", emailVal);
+      } catch {}
+
+      const fd = new FormData();
+      fd.append("name", nameVal);
+      fd.append("email", emailVal);
+      fd.append("category", catVal);
+      fd.append("target_area", areaVal);
+      fd.append("comment", commentVal);
+      fd.append("page_url", window.location.href);
+      fd.append("captions_json", JSON.stringify(fbState.attachments.map((a) => a.caption || "")));
+      for (const att of fbState.attachments) {
+        fd.append("files", att.file);
+      }
+
+      const origBtnText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Uploading & Emailing Brief…";
+      if (statusEl) {
+        statusEl.textContent = "Saving to persistent storage & dispatching email…";
+        statusEl.className = "fb-status-msg";
+      }
+
+      try {
+        const resp = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "X-Ligase-Client-Id": CLIENT_ID },
+          body: fd,
+        });
+        const resJson = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(resJson.detail || `HTTP ${resp.status}`);
+        }
+
+        revokeFbObjectUrls();
+        fbState.attachments = [];
+        renderFbAttachments();
+        if (commentInput) {
+          commentInput.value = "";
+          commentInput.removeAttribute("aria-invalid");
+          commentInput.classList.remove("user-invalid-fallback");
+        }
+        state.usageData = null;
+
+        formEl.hidden = true;
+        if (successBox && successDetail) {
+          const attCount = Number(resJson.attachment_count || 0);
+          const mailQueued = resJson.email_delivery?.queued || resJson.email_delivery?.sent;
+          successDetail.textContent =
+            `Record ${String(resJson.feedback_id || "").slice(0, 8)} saved durably` +
+            (attCount ? ` with ${attCount} attached screenshot/figure file${attCount === 1 ? "" : "s"}` : "") +
+            (mailQueued
+              ? " and emailed with inline visual previews & engineering instructions."
+              : " to persistent storage.");
+          successBox.hidden = false;
+          successBox.focus();
+        }
+        if (statusEl) statusEl.textContent = "";
+        await loadWorkspaceRecentFeedback();
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = err.message || "Failed to submit feedback.";
+          statusEl.className = "fb-status-msg is-error";
+        }
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origBtnText;
+      }
+    });
+
+    anotherBtn?.addEventListener("click", () => {
+      if (successBox) successBox.hidden = true;
+      formEl.hidden = false;
+      if (statusEl) {
+        statusEl.textContent = "";
+        statusEl.className = "fb-status-msg";
+      }
+      commentInput?.focus();
+    });
+  }
+
+  async function ensureFeedbackTabLoaded() {
+    initFeedbackController();
+    await Promise.all([loadShippedImprovements(), loadWorkspaceRecentFeedback()]);
+  }
+
   async function boot() {
     syncThemeButtons();
     syncWorkflowHint();
     syncUsageExportLinks();
+    initFeedbackController();
 
     const bootstrap = readServerBootstrap();
     if (bootstrap?.mindmap) {
@@ -2809,11 +3374,13 @@
       }
     }
 
-    // Honor initial pathname (/usage, /admin) or URL hash (#mindmap, #niagads-api, #usage)
+    // Honor initial pathname (/usage, /admin, /feedback, /comments) or URL hash
     const pathLower = (window.location.pathname || "").toLowerCase();
     const hashTab = (window.location.hash || "").replace(/^#/, "").trim();
     if (pathLower === "/usage" || pathLower === "/admin" || hashTab === "usage") {
       switchPortalTab("usage", { updateHash: false });
+    } else if (pathLower === "/feedback" || pathLower === "/comments" || hashTab === "feedback" || hashTab === "comments") {
+      switchPortalTab("feedback", { updateHash: false });
     } else if (hashTab === "mindmap" || hashTab === "niagads-api") {
       switchPortalTab(hashTab, { updateHash: false });
     }

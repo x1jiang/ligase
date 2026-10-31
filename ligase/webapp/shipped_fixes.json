@@ -1,0 +1,34 @@
+[
+  {
+    "id": "ship-v041-feedback-email",
+    "category": "feature_request",
+    "problem": "Provide a dedicated Comments & Feedback portal tab with clipboard screenshot paste, figure uploads, and automated improvement-brief email delivery.",
+    "resolution": "Shipped the Comments & Feedback tab with Cmd/Ctrl+V screenshot paste, one-click tab screenshot capture, figure/document uploads on persistent GCS storage, and instant HTML + inline-screenshot email briefs.",
+    "raised_at": "2026-10-30T20:07:00Z",
+    "resolved_at": "2026-10-31T01:15:00Z"
+  },
+  {
+    "id": "ship-v041-persistent-gcs",
+    "category": "agent_quality",
+    "problem": "Ensure Usage & Volume tracking, researcher threads, and downloadable study reports survive Cloud Run container restarts and new deployments.",
+    "resolution": "Mounted gs://sbmi-jiang-ai-testing01-ligase-data via Cloud Run Gen2 GCS FUSE using lock-free per-event JSON ledger files synced into fast local SQLite.",
+    "raised_at": "2026-10-30T19:50:00Z",
+    "resolved_at": "2026-10-31T01:07:00Z"
+  },
+  {
+    "id": "ship-v040-fast-load-usage",
+    "category": "ui_figures",
+    "problem": "Eliminate cold-start portal latency, speed up gpt-6-luna studies, and add an executive Usage & Volume dashboard.",
+    "resolution": "Cut warm portal loads to <95 ms via lean SSR + GZip + ETag, added parallel tool pre-grounding (<350 ms), and launched the interactive Usage & Volume Ledger (/usage).",
+    "raised_at": "2026-10-30T18:10:00Z",
+    "resolved_at": "2026-10-31T00:18:00Z"
+  },
+  {
+    "id": "ship-v030-niagads-mindmap",
+    "category": "niagads_data",
+    "problem": "Integrate live NIAGADS Open Access v2.0 endpoints and visualize all supported Ligase components on a dedicated Mindmap tab.",
+    "resolution": "Integrated all 19 live api.niagads.org/v2 OpenAPI paths alongside 24 NG* cohorts and shipped the interactive SVG Capabilities Mindmap tab.",
+    "raised_at": "2026-10-29T22:00:00Z",
+    "resolved_at": "2026-10-30T03:00:00Z"
+  }
+]

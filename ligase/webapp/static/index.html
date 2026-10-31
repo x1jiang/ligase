@@ -28,7 +28,7 @@
     [hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.4.0">
+  <link rel="stylesheet" href="/static/styles.css?v=0.4.1">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.4.0</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.4.1</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -73,6 +73,9 @@
         </button>
         <button type="button" class="ghost-footer-btn" data-goto-tab="usage">
           <span aria-hidden="true">📊</span> Usage &amp; Volume
+        </button>
+        <button type="button" class="ghost-footer-btn" data-goto-tab="feedback">
+          <span aria-hidden="true">💬</span> Comments &amp; Feedback
         </button>
       </div>
 
@@ -152,6 +155,20 @@
                 data-tab="usage"
               >
                 <span aria-hidden="true">📊</span> Usage &amp; Volume
+              </button>
+            </li>
+            <li role="presentation" class="portal-tab-item">
+              <button
+                type="button"
+                role="tab"
+                id="tab-feedback"
+                class="portal-tab-btn"
+                aria-selected="false"
+                aria-controls="panel-feedback"
+                tabindex="-1"
+                data-tab="feedback"
+              >
+                <span aria-hidden="true">💬</span> Comments &amp; Feedback
               </button>
             </li>
           </ul>
@@ -790,10 +807,199 @@
                     <th scope="col">Last Active (UTC)</th>
                   </tr>
                 </thead>
-                <tbody id="usage-workspaces-tbody"></tbody>
-              </table>
+                  <tbody id="usage-workspaces-tbody"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+
+      <!-- TAB PANEL 5: Comments, Screenshots & Uploaded Figures Feedback -->
+      <div
+        class="tab-panel portal-page-scroll"
+        id="panel-feedback"
+        role="tabpanel"
+        aria-labelledby="tab-feedback"
+        hidden
+      >
+        <div class="portal-page-inner feedback-shell">
+          <div class="usage-header-bar">
+            <div>
+              <div class="hero-eyebrow">UTHealth Houston · Continuous Co-Scientist Improvement</div>
+              <h2 class="page-heading">Comments, Screenshots &amp; Figures for Future Improvements</h2>
+              <p class="portal-page-lead">
+                Share feature requests, NIAGADS data needs, UI annotations, screenshots, or scientific figures. Every submission is durably stored on persistent Cloud Storage and emailed directly to the development lead with AI-structured engineering instructions and inline visual previews.
+              </p>
             </div>
-          </section>
+          </div>
+
+          <div class="feedback-layout">
+            <!-- Left Column: Feedback & Visual Upload Form -->
+            <section class="feedback-card" aria-labelledby="fb-form-heading">
+              <div class="usage-card-head">
+                <div>
+                  <h2 class="usage-card-title" id="fb-form-heading">Submit Improvement Instructions &amp; Visuals</h2>
+                  <div class="usage-card-sub">Supports clipboard screenshot paste (<code>Cmd+V</code> / <code>Ctrl+V</code>), one-click tab capture, figures, PDFs &amp; slides</div>
+                </div>
+              </div>
+
+              <form id="feedback-form" method="post" action="/api/feedback" enctype="multipart/form-data" novalidate>
+                <div class="fb-form-grid">
+                  <div class="fb-field">
+                    <label for="fb-name">Your Name <span class="fb-optional">(optional)</span></label>
+                    <span id="fb-name-hint" class="fb-field-hint">Included so we can credit or follow up on your suggestion</span>
+                    <input
+                      type="text"
+                      id="fb-name"
+                      name="name"
+                      class="fb-input"
+                      maxlength="120"
+                      autocomplete="name"
+                      placeholder="e.g. Dr. Jane Smith"
+                      aria-describedby="fb-name-hint"
+                    >
+                  </div>
+
+                  <div class="fb-field">
+                    <label for="fb-email">Your Email <span class="fb-optional">(optional · sets Reply-To)</span></label>
+                    <span id="fb-email-hint" class="fb-field-hint">Format: researcher@uth.tmc.edu</span>
+                    <input
+                      type="email"
+                      id="fb-email"
+                      name="email"
+                      class="fb-input"
+                      maxlength="160"
+                      autocomplete="email"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                      placeholder="e.g. name@uth.tmc.edu"
+                      aria-describedby="fb-email-hint"
+                      aria-errormessage="fb-email-error"
+                    >
+                    <div id="fb-email-error" class="fb-error-msg">
+                      <span aria-hidden="true">⚠</span> Please enter a valid email address (or leave blank).
+                    </div>
+                  </div>
+                </div>
+
+                <div class="fb-form-grid">
+                  <div class="fb-field">
+                    <label for="fb-category">Improvement Category</label>
+                    <select id="fb-category" name="category" class="fb-select">
+                      <option value="feature_request">💡 Feature Request / What to Build Next</option>
+                      <option value="niagads_data">🧬 NIAGADS / Genomics API Enhancement</option>
+                      <option value="ui_figures">📊 Figures, Mindmap, or UI Visualization</option>
+                      <option value="agent_quality">⚡ Agent Speed, Tool Grounding, or Accuracy</option>
+                      <option value="bug_report">⚠️ Bug or Error Report</option>
+                      <option value="general">💬 General Instruction for Future Improvements</option>
+                    </select>
+                  </div>
+
+                  <div class="fb-field">
+                    <label for="fb-target-area">Target Portal Component</label>
+                    <select id="fb-target-area" name="target_area" class="fb-select">
+                      <option value="portal">🌐 Whole Web Portal / CLI / SDK</option>
+                      <option value="studio">🔬 Research Studio (gpt-6-luna)</option>
+                      <option value="mindmap">🧠 Capabilities Mindmap</option>
+                      <option value="niagads-api">🌐 NIAGADS Open Access v2.0 Explorer</option>
+                      <option value="usage">📊 Usage &amp; Volume Ledger</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="fb-field">
+                  <label for="fb-comment">Comments, Improvement Instructions, or Issue Details <span class="fb-required" aria-hidden="true">*</span></label>
+                  <span id="fb-comment-hint" class="fb-field-hint">Describe what should change, how figures/workflows should look, or what capability to add next</span>
+                  <textarea
+                    id="fb-comment"
+                    name="comment"
+                    class="fb-textarea"
+                    rows="5"
+                    required
+                    minlength="3"
+                    placeholder="Describe the improvement, desired figure/workflow behavior, NIAGADS dataset, or issue in detail…"
+                    aria-describedby="fb-comment-hint"
+                    aria-errormessage="fb-comment-error"
+                  ></textarea>
+                  <div id="fb-comment-error" class="fb-error-msg">
+                    <span aria-hidden="true">⚠</span> Please describe your comment or improvement instruction (at least 3 characters).
+                  </div>
+                </div>
+
+                <div class="fb-field">
+                  <div class="fb-attach-header">
+                    <label id="fb-attachments-label" for="fb-file-input" style="margin:0;">Screenshots, Uploaded Figures &amp; Supporting Files</label>
+                    <button type="button" class="tool-chip-btn" id="fb-capture-screen-btn" title="Capture a live PNG screenshot of any window or browser tab">
+                      📸 Capture Screenshot
+                    </button>
+                  </div>
+
+                  <div class="fb-dropzone" id="fb-dropzone" tabindex="0" role="button" aria-labelledby="fb-attachments-label">
+                    <div aria-hidden="true" style="font-size:1.55rem;">🖼️</div>
+                    <p class="fb-dropzone-title">Drag &amp; drop screenshots or figures here, or <span class="fb-browse-accent">browse files</span></p>
+                    <p class="fb-dropzone-sub">PNG, JPG, WEBP, SVG, GIF, PDF, PowerPoint (.pptx), Word (.docx), Excel/CSV/VCF (up to 25 MB/file)</p>
+                    <div class="fb-paste-pill">
+                      <span aria-hidden="true">📋</span>
+                      <span>Tip: Press <strong>Cmd+V</strong> or <strong>Ctrl+V</strong> anywhere on this tab to paste a screenshot directly!</span>
+                    </div>
+                    <input
+                      type="file"
+                      id="fb-file-input"
+                      name="files"
+                      class="visually-hidden"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.md,.json,.vcf,.bed,.fasta,.fa"
+                    >
+                  </div>
+
+                  <div id="fb-attachments-list" class="fb-attachments-list" aria-live="polite"></div>
+                </div>
+
+                <div class="fb-actions-row">
+                  <button type="submit" id="fb-submit-btn" class="fb-submit-btn">
+                    📨 Submit &amp; Email Improvement Brief
+                  </button>
+                  <p id="fb-status" class="fb-status-msg" role="status" aria-live="polite"></p>
+                </div>
+              </form>
+
+              <div id="fb-success-box" class="fb-success-box" hidden tabindex="-1">
+                <div class="fb-success-check" aria-hidden="true">✓</div>
+                <div>
+                  <h3 style="margin:0 0 0.35rem;font-size:1.02rem;">Improvement Brief Saved &amp; Emailed!</h3>
+                  <p id="fb-success-detail" style="margin:0 0 0.75rem;font-size:0.86rem;color:var(--text-secondary);line-height:1.5;"></p>
+                  <button type="button" class="tool-chip-btn" id="fb-submit-another-btn">＋ Submit Another Comment or Figure</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Right Column: Shipped Fixes + Workspace Submissions -->
+            <div class="feedback-side-stack">
+              <section class="feedback-card" aria-labelledby="fb-shipped-heading">
+                <div class="usage-card-head" style="margin-block-end:0.4rem;">
+                  <div>
+                    <h2 class="usage-card-title" id="fb-shipped-heading">What We've Shipped &amp; Fixed</h2>
+                    <div class="usage-card-sub">Recent improvements delivered from user instructions</div>
+                  </div>
+                </div>
+                <p id="fb-shipped-status" class="fb-field-hint" aria-live="polite">Loading shipped improvements…</p>
+                <ol id="fb-shipped-list" class="fb-feed-list"></ol>
+              </section>
+
+              <section class="feedback-card" aria-labelledby="fb-recent-heading">
+                <div class="usage-card-head" style="margin-block-end:0.4rem;">
+                  <div>
+                    <h2 class="usage-card-title" id="fb-recent-heading">Your Submitted Briefs</h2>
+                    <div class="usage-card-sub">Durable records submitted from this browser workspace</div>
+                  </div>
+                  <button type="button" class="tool-chip-btn" id="fb-refresh-recent-btn" title="Refresh workspace submissions">↻</button>
+                </div>
+                <p id="fb-recent-status" class="fb-field-hint" aria-live="polite">No submissions from this workspace yet.</p>
+                <ol id="fb-recent-list" class="fb-feed-list"></ol>
+              </section>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -869,6 +1075,6 @@
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.4.0" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.4.1" defer fetchpriority="high"></script>
 </body>
 </html>

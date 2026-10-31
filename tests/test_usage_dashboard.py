@@ -125,10 +125,11 @@ def test_lean_ssr_routes_etag_and_immutable_static_headers(tmp_path: Path, monke
         assert len(boot_json_str.encode("utf-8")) < 12_000
         parsed_boot = json.loads(boot_json_str)
         assert "boot" in parsed_boot
-        assert parsed_boot["boot"]["version"] == "0.4.0"
+        import ligase
+        assert parsed_boot["boot"]["version"] == ligase.__version__
 
     # Versioned static assets get immutable 1-year cache; unversioned keeps 24h
-    ver_js = client.get("/static/app.js?v=0.4.0")
+    ver_js = client.get(f"/static/app.js?v={ligase.__version__}")
     assert ver_js.status_code == 200
     assert "immutable" in (ver_js.headers.get("cache-control") or "")
     assert "max-age=31536000" in (ver_js.headers.get("cache-control") or "")
@@ -305,3 +306,122 @@ def test_create_agent_fast_vs_deep_configuration(monkeypatch: pytest.MonkeyPatch
     assert captured["claw_kwargs"]["reasoning_effort"] == "medium"
     deep_tools = {t.name for t in captured["claw_kwargs"]["tools"]}
     assert len(deep_tools) > len(WEB_FAST_TOOLS)
+
+
+def test_persistent_storage_survives_ephemeral_container_wipe_and_multi_instance_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Simulate Cloud Run GCS FUSE mount surviving complete container SQLite/runs_root wipe & multi-instance writes."""
+    monkeypatch.setenv("LIGASE_WEB_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-unit-key")
+    monkeypatch.setenv("LIGASE_SKIP_WARMUP", "1")
+    monkeypatch.setenv("LIGASE_GCS_BUCKET", "sbmi-jiang-ai-testing01-ligase-data")
+
+    monkeypatch.setattr(
+        "ligase.webapp.server.execute_niagads_action",
+        lambda **kwargs: {
+            "ok": True,
+            "action": kwargs.get("action"),
+            "endpoint": "/record/gene/TREM2",
+            "request_id": "req-persist-1",
+            "elapsed_ms": 21,
+            "summary_markdown": "### NIAGADS TREM2",
+            "rows": [{"gene_symbol": "TREM2"}],
+            "raw": {"data": [{"gene_symbol": "TREM2"}]},
+        },
+    )
+
+    class _FakeClaw:
+        on_stream_event = None
+        tools = None
+
+    class _FakeAgent:
+        def __init__(self):
+            self.claw_agent = _FakeClaw()
+            self.last_state = SimpleNamespace(iterations=1, status="done")
+
+        def go(self, prompt: str) -> str:
+            if self.claw_agent.on_stream_event:
+                self.claw_agent.on_stream_event(
+                    SimpleNamespace(
+                        kind="usage",
+                        prompt_tokens=4200,
+                        input_tokens=200,
+                        output_tokens=180,
+                        total_tokens=4380,
+                        cached_input_tokens=4000,
+                        time_to_first_token_ms=95,
+                    )
+                )
+            return "## Persistent Study Result\n\nVerified TREM2 R47H."
+
+    monkeypatch.setattr("ligase.webapp.server.create_agent", lambda **kwargs: _FakeAgent())
+
+    shared_gcs_mount = tmp_path / "mnt_gcs_ligase_data"
+    headers = {"X-Ligase-Client-Id": "cli_persist_user01"}
+
+    # Container Revision 1 writes a live API lookup + a full study run
+    app_rev1 = create_webapp(
+        state_dir=tmp_path / "rev1_ephemeral_state",
+        runs_root=tmp_path / "rev1_ephemeral_runs",
+        persistent_dir=shared_gcs_mount,
+    )
+    client_rev1 = TestClient(app_rev1)
+    assert client_rev1.get("/api/niagads/live?action=gene&target=TREM2", headers=headers).status_code == 200
+    with client_rev1.stream(
+        "POST",
+        "/api/chat/stream",
+        headers=headers,
+        json={"prompt": "Analyze TREM2 R47H epistasis in NIAGADS", "profile": "ad1", "speed_mode": "fast"},
+    ) as sresp:
+        assert sresp.status_code == 200
+        _ = "".join(sresp.iter_text())
+
+    snap_rev1 = client_rev1.get("/api/usage?days=all").json()
+    assert snap_rev1["storage"]["persistent"] is True
+    assert snap_rev1["storage"]["bucket"] == "sbmi-jiang-ai-testing01-ligase-data"
+    assert snap_rev1["storage"]["persisted_files"] == 2
+    assert snap_rev1["volume"]["studies_count"] == 1
+    assert snap_rev1["volume"]["api_queries_count"] == 1
+    assert snap_rev1["volume"]["total_tokens"] == 4380
+    report_url = [r["report_url"] for r in snap_rev1["ledger"] if r["report_url"]][0]
+
+    # Simulate Cloud Run destroying Revision 1's container completely and booting Revision 2 on empty tmpfs
+    import shutil as _shutil
+
+    _shutil.rmtree(tmp_path / "rev1_ephemeral_state")
+    _shutil.rmtree(tmp_path / "rev1_ephemeral_runs")
+
+    app_rev2 = create_webapp(
+        state_dir=tmp_path / "rev2_fresh_state",
+        runs_root=tmp_path / "rev2_fresh_runs",
+        persistent_dir=shared_gcs_mount,
+    )
+    client_rev2 = TestClient(app_rev2)
+
+    # Revision 2 must restore 100% of telemetry, threads, AND downloadable report.md from shared_gcs_mount
+    snap_rev2 = client_rev2.get("/api/usage?days=all").json()
+    assert snap_rev2["volume"]["studies_count"] == 1
+    assert snap_rev2["volume"]["api_queries_count"] == 1
+    assert snap_rev2["volume"]["total_tokens"] == 4380
+    assert snap_rev2["volume"]["threads_count"] == 1
+
+    threads_rev2 = client_rev2.get("/api/threads", headers=headers).json()["threads"]
+    assert len(threads_rev2) == 1
+
+    rep_rev2 = client_rev2.get(report_url, headers=headers)
+    assert rep_rev2.status_code == 200
+    assert "Persistent Study Result" in rep_rev2.text
+
+    # Also verify live cross-instance sync: if another instance writes to shared_gcs_mount, rev2 picks it up
+    app_peer = create_webapp(
+        state_dir=tmp_path / "peer_instance_state",
+        runs_root=tmp_path / "peer_instance_runs",
+        persistent_dir=shared_gcs_mount,
+    )
+    client_peer = TestClient(app_peer)
+    assert client_peer.get("/api/niagads/live?action=gene&target=TREM2", headers=headers).status_code == 200
+    app_rev2.state.usage_tracker.sync_from_persistent_storage(force=True)
+    snap_synced = client_rev2.get("/api/usage?days=all").json()
+    assert snap_synced["volume"]["api_queries_count"] == 2
+

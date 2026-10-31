@@ -19,6 +19,7 @@ import threading
 import time
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -151,19 +152,196 @@ def _percentile(sorted_vals: List[float], q: float) -> float:
     return float(sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac)
 
 
-class UsageTracker:
-    """Thread-safe SQLite usage & volume tracker sharing `ligase_webapp.sqlite3`."""
+EVENT_COLUMNS = (
+    "id",
+    "ts",
+    "event_type",
+    "client_id",
+    "thread_id",
+    "run_id",
+    "model",
+    "profile",
+    "mode",
+    "speed_mode",
+    "domain",
+    "status",
+    "elapsed_ms",
+    "ttft_ms",
+    "iterations",
+    "tool_count",
+    "tools_json",
+    "input_tokens",
+    "output_tokens",
+    "cached_tokens",
+    "total_tokens",
+    "tokens_exact",
+    "bytes_processed",
+    "model_cost_usd",
+    "cloud_cost_usd",
+    "total_cost_usd",
+    "title",
+)
 
-    def __init__(self, db_path: Path):
+
+def resolve_persistent_usage_dir(db_path: Path, explicit_dir: Optional[Path] = None) -> Path:
+    """Resolve the durable per-event JSON ledger directory (GCS FUSE on Cloud Run, disk locally)."""
+    if explicit_dir is not None:
+        return Path(explicit_dir).resolve()
+    env_usage = (os.getenv("LIGASE_USAGE_PERSIST_DIR") or "").strip()
+    if env_usage:
+        return Path(env_usage).resolve()
+    env_root = (os.getenv("LIGASE_PERSISTENT_DIR") or "").strip()
+    if env_root:
+        return (Path(env_root) / "usage_events").resolve()
+    return (Path(db_path).resolve().parent / "usage_events").resolve()
+
+
+def _safe_filename_token(raw: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", (raw or "").strip())[:96] or "event"
+
+
+def _read_json_event_file(path_str: str) -> Optional[Dict[str, Any]]:
+    try:
+        with open(path_str, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+        return obj if isinstance(obj, dict) and obj.get("id") else None
+    except Exception:
+        return None
+
+
+class UsageTracker:
+    """Thread-safe usage & volume tracker combining fast local SQLite indexing with durable per-event JSON storage."""
+
+    def __init__(self, db_path: Path, persistent_dir: Optional[Path] = None):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.persistent_dir = resolve_persistent_usage_dir(self.db_path, persistent_dir)
+        self.persistent_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._synced_files: Dict[str, int] = {}
+        self._last_sync_monotonic: float = 0.0
         self._init_and_backfill()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _event_file_path(self, row: Dict[str, Any]) -> Path:
+        ev_type = _safe_filename_token(str(row.get("event_type") or "event"))
+        run_id = str(row.get("run_id") or "").strip()
+        if ev_type == "study_run" and run_id:
+            return self.persistent_dir / f"study_run-{_safe_filename_token(run_id)}.json"
+        ts_val = float(row.get("ts") or time.time())
+        stamp = datetime.fromtimestamp(ts_val, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ev_id = _safe_filename_token(str(row.get("id") or uuid.uuid4().hex[:14]))
+        return self.persistent_dir / f"{stamp}-{ev_type}-{ev_id}.json"
+
+    def _persist_event_unlocked(self, row: Dict[str, Any]) -> None:
+        """Write one self-contained JSON event file in-place (GCS FUSE safe: no temp-then-rename)."""
+        try:
+            self.persistent_dir.mkdir(parents=True, exist_ok=True)
+            path = self._event_file_path(row)
+            payload = {"schema": 1, **{col: row[col] for col in EVENT_COLUMNS}}
+            path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+            try:
+                self._synced_files[path.name] = path.stat().st_mtime_ns
+            except OSError:
+                self._synced_files[path.name] = int(time.time() * 1e9)
+        except Exception:
+            pass
+
+    def _insert_row_unlocked(self, conn: sqlite3.Connection, row: Dict[str, Any], *, persist: bool = True) -> None:
+        if row.get("event_type") == "study_run" and row.get("run_id"):
+            conn.execute(
+                "DELETE FROM usage_events WHERE run_id = ? AND event_type = 'study_run'",
+                (row["run_id"],),
+            )
+        placeholders = ", ".join("?" for _ in EVENT_COLUMNS)
+        cols_sql = ", ".join(EVENT_COLUMNS)
+        conn.execute(
+            f"INSERT OR REPLACE INTO usage_events ({cols_sql}) VALUES ({placeholders})",
+            tuple(row[c] for c in EVENT_COLUMNS),
+        )
+        if persist:
+            self._persist_event_unlocked(row)
+
+    def _sync_from_persistent_dir_unlocked(self, conn: sqlite3.Connection, *, force: bool = False) -> int:
+        now_m = time.monotonic()
+        if not force and (now_m - self._last_sync_monotonic) < 1.5:
+            return 0
+        self._last_sync_monotonic = now_m
+        if not self.persistent_dir.is_dir():
+            return 0
+
+        pending: List[Tuple[str, str, int]] = []
+        try:
+            with os.scandir(self.persistent_dir) as it:
+                for entry in it:
+                    if not entry.name.endswith(".json") or entry.name.startswith("."):
+                        continue
+                    try:
+                        mtime_ns = entry.stat().st_mtime_ns
+                    except OSError:
+                        continue
+                    if self._synced_files.get(entry.name) != mtime_ns:
+                        pending.append((entry.name, entry.path, mtime_ns))
+        except OSError:
+            return 0
+
+        if not pending:
+            return 0
+
+        if len(pending) > 4:
+            with ThreadPoolExecutor(max_workers=min(8, len(pending))) as pool:
+                parsed_list = list(pool.map(_read_json_event_file, [p[1] for p in pending]))
+        else:
+            parsed_list = [_read_json_event_file(p[1]) for p in pending]
+
+        ingested = 0
+        for (fname, _, mtime_ns), obj in zip(pending, parsed_list):
+            self._synced_files[fname] = mtime_ns
+            if not obj:
+                continue
+            row = {
+                "id": str(obj.get("id") or f"uev_{uuid.uuid4().hex[:14]}"),
+                "ts": float(obj.get("ts") or time.time()),
+                "event_type": str(obj.get("event_type") or "study_run"),
+                "client_id": str(obj.get("client_id") or "local_default"),
+                "thread_id": str(obj.get("thread_id") or ""),
+                "run_id": str(obj.get("run_id") or ""),
+                "model": str(obj.get("model") or "gpt-6-luna"),
+                "profile": str(obj.get("profile") or "ad1"),
+                "mode": str(obj.get("mode") or "direct"),
+                "speed_mode": str(obj.get("speed_mode") or "fast"),
+                "domain": str(obj.get("domain") or "neuro_proteomics"),
+                "status": str(obj.get("status") or "completed"),
+                "elapsed_ms": int(obj.get("elapsed_ms") or 0),
+                "ttft_ms": int(obj.get("ttft_ms") or 0),
+                "iterations": int(obj.get("iterations") or 1),
+                "tool_count": int(obj.get("tool_count") or 0),
+                "tools_json": str(obj.get("tools_json") or "[]")
+                if isinstance(obj.get("tools_json"), str)
+                else json.dumps(obj.get("tools_json") or [], ensure_ascii=False),
+                "input_tokens": int(obj.get("input_tokens") or 0),
+                "output_tokens": int(obj.get("output_tokens") or 0),
+                "cached_tokens": int(obj.get("cached_tokens") or 0),
+                "total_tokens": int(obj.get("total_tokens") or 0),
+                "tokens_exact": int(obj.get("tokens_exact") if obj.get("tokens_exact") is not None else 1),
+                "bytes_processed": int(obj.get("bytes_processed") or 0),
+                "model_cost_usd": float(obj.get("model_cost_usd") or 0.0),
+                "cloud_cost_usd": float(obj.get("cloud_cost_usd") or 0.0),
+                "total_cost_usd": float(obj.get("total_cost_usd") or 0.0),
+                "title": _clean_title(str(obj.get("title") or "Biomedical Request")),
+            }
+            self._insert_row_unlocked(conn, row, persist=False)
+            ingested += 1
+        return ingested
+
+    def sync_from_persistent_storage(self, force: bool = True) -> int:
+        """Public trigger to hydrate/sync any new JSON event records from persistent storage."""
+        with self._lock, self._connect() as conn:
+            return self._sync_from_persistent_dir_unlocked(conn, force=force)
 
     def _init_and_backfill(self) -> None:
         with self._lock, self._connect() as conn:
@@ -204,7 +382,10 @@ class UsageTracker:
                     ON usage_events(run_id);
                 """
             )
-            # Backfill any pre-existing finished rows from `runs` table idempotently
+            # 1. Hydrate all durable per-event JSON records from persistent storage first
+            self._sync_from_persistent_dir_unlocked(conn, force=True)
+
+            # 2. Backfill any pre-existing finished rows from `runs` table idempotently & persist them
             has_runs = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='runs'"
             ).fetchone()
@@ -252,43 +433,36 @@ class UsageTracker:
                     elapsed_ms = max(1, int(float(row["elapsed_s"] or 0.0) * 1000))
                     ts_val = float(row["finished_at"] or row["created_at"] or time.time())
                     bytes_proc = len(prompt_str.encode("utf-8")) + len(ans_str.encode("utf-8"))
-                    conn.execute(
-                        """
-                        INSERT INTO usage_events (
-                            id, ts, event_type, client_id, thread_id, run_id, model, profile,
-                            mode, speed_mode, domain, status, elapsed_ms, ttft_ms, iterations,
-                            tool_count, tools_json, input_tokens, output_tokens, cached_tokens,
-                            total_tokens, tokens_exact, bytes_processed, model_cost_usd,
-                            cloud_cost_usd, total_cost_usd, title
-                        ) VALUES (?, ?, 'study_run', ?, ?, ?, ?, ?, 'direct', 'standard', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            f"uev_{uuid.uuid4().hex[:14]}",
-                            ts_val,
-                            row["client_id"] or "local_default",
-                            row["thread_id"] or "",
-                            row["id"],
-                            row["model"] or "gpt-6-luna",
-                            row["profile"] or "ad1",
-                            domain,
-                            row["status"] or "completed",
-                            elapsed_ms,
-                            min(elapsed_ms, max(120, int(elapsed_ms * 0.18))),
-                            int(row["iterations"] or 1),
-                            len(tools_compact),
-                            json.dumps(tools_compact, ensure_ascii=False),
-                            tc["input_tokens"],
-                            tc["output_tokens"],
-                            tc["cached_tokens"],
-                            tc["total_tokens"],
-                            tc["tokens_exact"],
-                            bytes_proc,
-                            tc["model_cost_usd"],
-                            tc["cloud_cost_usd"],
-                            tc["total_cost_usd"],
-                            _clean_title(prompt_str),
-                        ),
-                    )
+                    backfill_row = {
+                        "id": f"uev_{_safe_filename_token(row['id'])[:18]}",
+                        "ts": ts_val,
+                        "event_type": "study_run",
+                        "client_id": row["client_id"] or "local_default",
+                        "thread_id": row["thread_id"] or "",
+                        "run_id": row["id"],
+                        "model": row["model"] or "gpt-6-luna",
+                        "profile": row["profile"] or "ad1",
+                        "mode": "direct",
+                        "speed_mode": "standard",
+                        "domain": domain,
+                        "status": row["status"] or "completed",
+                        "elapsed_ms": elapsed_ms,
+                        "ttft_ms": min(elapsed_ms, max(120, int(elapsed_ms * 0.18))),
+                        "iterations": int(row["iterations"] or 1),
+                        "tool_count": len(tools_compact),
+                        "tools_json": json.dumps(tools_compact, ensure_ascii=False),
+                        "input_tokens": tc["input_tokens"],
+                        "output_tokens": tc["output_tokens"],
+                        "cached_tokens": tc["cached_tokens"],
+                        "total_tokens": tc["total_tokens"],
+                        "tokens_exact": tc["tokens_exact"],
+                        "bytes_processed": bytes_proc,
+                        "model_cost_usd": tc["model_cost_usd"],
+                        "cloud_cost_usd": tc["cloud_cost_usd"],
+                        "total_cost_usd": tc["total_cost_usd"],
+                        "title": _clean_title(prompt_str),
+                    }
+                    self._insert_row_unlocked(conn, backfill_row, persist=True)
 
     def record_study_run(
         self,
@@ -340,47 +514,38 @@ class UsageTracker:
             + max(0, int(report_bytes or 0))
         )
         now = time.time()
+        row = {
+            "id": f"uev_{_safe_filename_token(run_id)[:18]}",
+            "ts": now,
+            "event_type": "study_run",
+            "client_id": client_id or "local_default",
+            "thread_id": thread_id or "",
+            "run_id": run_id,
+            "model": model or "gpt-6-luna",
+            "profile": profile or "ad1",
+            "mode": mode or "direct",
+            "speed_mode": speed_mode or "fast",
+            "domain": domain,
+            "status": status,
+            "elapsed_ms": elapsed_ms,
+            "ttft_ms": resolved_ttft,
+            "iterations": max(1, int(iterations or 1)),
+            "tool_count": len(tools_compact),
+            "tools_json": json.dumps(tools_compact, ensure_ascii=False),
+            "input_tokens": tc["input_tokens"],
+            "output_tokens": tc["output_tokens"],
+            "cached_tokens": tc["cached_tokens"],
+            "total_tokens": tc["total_tokens"],
+            "tokens_exact": tc["tokens_exact"],
+            "bytes_processed": bytes_proc,
+            "model_cost_usd": tc["model_cost_usd"],
+            "cloud_cost_usd": tc["cloud_cost_usd"],
+            "total_cost_usd": tc["total_cost_usd"],
+            "title": _clean_title(prompt),
+        }
         with self._lock, self._connect() as conn:
-            conn.execute("DELETE FROM usage_events WHERE run_id = ? AND event_type = 'study_run'", (run_id,))
-            conn.execute(
-                """
-                INSERT INTO usage_events (
-                    id, ts, event_type, client_id, thread_id, run_id, model, profile,
-                    mode, speed_mode, domain, status, elapsed_ms, ttft_ms, iterations,
-                    tool_count, tools_json, input_tokens, output_tokens, cached_tokens,
-                    total_tokens, tokens_exact, bytes_processed, model_cost_usd,
-                    cloud_cost_usd, total_cost_usd, title
-                ) VALUES (?, ?, 'study_run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    f"uev_{uuid.uuid4().hex[:14]}",
-                    now,
-                    client_id or "local_default",
-                    thread_id or "",
-                    run_id,
-                    model or "gpt-6-luna",
-                    profile or "ad1",
-                    mode or "direct",
-                    speed_mode or "fast",
-                    domain,
-                    status,
-                    elapsed_ms,
-                    resolved_ttft,
-                    max(1, int(iterations or 1)),
-                    len(tools_compact),
-                    json.dumps(tools_compact, ensure_ascii=False),
-                    tc["input_tokens"],
-                    tc["output_tokens"],
-                    tc["cached_tokens"],
-                    tc["total_tokens"],
-                    tc["tokens_exact"],
-                    bytes_proc,
-                    tc["model_cost_usd"],
-                    tc["cloud_cost_usd"],
-                    tc["total_cost_usd"],
-                    _clean_title(prompt),
-                ),
-            )
+            self._insert_row_unlocked(conn, row, persist=True)
+
 
     def record_niagads_api_call(
         self,
@@ -396,32 +561,38 @@ class UsageTracker:
         now = time.time()
         label = f"NIAGADS v2.0 [{action}] · {target or endpoint}"
         tool_entry = [{"name": "niagads_open_access_api", "elapsed_ms": max(1, int(elapsed_ms or 1)), "success": bool(ok)}]
+        row = {
+            "id": f"uev_{uuid.uuid4().hex[:14]}",
+            "ts": now,
+            "event_type": "niagads_api",
+            "client_id": client_id or "local_default",
+            "thread_id": "",
+            "run_id": "",
+            "model": "api.niagads.org/v2",
+            "profile": "ad1",
+            "mode": "direct",
+            "speed_mode": "fast",
+            "domain": "niagads_open_access",
+            "status": "completed" if ok else "failed",
+            "elapsed_ms": max(1, int(elapsed_ms or 1)),
+            "ttft_ms": max(1, int(elapsed_ms or 1)),
+            "iterations": 1,
+            "tool_count": 1,
+            "tools_json": json.dumps(tool_entry, ensure_ascii=False),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "total_tokens": 0,
+            "tokens_exact": 1,
+            "bytes_processed": max(0, int(payload_bytes or 0)),
+            "model_cost_usd": 0.0,
+            "cloud_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "total_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "title": _clean_title(label),
+        }
         with self._lock, self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO usage_events (
-                    id, ts, event_type, client_id, thread_id, run_id, model, profile,
-                    mode, speed_mode, domain, status, elapsed_ms, ttft_ms, iterations,
-                    tool_count, tools_json, input_tokens, output_tokens, cached_tokens,
-                    total_tokens, tokens_exact, bytes_processed, model_cost_usd,
-                    cloud_cost_usd, total_cost_usd, title
-                ) VALUES (?, ?, 'niagads_api', ?, '', '', 'api.niagads.org/v2', 'ad1', 'direct', 'fast',
-                          'niagads_open_access', ?, ?, ?, 1, 1, ?, 0, 0, 0, 0, 1, ?, 0.0, ?, ?, ?)
-                """,
-                (
-                    f"uev_{uuid.uuid4().hex[:14]}",
-                    now,
-                    client_id or "local_default",
-                    "completed" if ok else "failed",
-                    max(1, int(elapsed_ms or 1)),
-                    max(1, int(elapsed_ms or 1)),
-                    json.dumps(tool_entry, ensure_ascii=False),
-                    max(0, int(payload_bytes or 0)),
-                    round(CLOUD_COST_PER_API_QUERY_USD, 6),
-                    round(CLOUD_COST_PER_API_QUERY_USD, 6),
-                    _clean_title(label),
-                ),
-            )
+            self._insert_row_unlocked(conn, row, persist=True)
+
 
     def record_plan_triage(
         self,
@@ -447,40 +618,38 @@ class UsageTracker:
         )
         domain = classify_biomedical_domain(prompt, [], "plan_triage")
         prefix = "Scientific Plan" if needs_plan else "Instant Triage"
+        row = {
+            "id": f"uev_{uuid.uuid4().hex[:14]}",
+            "ts": now,
+            "event_type": "plan_triage",
+            "client_id": client_id or "local_default",
+            "thread_id": thread_id or "",
+            "run_id": "",
+            "model": model or "gpt-6-luna",
+            "profile": profile or "ad1",
+            "mode": "plan",
+            "speed_mode": "fast",
+            "domain": domain,
+            "status": "completed",
+            "elapsed_ms": max(1, int(elapsed_ms or 1)),
+            "ttft_ms": max(1, int(elapsed_ms or 1)),
+            "iterations": 1,
+            "tool_count": 0,
+            "tools_json": "[]",
+            "input_tokens": tc["input_tokens"],
+            "output_tokens": tc["output_tokens"],
+            "cached_tokens": tc["cached_tokens"],
+            "total_tokens": tc["total_tokens"],
+            "tokens_exact": tc["tokens_exact"],
+            "bytes_processed": len((prompt or "").encode("utf-8")),
+            "model_cost_usd": tc["model_cost_usd"],
+            "cloud_cost_usd": tc["cloud_cost_usd"],
+            "total_cost_usd": tc["total_cost_usd"],
+            "title": _clean_title(f"{prefix}: {prompt}"),
+        }
         with self._lock, self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO usage_events (
-                    id, ts, event_type, client_id, thread_id, run_id, model, profile,
-                    mode, speed_mode, domain, status, elapsed_ms, ttft_ms, iterations,
-                    tool_count, tools_json, input_tokens, output_tokens, cached_tokens,
-                    total_tokens, tokens_exact, bytes_processed, model_cost_usd,
-                    cloud_cost_usd, total_cost_usd, title
-                ) VALUES (?, ?, 'plan_triage', ?, ?, '', ?, ?, 'plan', 'fast', ?, 'completed',
-                          ?, ?, 1, 0, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    f"uev_{uuid.uuid4().hex[:14]}",
-                    now,
-                    client_id or "local_default",
-                    thread_id or "",
-                    model or "gpt-6-luna",
-                    profile or "ad1",
-                    domain,
-                    max(1, int(elapsed_ms or 1)),
-                    max(1, int(elapsed_ms or 1)),
-                    tc["input_tokens"],
-                    tc["output_tokens"],
-                    tc["cached_tokens"],
-                    tc["total_tokens"],
-                    tc["tokens_exact"],
-                    len((prompt or "").encode("utf-8")),
-                    tc["model_cost_usd"],
-                    tc["cloud_cost_usd"],
-                    tc["total_cost_usd"],
-                    _clean_title(f"{prefix}: {prompt}"),
-                ),
-            )
+            self._insert_row_unlocked(conn, row, persist=True)
+
 
     def record_file_upload(
         self,
@@ -490,31 +659,86 @@ class UsageTracker:
         size_bytes: int,
     ) -> None:
         now = time.time()
+        row = {
+            "id": f"uev_{uuid.uuid4().hex[:14]}",
+            "ts": now,
+            "event_type": "file_upload",
+            "client_id": client_id or "local_default",
+            "thread_id": "",
+            "run_id": "",
+            "model": "workspace-io",
+            "profile": "ad1",
+            "mode": "direct",
+            "speed_mode": "fast",
+            "domain": "bioinformatics",
+            "status": "completed",
+            "elapsed_ms": 5,
+            "ttft_ms": 5,
+            "iterations": 1,
+            "tool_count": 0,
+            "tools_json": "[]",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "total_tokens": 0,
+            "tokens_exact": 1,
+            "bytes_processed": max(0, int(size_bytes or 0)),
+            "model_cost_usd": 0.0,
+            "cloud_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "total_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "title": _clean_title(f"Dataset Upload · {filename}"),
+        }
         with self._lock, self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO usage_events (
-                    id, ts, event_type, client_id, thread_id, run_id, model, profile,
-                    mode, speed_mode, domain, status, elapsed_ms, ttft_ms, iterations,
-                    tool_count, tools_json, input_tokens, output_tokens, cached_tokens,
-                    total_tokens, tokens_exact, bytes_processed, model_cost_usd,
-                    cloud_cost_usd, total_cost_usd, title
-                ) VALUES (?, ?, 'file_upload', ?, '', '', 'workspace-io', 'ad1', 'direct', 'fast',
-                          'bioinformatics', 'completed', 5, 5, 1, 0, '[]', 0, 0, 0, 0, 1, ?, 0.0, ?, ?, ?)
-                """,
-                (
-                    f"uev_{uuid.uuid4().hex[:14]}",
-                    now,
-                    client_id or "local_default",
-                    max(0, int(size_bytes or 0)),
-                    round(CLOUD_COST_PER_API_QUERY_USD, 6),
-                    round(CLOUD_COST_PER_API_QUERY_USD, 6),
-                    _clean_title(f"Dataset Upload · {filename}"),
-                ),
-            )
+            self._insert_row_unlocked(conn, row, persist=True)
+    def record_feedback_submission(
+        self,
+        *,
+        client_id: str,
+        category: str,
+        target_area: str,
+        comment: str,
+        attachment_count: int = 0,
+        attachment_bytes: int = 0,
+    ) -> None:
+        now = time.time()
+        domain = classify_biomedical_domain(comment, [], "feedback")
+        att_note = f" (+{attachment_count} file{'s' if attachment_count != 1 else ''})" if attachment_count else ""
+        row = {
+            "id": f"uev_{uuid.uuid4().hex[:14]}",
+            "ts": now,
+            "event_type": "feedback",
+            "client_id": client_id or "local_default",
+            "thread_id": "",
+            "run_id": "",
+            "model": "feedback-ledger",
+            "profile": "ad1",
+            "mode": "direct",
+            "speed_mode": "fast",
+            "domain": domain,
+            "status": "completed",
+            "elapsed_ms": 12,
+            "ttft_ms": 12,
+            "iterations": 1,
+            "tool_count": 0,
+            "tools_json": "[]",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "total_tokens": 0,
+            "tokens_exact": 1,
+            "bytes_processed": len((comment or "").encode("utf-8")) + max(0, int(attachment_bytes or 0)),
+            "model_cost_usd": 0.0,
+            "cloud_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "total_cost_usd": round(CLOUD_COST_PER_API_QUERY_USD, 6),
+            "title": _clean_title(f"Feedback [{category}/{target_area}]{att_note}: {comment}"),
+        }
+        with self._lock, self._connect() as conn:
+            self._insert_row_unlocked(conn, row, persist=True)
+
 
     def _fetch_all_events_and_threads(self) -> Tuple[List[Dict[str, Any]], int]:
         with self._lock, self._connect() as conn:
+            self._sync_from_persistent_dir_unlocked(conn, force=False)
             rows = conn.execute("SELECT * FROM usage_events ORDER BY ts DESC").fetchall()
             threads_count = 0
             has_threads = conn.execute(
@@ -1086,6 +1310,21 @@ class UsageTracker:
             for w in sorted(ws_map.values(), key=lambda x: (-x["studies"], -x["api_queries"], -x["last_ts"]))
         ]
 
+        gcs_bucket = (os.getenv("LIGASE_GCS_BUCKET") or "").strip()
+        is_cloud_mount = bool(gcs_bucket) or str(self.persistent_dir).startswith("/mnt/")
+        storage_info = {
+            "persistent": True,
+            "backend": "gcs_fuse" if is_cloud_mount else "local_disk",
+            "label": (
+                f"GCS Persistent Volume ({gcs_bucket})"
+                if gcs_bucket
+                else (f"Persistent Mount ({self.persistent_dir})" if is_cloud_mount else "Persistent Disk Ledger")
+            ),
+            "bucket": gcs_bucket,
+            "path": str(self.persistent_dir),
+            "persisted_files": len(self._synced_files),
+        }
+
         return {
             "window": {
                 "range": days_norm,
@@ -1094,6 +1333,7 @@ class UsageTracker:
                 "version": VERSION,
                 "model": active_model,
             },
+            "storage": storage_info,
             "pulse": pulse,
             "brief": brief,
             "tiles": tiles,
@@ -1162,6 +1402,7 @@ class UsageTracker:
             f"- **Window:** {win['label']} (`days={win['range']}`)",
             f"- **Generated:** {win['generated_at_iso']}",
             f"- **Engine:** Ligase `v{win['version']}` (`{win['model']}`)",
+            f"- **Persistent Storage:** {snap['storage']['label']} (`{snap['storage']['persisted_files']:,}` durable event records)",
             "",
             "## Executive Summary",
             "",

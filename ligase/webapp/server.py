@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from email.parser import BytesParser
+from email.policy import HTTP as EMAIL_HTTP_POLICY
 import hashlib
 import html
 import inspect
@@ -12,6 +14,8 @@ import json
 import logging
 import os
 import re
+import secrets
+import shutil
 import threading
 import time
 import uuid
@@ -32,6 +36,7 @@ from ligase.examples_catalog import EXAMPLES
 from ligase.gemma_harness import merge_tool_cards
 from ligase.gemma_tools import clear_tool_cards
 from ligase.niagads_api import OPEN_ACCESS_ROLLOUT_CATALOG, execute_niagads_action
+from ligase.webapp.feedback import FeedbackManager
 from ligase.webapp.mindmap import build_capabilities_mindmap
 from ligase.webapp.planner import generate_plan_or_triage
 from ligase.webapp.store import ThreadStore
@@ -73,11 +78,15 @@ IS_CLOUD = os.getenv("LIGASE_CLOUD", "").strip().lower() in ("1", "true", "yes",
 if not IS_CLOUD:
     load_dotenv(REPO_DIR / ".env", override=True)
 
-# Capture API credentials once at import and scrub OPENAI_API_KEY from os.environ in cloud mode
+# Capture API credentials once at import and scrub secrets from os.environ in cloud mode
 # so no child process or user code can read secrets from the environment.
 _CAPTURED_OPENAI_KEY: Optional[str] = (os.getenv("OPENAI_API_KEY") or "").strip() or None
+_CAPTURED_SMTP_PASSWORD: Optional[str] = (os.getenv("SMTP_PASSWORD") or "").strip() or None
+_CAPTURED_CRON_TOKEN: Optional[str] = (os.getenv("LIGASE_CRON_TOKEN") or "").strip() or None
 if IS_CLOUD and os.getenv("LIGASE_SCRUB_ENV", "1").strip() != "0":
     os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("SMTP_PASSWORD", None)
+    os.environ.pop("LIGASE_CRON_TOKEN", None)
 
 DEFAULT_WEB_MODEL = (
     os.getenv("LIGASE_WEB_MODEL")
@@ -169,6 +178,70 @@ def _sanitize_client_id(raw: Optional[str]) -> str:
 def _client_id_from_request(request: Request) -> str:
     hdr = request.headers.get("x-ligase-client-id") or request.query_params.get("client_id")
     return _sanitize_client_id(hdr)
+
+
+def _client_ip_from_request(request: Request) -> str:
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if fwd:
+        return fwd[:64]
+    if request.client and request.client.host:
+        return str(request.client.host)[:64]
+    return "unknown"
+
+
+def _has_valid_cron_token(request: Request) -> bool:
+    expected = _CAPTURED_CRON_TOKEN or (os.getenv("LIGASE_CRON_TOKEN") or "").strip()
+    if not expected:
+        return False
+    supplied = (request.headers.get("x-cron-token") or "").strip()
+    if not supplied:
+        scheme, _, bearer = (request.headers.get("authorization") or "").partition(" ")
+        if scheme.lower() == "bearer":
+            supplied = bearer.strip()
+    if not supplied:
+        return False
+    try:
+        return secrets.compare_digest(expected, supplied)
+    except (TypeError, ValueError):
+        return False
+
+
+def _cron_authorized(request: Request) -> bool:
+    expected = _CAPTURED_CRON_TOKEN or (os.getenv("LIGASE_CRON_TOKEN") or "").strip()
+    if not expected:
+        return not IS_CLOUD
+    return _has_valid_cron_token(request)
+
+
+def _parse_multipart_form(content_type: str, raw_body: bytes) -> Tuple[Dict[str, List[str]], List[Dict[str, Any]]]:
+    """Zero-dependency RFC 7578 multipart/form-data parser via Python stdlib email.parser."""
+    fields: Dict[str, List[str]] = {}
+    files: List[Dict[str, Any]] = []
+    if not raw_body or "multipart/form-data" not in (content_type or "").lower():
+        return fields, files
+    header_bytes = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+    msg = BytesParser(policy=EMAIL_HTTP_POLICY).parsebytes(header_bytes + raw_body)
+    if not msg.is_multipart():
+        return fields, files
+    for part in msg.iter_parts():
+        if part.get_content_disposition() != "form-data":
+            continue
+        name = part.get_param("name", header="content-disposition") or ""
+        filename = part.get_filename()
+        payload = part.get_payload(decode=True) or b""
+        if filename is not None:
+            files.append(
+                {
+                    "field": str(name),
+                    "filename": str(filename),
+                    "content": payload,
+                    "content_type": part.get_content_type() or "application/octet-stream",
+                }
+            )
+        else:
+            charset = part.get_content_charset() or "utf-8"
+            fields.setdefault(str(name), []).append(payload.decode(charset, errors="replace"))
+    return fields, files
 
 
 def _load_niagads_summary() -> Dict[str, Any]:
@@ -603,15 +676,40 @@ def _warmup_agent_runtime() -> None:
         logger.debug("Background warmup skipped/partial: %s", exc)
 
 
-def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = None) -> FastAPI:
+def create_webapp(
+    state_dir: Optional[Path] = None,
+    runs_root: Optional[Path] = None,
+    persistent_dir: Optional[Path] = None,
+) -> FastAPI:
     resolved_state = Path(state_dir or STATE_DIR).resolve()
     resolved_runs = Path(runs_root or RUNS_ROOT).resolve()
     resolved_state.mkdir(parents=True, exist_ok=True)
     resolved_runs.mkdir(parents=True, exist_ok=True)
 
+    env_persist = (os.getenv("LIGASE_PERSISTENT_DIR") or "").strip()
+    resolved_persist_root: Optional[Path] = None
+    if persistent_dir is not None:
+        resolved_persist_root = Path(persistent_dir).resolve()
+    elif state_dir is None and env_persist:
+        resolved_persist_root = Path(env_persist).resolve()
+
+    persistent_runs_root: Optional[Path] = None
+    if resolved_persist_root is not None:
+        resolved_persist_root.mkdir(parents=True, exist_ok=True)
+        persistent_runs_root = resolved_persist_root / "runs"
+        persistent_runs_root.mkdir(parents=True, exist_ok=True)
+
     db_path = resolved_state / "ligase_webapp.sqlite3"
-    store = ThreadStore(db_path)
-    usage_tracker = UsageTracker(db_path)
+    store = ThreadStore(db_path, persistent_root=resolved_persist_root)
+    usage_tracker = UsageTracker(
+        db_path,
+        persistent_dir=(resolved_persist_root / "usage_events") if resolved_persist_root is not None else None,
+    )
+    feedback_manager = FeedbackManager(
+        resolved_persist_root if resolved_persist_root is not None else resolved_state,
+        openai_api_key=_CAPTURED_OPENAI_KEY,
+        smtp_password=_CAPTURED_SMTP_PASSWORD,
+    )
     niagads_summary = _load_niagads_summary()
     starters_list = _build_starters()
     starters_ssr_html = _render_starters_ssr(starters_list)
@@ -688,6 +786,7 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
     webapp.add_middleware(_SSESafeGZipMiddleware, minimum_size=500)
     webapp.state.store = store
     webapp.state.usage_tracker = usage_tracker
+    webapp.state.feedback_manager = feedback_manager
     webapp.state.runs_root = resolved_runs
     webapp.state.active_cancels = active_cancels
 
@@ -722,12 +821,18 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             "version": VERSION,
             "model": model,
             "cloud_mode": IS_CLOUD,
+            "persistent_storage": True,
+            "storage_path": str(usage_tracker.persistent_dir),
+            "storage_bucket": (os.getenv("LIGASE_GCS_BUCKET") or "").strip(),
+            "smtp_configured": feedback_manager.get_smtp_config()["configured"],
         }
         return JSONResponse(status_code=200 if ready else 503, content=payload)
 
     @webapp.get("/", response_class=HTMLResponse)
     @webapp.get("/usage", response_class=HTMLResponse)
     @webapp.get("/admin", response_class=HTMLResponse)
+    @webapp.get("/feedback", response_class=HTMLResponse)
+    @webapp.get("/comments", response_class=HTMLResponse)
     async def index() -> Response:
         if not index_template:
             return HTMLResponse("<h1>Ligase WebApp</h1><p>Static bundle missing.</p>", status_code=500)
@@ -1322,6 +1427,21 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
                         json.dumps(run_record, indent=2, ensure_ascii=False),
                         encoding="utf-8",
                     )
+                    if persistent_runs_root is not None:
+                        try:
+                            p_run_dir = persistent_runs_root / run_id
+                            p_run_dir.mkdir(parents=True, exist_ok=True)
+                            (p_run_dir / "report.md").write_text(report_md, encoding="utf-8")
+                            (p_run_dir / "run.json").write_text(
+                                json.dumps({**run_record, "client_id": cid}, indent=2, ensure_ascii=False),
+                                encoding="utf-8",
+                            )
+                            for f_meta in figures:
+                                src_fig = run_dir / f_meta["name"]
+                                if src_fig.is_file():
+                                    shutil.copy2(src_fig, p_run_dir / f_meta["name"])
+                        except Exception:
+                            pass
 
                     report_url = f"/api/runs/{run_id}/report.md?client_id={cid}"
                     bundle_url = f"/api/runs/{run_id}/bundle.zip?client_id={cid}"
@@ -1513,13 +1633,33 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
             },
         )
 
+    def _resolve_existing_run_dir(run_rec: Dict[str, Any], run_id: str) -> Path:
+        primary = Path(run_rec["run_dir"]).resolve() if run_rec.get("run_dir") else (resolved_runs / run_id)
+        if primary.is_dir():
+            return primary
+        if persistent_runs_root is not None:
+            fallback = (persistent_runs_root / Path(run_id).name).resolve()
+            if fallback.is_dir():
+                return fallback
+        return primary
+
     @webapp.get("/api/runs/{run_id}/report.md")
     async def download_report_route(request: Request, run_id: str) -> Response:
         cid = _client_id_from_request(request)
         run_rec = store.get_run(cid, run_id)
+        if not run_rec and persistent_runs_root is not None:
+            fb_dir = (persistent_runs_root / Path(run_id).name).resolve()
+            owner_file = fb_dir / "owner.txt"
+            fb_rep = fb_dir / "report.md"
+            if fb_rep.is_file() and owner_file.is_file() and owner_file.read_text(encoding="utf-8").strip() == cid:
+                return PlainTextResponse(
+                    fb_rep.read_text(encoding="utf-8"),
+                    media_type="text/markdown; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{Path(run_id).name}_report.md"'},
+                )
         if not run_rec:
             raise HTTPException(status_code=404, detail="Run not found")
-        run_dir = Path(run_rec["run_dir"]).resolve()
+        run_dir = _resolve_existing_run_dir(run_rec, run_id)
         report_file = run_dir / "report.md"
         if report_file.is_file():
             content = report_file.read_text(encoding="utf-8")
@@ -1546,11 +1686,11 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         run_rec = store.get_run(cid, run_id)
         if not run_rec:
             raise HTTPException(status_code=404, detail="Run not found")
-        run_dir = Path(run_rec["run_dir"]).resolve()
+        run_dir = _resolve_existing_run_dir(run_rec, run_id)
         if not run_dir.is_dir():
             raise HTTPException(status_code=404, detail="Run workspace no longer present")
 
-        packages_dir = run_dir.parent / ".packages"
+        packages_dir = resolved_runs / ".packages"
         packages_dir.mkdir(parents=True, exist_ok=True)
         zip_path = packages_dir / f"{run_id}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1570,11 +1710,209 @@ def create_webapp(state_dir: Optional[Path] = None, runs_root: Optional[Path] = 
         if not run_rec:
             raise HTTPException(status_code=404, detail="Run not found")
         safe_name = Path(filename).name
-        run_dir = Path(run_rec["run_dir"]).resolve()
+        run_dir = _resolve_existing_run_dir(run_rec, run_id)
         target = (run_dir / safe_name).resolve()
         if not str(target).startswith(str(run_dir)) or not target.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         return FileResponse(str(target))
+
+    # ── Comments, Screenshots & Uploaded Figures Feedback + Email Delivery ───
+    @webapp.post("/api/feedback")
+    async def submit_feedback_route(request: Request, wait_email: int = 0) -> JSONResponse:
+        cid = _client_id_from_request(request)
+        content_type = request.headers.get("content-type") or ""
+        raw_body = await request.body()
+
+        comment = ""
+        name = ""
+        email = ""
+        category = "feature_request"
+        target_area = "portal"
+        page_url = ""
+        captions: List[str] = []
+        attachments_data: List[Dict[str, Any]] = []
+
+        if "multipart/form-data" in content_type.lower():
+            fields, parsed_files = _parse_multipart_form(content_type, raw_body)
+            comment = (fields.get("comment") or [""])[0].strip()
+            name = (fields.get("name") or [""])[0].strip()
+            email = (fields.get("email") or [""])[0].strip()
+            category = (fields.get("category") or ["feature_request"])[0].strip()
+            target_area = (fields.get("target_area") or ["portal"])[0].strip()
+            page_url = (fields.get("page_url") or [""])[0].strip()
+            cap_raw = (fields.get("captions_json") or ["[]"])[0]
+            try:
+                parsed_caps = json.loads(cap_raw)
+                if isinstance(parsed_caps, list):
+                    captions = [str(c or "") for c in parsed_caps]
+            except Exception:
+                captions = []
+            for idx, pf in enumerate(parsed_files):
+                if pf.get("content"):
+                    attachments_data.append(
+                        {
+                            "filename": pf["filename"],
+                            "content": pf["content"],
+                            "content_type": pf["content_type"],
+                            "caption": captions[idx] if idx < len(captions) else "",
+                        }
+                    )
+        else:
+            import base64
+
+            try:
+                body_json = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail="Invalid feedback payload") from exc
+            comment = str(body_json.get("comment") or "").strip()
+            name = str(body_json.get("name") or "").strip()
+            email = str(body_json.get("email") or "").strip()
+            category = str(body_json.get("category") or "feature_request").strip()
+            target_area = str(body_json.get("target_area") or "portal").strip()
+            page_url = str(body_json.get("page_url") or "").strip()
+            for att in body_json.get("attachments") or []:
+                if isinstance(att, dict) and att.get("data_base64"):
+                    try:
+                        decoded = base64.b64decode(str(att["data_base64"]))
+                    except Exception:
+                        continue
+                    attachments_data.append(
+                        {
+                            "filename": str(att.get("filename") or "screenshot.png"),
+                            "content": decoded,
+                            "content_type": str(att.get("content_type") or "image/png"),
+                            "caption": str(att.get("caption") or ""),
+                        }
+                    )
+
+        if not comment:
+            raise HTTPException(status_code=400, detail="Please enter a comment or improvement instruction.")
+
+        try:
+            record = await asyncio.to_thread(
+                feedback_manager.save_feedback,
+                comment=comment,
+                name=name,
+                email=email,
+                category=category,
+                target_area=target_area,
+                client_id=cid,
+                page_url=page_url,
+                attachments=attachments_data,
+                client_ip=_client_ip_from_request(request),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        try:
+            usage_tracker.record_feedback_submission(
+                client_id=cid,
+                category=record["category"],
+                target_area=record["target_area"],
+                comment=comment,
+                attachment_count=len(record["attachments"]),
+                attachment_bytes=int(record["total_attachment_bytes"]),
+            )
+        except Exception:
+            pass
+
+        smtp_cfg = feedback_manager.get_smtp_config()
+        email_result: Dict[str, Any] = {
+            "queued": bool(smtp_cfg["configured"]),
+            "sent": False,
+            "recipient": smtp_cfg["to_email"],
+        }
+        if wait_email:
+            email_result = await asyncio.to_thread(
+                feedback_manager.deliver_single_feedback_email,
+                record["id"],
+            )
+        elif smtp_cfg["configured"]:
+            asyncio.create_task(
+                asyncio.to_thread(feedback_manager.deliver_single_feedback_email, record["id"])
+            )
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "success": True,
+                "feedback_id": record["id"],
+                "attachment_count": len(record["attachments"]),
+                "persistent": resolved_persist_root is not None,
+                "email_delivery": email_result,
+                "message": "Your comment and visual attachments have been saved to persistent storage and queued for email delivery.",
+            }
+        )
+
+    @webapp.get("/api/feedback/recent")
+    async def get_recent_workspace_feedback(request: Request, limit: int = 20) -> JSONResponse:
+        cid = _client_id_from_request(request)
+        items = await asyncio.to_thread(
+            feedback_manager.list_workspace_submissions,
+            cid,
+            min(max(int(limit), 1), 50),
+        )
+        smtp_cfg = feedback_manager.get_smtp_config()
+        return JSONResponse(
+            {
+                "items": items,
+                "smtp_configured": smtp_cfg["configured"],
+                "persistent": resolved_persist_root is not None,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @webapp.get("/api/feedback/resolved")
+    async def get_resolved_feedback_route(limit: int = 100) -> JSONResponse:
+        items = await asyncio.to_thread(
+            feedback_manager.list_resolved_feedback,
+            min(max(int(limit), 1), 200),
+        )
+        return JSONResponse({"items": items}, headers={"Cache-Control": "no-store"})
+
+    @webapp.get("/api/feedback/{feedback_id}/attachments/{filename}")
+    async def serve_feedback_attachment(
+        request: Request,
+        feedback_id: str,
+        filename: str,
+    ) -> FileResponse:
+        cid = _client_id_from_request(request)
+        rec = await asyncio.to_thread(feedback_manager.get_feedback, feedback_id)
+        if not rec:
+            raise HTTPException(status_code=404, detail="Feedback record not found")
+        if rec.get("client_id") != cid and not _has_valid_cron_token(request):
+            raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
+        path = await asyncio.to_thread(feedback_manager.get_attachment_path, feedback_id, filename)
+        if not path or not path.is_file():
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        return FileResponse(str(path), filename=Path(filename).name)
+
+    @webapp.post("/api/feedback/digest/send")
+    @webapp.post("/api/cron/digest")
+    async def send_feedback_digest_route(request: Request, force: bool = False) -> JSONResponse:
+        if not _cron_authorized(request):
+            raise HTTPException(status_code=403, detail="Valid X-Cron-Token required.")
+        try:
+            result = await asyncio.to_thread(feedback_manager.generate_and_send_digest, force=force)
+            return JSONResponse(result)
+        except Exception as exc:
+            logger.exception("Feedback digest delivery failed")
+            raise HTTPException(status_code=500, detail=f"Failed to send digest: {exc}") from exc
+
+    @webapp.get("/api/feedback/digest/preview", response_class=HTMLResponse)
+    async def preview_feedback_digest_route(request: Request, force: bool = True) -> HTMLResponse:
+        if not _cron_authorized(request):
+            raise HTTPException(status_code=403, detail="Valid X-Cron-Token required.")
+        items = await asyncio.to_thread(feedback_manager.list_feedback, undigested_only=not force, limit=50)
+        summary = await asyncio.to_thread(feedback_manager.synthesize_improvement_brief, items)
+        date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
+        html_out = feedback_manager.render_feedback_email_html(
+            summary,
+            items,
+            heading="Ligase Feedback & Future Improvements Digest",
+            subtitle=f"Preview · {date_str} · {len(items)} submission(s)",
+        )
+        return HTMLResponse(html_out)
 
     return webapp
 
