@@ -422,6 +422,108 @@ def _format_markdown_report(
     return "\n".join(lines)
 
 
+def _format_jupyter_notebook(
+    *,
+    run_id: str,
+    model: str,
+    profile: str,
+    prompt: str,
+    answer: str,
+    elapsed_s: float,
+    iterations: int,
+    tool_trace: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Generate a valid nbformat v4.5 Jupyter Notebook reproducing NIAGADS Open Access v2.0 queries & synthesis."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    gene_hits = re.findall(r"\b(APOE|BIN1|TREM2|ABCA7|PLCG2|MAPT|SORL1|CLU|PICALM|CR1|SPI1|ABI3)\b", prompt.upper())
+    rs_hits = re.findall(r"\brs\d{3,12}\b", prompt, re.I)
+    lead_gene = gene_hits[0] if gene_hits else "BIN1"
+    lead_rs = rs_hits[0].lower() if rs_hits else "rs6733839"
+
+    def _lines(text: str) -> List[str]:
+        parts = text.splitlines(keepends=True)
+        return parts if parts else [""]
+
+    header_md = (
+        f"# Ligase × NIAGADS Reproducible Study Notebook\n\n"
+        f"- **Run ID:** `{run_id}` · **Timestamp:** {ts}\n"
+        f"- **Engine:** Ligase `v{VERSION}` (`{model}`, profile `{profile.upper()}`)\n"
+        f"- **Execution:** `{elapsed_s:.2f}s` · `{iterations}` iteration(s) · `{len(tool_trace)}` grounded tool call(s)\n"
+        f"- **NIAGADS Attribution:** Data disseminated by **NIAGADS** (https://www.niagads.org / https://api.niagads.org/open-access) "
+        f"under NIH/NIA Cooperative Agreement **U24AG041689**.\n\n"
+        f"## Research Question\n\n{prompt.strip()}\n"
+    )
+
+    repro_code = (
+        "# Standalone Python 3 reproduction against the live NIAGADS Open Access API v2.0\n"
+        "import json\n"
+        "import urllib.request\n\n"
+        'NIAGADS_API = "https://api.niagads.org/api"\n'
+        f'TARGET_GENE = "{lead_gene}"\n'
+        f'TARGET_VARIANT = "{lead_rs}"\n\n'
+        "def fetch_niagads(path: str) -> dict:\n"
+        '    req = urllib.request.Request(f"{NIAGADS_API}{path}", headers={"Accept": "application/json", "User-Agent": "Ligase-Notebook/0.6.0"})\n'
+        "    with urllib.request.urlopen(req, timeout=15) as resp:\n"
+        '        return json.loads(resp.read().decode("utf-8"))\n\n'
+        'gene_record = fetch_niagads(f"/record/gene/{TARGET_GENE}?content=full")\n'
+        'variant_record = fetch_niagads(f"/record/variant/{TARGET_VARIANT}?content=full")\n'
+        'print("Gene record keys:", list(gene_record.keys()))\n'
+        'print("Variant record count:", len(variant_record.get("data", [])))\n'
+    )
+
+    trace_lines = ["## Grounded Tool Execution Trace\n\n", "| # | Tool | Status | Latency | Arguments |\n", "|---:|---|---:|---:|---|\n"]
+    for idx, t in enumerate(tool_trace, 1):
+        st = "OK" if t.get("success", True) else "ERR"
+        args_clean = str(t.get("args_preview") or "").replace("|", "\\|").replace("\n", " ")
+        trace_lines.append(f"| {idx} | `{t.get('tool_name', 'tool')}` | {st} | {t.get('elapsed_ms', 0)} ms | `{args_clean}` |\n")
+    if not tool_trace:
+        trace_lines.append("| 1 | `direct_synthesis` | OK | — | Pre-grounded / knowledge synthesis |\n")
+
+    cells = [
+        {
+            "cell_type": "markdown",
+            "id": f"{run_id[-6:]}_hdr",
+            "metadata": {},
+            "source": _lines(header_md),
+        },
+        {
+            "cell_type": "code",
+            "id": f"{run_id[-6:]}_api",
+            "metadata": {},
+            "execution_count": None,
+            "outputs": [],
+            "source": _lines(repro_code),
+        },
+        {
+            "cell_type": "markdown",
+            "id": f"{run_id[-6:]}_trc",
+            "metadata": {},
+            "source": trace_lines,
+        },
+        {
+            "cell_type": "markdown",
+            "id": f"{run_id[-6:]}_ans",
+            "metadata": {},
+            "source": _lines(f"## Quantitative Synthesis\n\n{answer.strip()}\n"),
+        },
+    ]
+
+    return {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "language_info": {"name": "python", "version": "3.11"},
+            "ligase": {"run_id": run_id, "version": VERSION, "niagads_grant": "U24AG041689"},
+        },
+        "cells": cells,
+    }
+
+
+class VcfAnnotateRequest(BaseModel):
+    vcf_text: str = Field(..., min_length=2, max_length=250_000)
+
+
 class CreateThreadRequest(BaseModel):
     title: str = "New Biomedical Study"
     profile: str = "ad1"
@@ -596,6 +698,11 @@ TOOL_CATALOG: List[Dict[str, str]] = [
         "name": "niagads_open_access_api",
         "category": "NIAGADS Open Access v2.0 (Live)",
         "description": "Live REST client for https://api.niagads.org/api (OpenAPI v2.0): GRCh38 genes, GVC TopGenes, exon structures, ADSP Release 5 SNVs/INDELs, GA4GH VRS digests, GWAS/WGS associations, <100 kb regions, track slices, and live FILER hg38 overlaps.",
+    },
+    {
+        "name": "niagads_v2f_statistical_suite",
+        "category": "NIAGADS Quantitative V2F & Translational Suite",
+        "description": "Wakefield ABF fine-mapping + FILER 95% credible sets + FunGen-xQTL colocalization (PP.H4), Two-Sample Mendelian Randomization (IVW/Egger/WM) + 4-ancestry NIAGADS PRS, ADSP R5 rare regulatory scoring (0-100), batch VCF V2F, and APOE ARIA + ClinicalTrials.gov v2.",
     },
     {
         "name": "query_niagads",
@@ -1034,6 +1141,36 @@ def create_webapp(
             pass
         return JSONResponse(status_code=200 if result.get("ok") else 502, content=result)
 
+    @webapp.post("/api/niagads/vcf-annotate")
+    async def api_niagads_vcf_annotate(request: Request, body: VcfAnnotateRequest) -> JSONResponse:
+        from ligase.niagads_v2f_engine import niagads_vcf_batch_v2f
+
+        cid = _client_id_from_request(request)
+        t_start = time.monotonic()
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: niagads_vcf_batch_v2f(vcf_text=body.vcf_text))
+        dur_ms = int(result.get("elapsed_ms") or max(1, int((time.monotonic() - t_start) * 1000)))
+        try:
+            usage_tracker.record_niagads_api_call(
+                client_id=cid,
+                action="vcf_batch_v2f",
+                target=f"batch({len(result.get('rows') or [])})",
+                endpoint="NIAGADS Batch V2F + FILER",
+                ok=bool(result.get("ok")),
+                elapsed_ms=dur_ms,
+                payload_bytes=len(str(result.get("csv") or "").encode("utf-8")),
+            )
+        except Exception:
+            pass
+        return JSONResponse(status_code=200 if result.get("ok") else 400, content=result)
+
+    @webapp.get("/api/niagads/benchmark")
+    async def api_niagads_benchmark() -> Dict[str, Any]:
+        from ligase.niagads_v2f_engine import run_niagads_v2f_benchmark
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, run_niagads_v2f_benchmark)
+
     @webapp.get("/api/threads")
     async def list_threads(request: Request) -> Dict[str, Any]:
         cid = _client_id_from_request(request)
@@ -1236,7 +1373,8 @@ def create_webapp(
             body.approved_plan,
         )
 
-        speed_norm = "deep" if str(body.speed_mode or "").strip().lower() == "deep" else "fast"
+        s_raw = str(body.speed_mode or "").strip().lower()
+        speed_norm = s_raw if s_raw in ("fast", "deep", "critic") else "fast"
         attachment_bytes = sum(Path(p).stat().st_size for p in resolved_attachments if Path(p).is_file())
         mode_norm = "plan" if body.approved_plan else "direct"
 
@@ -1327,7 +1465,7 @@ def create_webapp(
                         "api_key": api_key,
                         "base_url": base_url,
                         "streaming": True,
-                        "max_iterations": min(body.max_iterations, 6) if speed_norm == "fast" else body.max_iterations,
+                        "max_iterations": min(body.max_iterations, 6) if speed_norm in ("fast", "critic") else body.max_iterations,
                         "sandbox_enabled": True,
                     }
                     try:
@@ -1342,10 +1480,10 @@ def create_webapp(
 
                     agent = agent_factory(**factory_kwargs)
 
-                    # Parallel instant pre-grounding (<350 ms) in fast mode when running the real engine
+                    # Parallel instant pre-grounding (<350 ms) in fast / critic mode when running the real engine
                     effective_prompt = contextual_prompt
                     allow_preground = (
-                        speed_norm == "fast"
+                        speed_norm in ("fast", "critic")
                         and os.getenv("LIGASE_DISABLE_WEB_PREGROUND", "").strip().lower() not in ("1", "true", "yes")
                         and (
                             create_agent is None
@@ -1476,9 +1614,11 @@ def create_webapp(
                     )
                     report_bytes = len(report_md.encode("utf-8"))
                     (run_dir / "report.md").write_text(report_md, encoding="utf-8")
+                    created_iso = datetime.now(timezone.utc).isoformat()
                     run_record = {
                         "run_id": run_id,
                         "thread_id": tid,
+                        "created_at": created_iso,
                         "model": model,
                         "profile": profile_norm,
                         "speed_mode": speed_norm,
@@ -1491,6 +1631,18 @@ def create_webapp(
                         "usage": usage_totals,
                         "figures": figures,
                     }
+                    nb_dict = _format_jupyter_notebook(
+                        run_id=run_id,
+                        model=model,
+                        profile=profile_norm,
+                        prompt=body.prompt,
+                        answer=final_answer,
+                        elapsed_s=elapsed_s,
+                        iterations=iterations,
+                        tool_trace=tool_trace,
+                    )
+                    nb_json_str = json.dumps(nb_dict, indent=2, ensure_ascii=False)
+                    (run_dir / "study.ipynb").write_text(nb_json_str, encoding="utf-8")
                     (run_dir / "run.json").write_text(
                         json.dumps(run_record, indent=2, ensure_ascii=False),
                         encoding="utf-8",
@@ -1500,6 +1652,7 @@ def create_webapp(
                             p_run_dir = persistent_runs_root / run_id
                             p_run_dir.mkdir(parents=True, exist_ok=True)
                             (p_run_dir / "report.md").write_text(report_md, encoding="utf-8")
+                            (p_run_dir / "study.ipynb").write_text(nb_json_str, encoding="utf-8")
                             (p_run_dir / "run.json").write_text(
                                 json.dumps({**run_record, "client_id": cid}, indent=2, ensure_ascii=False),
                                 encoding="utf-8",
@@ -1512,7 +1665,9 @@ def create_webapp(
                             pass
 
                     report_url = f"/api/runs/{run_id}/report.md?client_id={cid}"
+                    notebook_url = f"/api/runs/{run_id}/notebook.ipynb?client_id={cid}"
                     bundle_url = f"/api/runs/{run_id}/bundle.zip?client_id={cid}"
+                    share_url = f"/?study={run_id}"
                     msg_meta = {
                         "model": model,
                         "profile": profile_norm,
@@ -1524,7 +1679,9 @@ def create_webapp(
                         "usage": usage_totals,
                         "figures": figures,
                         "report_url": report_url,
+                        "notebook_url": notebook_url,
                         "bundle_url": bundle_url,
+                        "share_url": share_url,
                     }
                     store.append_message(
                         cid,
@@ -1582,7 +1739,9 @@ def create_webapp(
                             "usage": usage_totals,
                             "figures": figures,
                             "report_url": report_url,
+                            "notebook_url": notebook_url,
                             "bundle_url": bundle_url,
+                            "share_url": share_url,
                         },
                     )
                 except InterruptedError:
@@ -1747,6 +1906,102 @@ def create_webapp(
             media_type="text/markdown; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{run_id}_report.md"'},
         )
+
+    def _find_public_run_record(run_id: str) -> Optional[Tuple[Path, Dict[str, Any]]]:
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", Path(run_id).name)
+        if not safe_id:
+            return None
+        candidates: List[Path] = []
+        if persistent_runs_root is not None:
+            candidates.append((persistent_runs_root / safe_id / "run.json").resolve())
+        for sub in resolved_runs.glob(f"*/{safe_id}/run.json"):
+            candidates.append(sub.resolve())
+        candidates.append((resolved_runs / safe_id / "run.json").resolve())
+        for rj in candidates:
+            if rj.is_file():
+                try:
+                    data = json.loads(rj.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and data.get("run_id") == safe_id:
+                        return rj.parent, data
+                except Exception:
+                    continue
+        return None
+
+    @webapp.get("/api/runs/{run_id}/notebook.ipynb")
+    async def download_notebook_route(request: Request, run_id: str) -> Response:
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", Path(run_id).name)
+        cid = _client_id_from_request(request)
+        run_rec = store.get_run(cid, safe_id)
+        if run_rec:
+            run_dir = _resolve_existing_run_dir(run_rec, safe_id)
+            nb_file = run_dir / "study.ipynb"
+            if nb_file.is_file():
+                raw_nb = nb_file.read_bytes()
+            else:
+                nb_obj = _format_jupyter_notebook(
+                    run_id=safe_id,
+                    model=run_rec["model"],
+                    profile=run_rec["profile"],
+                    prompt=run_rec["prompt"],
+                    answer=run_rec["answer"],
+                    elapsed_s=run_rec["elapsed_s"],
+                    iterations=run_rec["iterations"],
+                    tool_trace=run_rec["tool_trace"],
+                )
+                raw_nb = json.dumps(nb_obj, indent=2, ensure_ascii=False).encode("utf-8")
+            return Response(
+                content=raw_nb,
+                media_type="application/x-ipynb+json",
+                headers={"Content-Disposition": f'attachment; filename="{safe_id}_niagads_study.ipynb"'},
+            )
+        found = _find_public_run_record(safe_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Run notebook not found")
+        found_dir, pub_rec = found
+        nb_file = found_dir / "study.ipynb"
+        if nb_file.is_file():
+            raw_nb = nb_file.read_bytes()
+        else:
+            nb_obj = _format_jupyter_notebook(
+                run_id=safe_id,
+                model=str(pub_rec.get("model") or "gpt-6-luna"),
+                profile=str(pub_rec.get("profile") or "ad1"),
+                prompt=str(pub_rec.get("prompt") or ""),
+                answer=str(pub_rec.get("answer") or ""),
+                elapsed_s=float(pub_rec.get("elapsed_s") or 0.0),
+                iterations=int(pub_rec.get("iterations") or 1),
+                tool_trace=list(pub_rec.get("tool_trace") or []),
+            )
+            raw_nb = json.dumps(nb_obj, indent=2, ensure_ascii=False).encode("utf-8")
+        return Response(
+            content=raw_nb,
+            media_type="application/x-ipynb+json",
+            headers={"Content-Disposition": f'attachment; filename="{safe_id}_niagads_study.ipynb"'},
+        )
+
+    @webapp.get("/api/shared/{run_id}")
+    async def get_shared_study_route(run_id: str) -> Dict[str, Any]:
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", Path(run_id).name)
+        found = _find_public_run_record(safe_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Shared NIAGADS study permalink not found")
+        _, pub_rec = found
+        return {
+            "ok": True,
+            "run_id": safe_id,
+            "created_at": pub_rec.get("created_at") or "",
+            "model": pub_rec.get("model") or "gpt-6-luna",
+            "profile": pub_rec.get("profile") or "ad1",
+            "speed_mode": pub_rec.get("speed_mode") or "fast",
+            "prompt": pub_rec.get("prompt") or "",
+            "answer": pub_rec.get("answer") or "",
+            "elapsed_s": pub_rec.get("elapsed_s") or 0.0,
+            "ttft_ms": pub_rec.get("ttft_ms") or 0,
+            "iterations": pub_rec.get("iterations") or 1,
+            "tool_trace": pub_rec.get("tool_trace") or [],
+            "notebook_url": f"/api/runs/{safe_id}/notebook.ipynb",
+            "share_url": f"/?study={safe_id}",
+        }
 
     @webapp.get("/api/runs/{run_id}/bundle.zip")
     async def download_bundle_route(request: Request, run_id: str) -> Response:

@@ -592,6 +592,7 @@ def run_python(code: str, timeout: float = _PYTHON_TIMEOUT_S) -> str:
 
 
 def gemma_extra_tools() -> list[BiomniTool]:
+    from ligase.niagads_v2f_engine import niagads_v2f_statistical_suite
     from ligase.tools_adapter import BiomniTool
 
     return [
@@ -608,7 +609,11 @@ def gemma_extra_tools() -> list[BiomniTool]:
                     "type": "string",
                     "description": (
                         "Endpoint action: 'auto' (smart dispatch), 'locus_dossier' (4-way parallel V2F synthesis: "
-                        "record + GWAS associations + GRCh38 exons/regional variants + FILER overlap), 'gene' "
+                        "record + GWAS associations + GRCh38 exons/regional variants + FILER overlap), "
+                        "'finemap_coloc' (Wakefield ABF + FILER 95% credible set + FunGen-xQTL colocalization), "
+                        "'mr_prs' (Two-Sample Mendelian Randomization + 4-ancestry NIAGADS PRS), "
+                        "'rare_regulatory' (ADSP R5 + FILER 0-100 regulatory perturbation score), "
+                        "'translational_trials' (APOE ARIA safety + ClinicalTrials.gov v2), 'gene' "
                         "(single or comma-separated batch), 'gene_associations', 'gene_structure', 'variant' "
                         "(single or comma-separated batch), 'variant_associations', 'region_associations', "
                         "'region_variants', 'track', 'track_data', 'search', 'search_tracks', 'search_genes', "
@@ -665,6 +670,62 @@ def gemma_extra_tools() -> list[BiomniTool]:
                 "gwas",
                 "filer",
                 "alzheimer",
+            ],
+        ),
+        BiomniTool(
+            name="niagads_v2f_statistical_suite",
+            description=(
+                "Run NIAGADS quantitative statistical genetics & translational V2F engines: "
+                "(1) 'finemap_coloc': Wakefield ABF fine-mapping + FILER enhancer-weighted 95% credible sets + "
+                "Bayesian colocalization (PP.H0-PP.H4) against NIAGADS FunGen-xQTL (NG00105/NG00102); "
+                "(2) 'mr_prs': Two-Sample Mendelian Randomization (IVW, MR-Egger pleiotropy intercept, Weighted Median) + "
+                "4-ancestry NIAGADS PRS calibration (EUR NG00075, AFR NG00100, AMR NG00067, EAS NG00097); "
+                "(3) 'rare_regulatory': ADSP Release 5 VRS + FILER 5-modality non-coding impact score (0-100); "
+                "(4) 'vcf_batch_v2f': Batch VCF / rsID callset V2F prioritization; "
+                "(5) 'translational_trials': AD drug modulators, APOE ARIA-E/ARIA-H safety & live ClinicalTrials.gov v2."
+            ),
+            parameters={
+                "analysis": {
+                    "type": "string",
+                    "description": (
+                        "Analysis mode: 'finemap_coloc', 'mr_prs', 'rare_regulatory', "
+                        "'vcf_batch_v2f', or 'translational_trials'."
+                    ),
+                    "required": True,
+                },
+                "target": {
+                    "type": "string",
+                    "description": (
+                        "Gene symbol (e.g. 'BIN1', 'APOE', 'TREM2', 'ABCA7', 'PLCG2', 'MAPT'), "
+                        "variant ('rs6733839', 'rs429358'), or MR exposure panel ('microglia_endolysosomal', 'ldl_cholesterol', 'csf_strem2')."
+                    ),
+                    "required": True,
+                },
+                "ancestry": {
+                    "type": "string",
+                    "description": "Optional ancestry population filter for PRS ('ALL', 'EUR', 'AFR', 'AMR', 'EAS').",
+                    "required": False,
+                },
+                "genotypes_or_vcf": {
+                    "type": "string",
+                    "description": "Optional carrier genotypes (e.g. 'rs429358=1,rs6733839=2') or VCF/rsID lines for batch V2F.",
+                    "required": False,
+                },
+            },
+            func=niagads_v2f_statistical_suite,
+            module_name="database",
+            keywords=[
+                "finemapping",
+                "coloc",
+                "colocalization",
+                "credible-set",
+                "mendelian-randomization",
+                "prs",
+                "polygenic",
+                "aria",
+                "clinical-trials",
+                "vcf",
+                "niagads",
             ],
         ),
         BiomniTool(

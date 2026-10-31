@@ -60,6 +60,7 @@ _SYSTEM_PROMPT_CACHE: Dict[Tuple[str, bool, bool, str], str] = {}
 WEB_FAST_TOOLS = frozenset(
     {
         "niagads_open_access_api",
+        "niagads_v2f_statistical_suite",
         "query_niagads",
         "lookup_compound",
         "transcribe_translate",
@@ -76,8 +77,20 @@ WEB_FAST_TOOLS = frozenset(
 FAST_EXECUTION_DIRECTIVE = (
     "### FAST EXECUTION PROTOCOL\n"
     "1. If `[Pre-Grounded Verified Evidence]` is already present in the prompt, synthesize directly from those ground-truth records without re-calling tools for the same targets.\n"
-    "2. If additional database lookups or Python calculations are needed, issue ALL required tool calls in parallel in a single turn.\n"
+    "2. If additional database lookups, NIAGADS statistical V2F analyses (`niagads_v2f_statistical_suite`), or Python calculations are needed, issue ALL required tool calls in parallel in a single turn.\n"
     "3. Immediately after tool results return, write a complete, quantitative, publication-grade Markdown synthesis (with comparison tables where appropriate). Never run redundant verification loops."
+)
+
+CRITIC_EXECUTION_DIRECTIVE = (
+    "### NIAGADS MULTI-AGENT STATISTICAL GENETICS & MULTI-ANCESTRY CRITIC PROTOCOL\n"
+    "1. Ground claims in `[Pre-Grounded Verified Evidence]`, `niagads_open_access_api`, `niagads_v2f_statistical_suite`, and `query_niagads` in a single parallel tool pass.\n"
+    "2. Deliver the primary quantitative synthesis first (exact GRCh38 coordinates, GA4GH VRS IDs, ORs, p-values, PIPs, coloc PP.H4, or MR/PRS metrics).\n"
+    "3. Conclude EVERY response with a dedicated `## 🏛️ NIAGADS Statistical Genetics & Multi-Ancestry Critic Audit` Markdown table evaluating five mandatory failure modes:\n"
+    "   - **LD Hitchhiking & `APOE` Shadow Confounding** (`r^2` structure, conditional independence on chr19q13.32 or local enhancer peaks)\n"
+    "   - **`NG*` Cohort Sample Overlap & Winner's Curse** (IGAP `NG00075` vs. ADSP `NG00067` / EADB discovery inflation)\n"
+    "   - **Cross-Ancestry Transferability (`EUR` vs. `AFR`/`AMR`/`EAS`)** (allele-frequency shifts, e.g., `ABCA7` `NG00100` PAF enrichment or `APOE` e4 attenuation on African local ancestry)\n"
+    "   - **Horizontal Pleiotropy & Cell-Type / Isoform Specificity** (MR-Egger intercept, `FunGen-xQTL` `NG00105` microglia vs. bulk cortex, or `MAPT` exon 10 4R:3R splicing)\n"
+    "   - **Falsifiable Functional Validation Experiment** (concrete CRISPRi/base-editing assay in iPSC-microglia/iAstrocytes or CSF biomarker readout in `NG00102`/`NG00049`)."
 )
 
 
@@ -269,15 +282,15 @@ def create_agent(
         streaming: Stream responses
         max_iterations: Max tool rounds
         sandbox_enabled: Run execution tools inside OS sandbox (seatbelt / bwrap)
-        speed_mode: "fast" (low-latency pre-grounded web mode), "deep", or "standard"
+        speed_mode: "fast" (low-latency pre-grounded web mode), "critic" (NIAGADS statistical genetics & multi-ancestry critic), "deep", or "standard"
         reasoning_effort: Optional explicit reasoning effort ("none"|"low"|"medium"|"high")
     """
     speed_norm = (speed_mode or "standard").strip().lower()
-    if speed_norm not in ("fast", "deep", "standard"):
+    if speed_norm not in ("fast", "deep", "critic", "standard"):
         speed_norm = "standard"
 
     if modules is None:
-        if speed_norm == "fast":
+        if speed_norm in ("fast", "critic"):
             modules = ["database", "literature", "pharmacology", "biochemistry"]
         else:
             modules = ["database", "literature", "genomics", "pharmacology", "biochemistry", "molecular_biology"]
@@ -305,7 +318,7 @@ def create_agent(
         selected = select_local_domain_tools(raw_tools)
         if gemma_local:
             selected = select_gemma_domain_tools(selected)
-        elif speed_norm == "fast":
+        elif speed_norm in ("fast", "critic"):
             fast_subset = [t for t in selected if getattr(t, "name", "") in WEB_FAST_TOOLS]
             selected = fast_subset or selected
         domain_tools = list(selected)
@@ -316,7 +329,7 @@ def create_agent(
         "gemma" if gemma_local else ("local" if compact_local else speed_norm),
         bool(is_ad_specialized),
         bool(commercial_mode),
-        str(workspace_path) if speed_norm != "fast" else "fast_web",
+        str(workspace_path) if speed_norm not in ("fast", "critic") else "fast_web",
     )
     system_instruction = _SYSTEM_PROMPT_CACHE.get(prompt_cache_key)
     if system_instruction is None:
@@ -328,11 +341,11 @@ def create_agent(
             ]
             if gemma_local:
                 instruction_parts.append(GEMMA_OPERATING_RULES)
-        elif speed_norm == "fast":
+        elif speed_norm in ("fast", "critic"):
             instruction_parts = [
-                "You are Ligase, a high-speed quantitative biomedical and Alzheimer's genomics AI co-scientist.",
-                "You combine live NIAGADS Open Access v2.0 REST records, curated NIAGADS multi-omics cohorts, UniProt/Ensembl/NCBI/PubChem databases, and sandboxed Python bioinformatics.",
-                FAST_EXECUTION_DIRECTIVE,
+                "You are Ligase, a quantitative biomedical and NIAGADS Alzheimer's genomics AI co-scientist.",
+                "You combine live NIAGADS Open Access v2.0 REST records, NIAGADS statistical V2F fine-mapping/coloc/MR/PRS engines, FILER hg38 functional genomics, UniProt/Ensembl/NCBI/PubChem databases, and sandboxed Python bioinformatics.",
+                CRITIC_EXECUTION_DIRECTIVE if speed_norm == "critic" else FAST_EXECUTION_DIRECTIVE,
             ]
             if is_ad_specialized:
                 ad_layer = BiomniADLayer()
@@ -372,7 +385,7 @@ def create_agent(
         if model_l.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
             if speed_norm == "fast":
                 resolved_effort = "low"
-            elif speed_norm == "deep":
+            elif speed_norm in ("deep", "critic"):
                 resolved_effort = "medium"
 
     enable_fast_tier = os.getenv("LIGASE_OPENAI_FAST_TIER", "").strip().lower() in ("1", "true", "yes", "on")
@@ -441,7 +454,7 @@ def create_agent(
         apply_gemma_tool_surface(claw_agent, domain_tools)
     elif compact_local:
         apply_local_tool_surface(claw_agent, domain_tools)
-    elif speed_norm == "fast":
+    elif speed_norm in ("fast", "critic"):
         registry = getattr(claw_agent, "tools", None)
         if registry is not None and hasattr(registry, "list_registered") and hasattr(registry, "set_active_tools"):
             wanted = set(WEB_FAST_TOOLS) | {"read_file", "retrieve_tool_result"}

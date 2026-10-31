@@ -26,6 +26,7 @@ PREFERRED_DOMAIN_TOOLS = frozenset(
     {
         "query_niagads",
         "niagads_open_access_api",
+        "niagads_v2f_statistical_suite",
         "lookup_compound",
         "transcribe_translate",
         "run_python",
@@ -49,6 +50,7 @@ ALWAYS_ON_TOOLS = frozenset(
     {
         "query_niagads",
         "niagads_open_access_api",
+        "niagads_v2f_statistical_suite",
         "lookup_compound",
         "transcribe_translate",
         "run_python",

@@ -35,14 +35,15 @@
   };
 
   const OA_PRESETS = [
+    { label: "🎯 BIN1 Fine-Map + FunGen Coloc", action: "finemap_coloc", target: "BIN1", loc: "", flank: 50000 },
+    { label: "📐 Microglia 2SMR + 4-Ancestry PRS", action: "mr_prs", target: "microglia_endolysosomal", loc: "", flank: 0 },
+    { label: "🧬 rs6733839 Regulatory Score (0–100)", action: "rare_regulatory", target: "rs6733839", loc: "", flank: 0 },
+    { label: "💊 APOE ARIA Safety + ClinicalTrials", action: "translational_trials", target: "APOE", loc: "", flank: 0 },
     { label: "🔬 BIN1 Full V2F Locus Dossier", action: "locus_dossier", target: "BIN1", loc: "", flank: 10000 },
     { label: "🔬 rs6733839 Full V2F Dossier", action: "locus_dossier", target: "rs6733839", loc: "", flank: 0 },
     { label: "🧬 AD 6-Gene Panel (Batch)", action: "gene", target: "APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2", loc: "", flank: 0 },
     { label: "🧪 APOE + TREM2 + BIN1 Variants (Batch)", action: "variant", target: "rs429358,rs7412,rs6733839,rs75932628", loc: "", flank: 0 },
-    { label: "🧬 APOE Gene + GVC TopGenes", action: "gene", target: "APOE", loc: "", flank: 0 },
-    { label: "📐 TREM2 Exon Structure", action: "gene_structure", target: "TREM2", loc: "", flank: 0 },
     { label: "🗺️ APOE Locus ADSP R5 Variants", action: "region_variants", target: "chr19:44908500-44909000", loc: "", flank: 0 },
-    { label: "🎯 Track Slice: NG00166 @ BIN1", action: "track_data", target: "NG00166_04BE648F_STD_OA", loc: "chr2:127134000-127136000", flank: 0 },
     { label: "🔎 Search Tracks: African American", action: "search_tracks", target: "African American", loc: "", flank: 0 },
   ];
 
@@ -97,6 +98,7 @@
     profileA1Btn: document.getElementById("profile-a1-btn"),
     speedFastBtn: document.getElementById("speed-fast-btn"),
     speedDeepBtn: document.getElementById("speed-deep-btn"),
+    speedCriticBtn: document.getElementById("speed-critic-btn"),
     modeDirectBtn: document.getElementById("mode-direct-btn"),
     modePlanBtn: document.getElementById("mode-plan-btn"),
     statusDot: document.getElementById("status-dot"),
@@ -1166,7 +1168,7 @@
       "  title        = {NIAGADS Alzheimer's GenomicsDB \\& Open Access API v2.0},",
       "  organization = {National Institute on Aging Genetics of Alzheimer's Disease Data Storage Site (NIAGADS)},",
       "  url          = {https://api.niagads.org/open-access},",
-      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.5.2}",
+      "  note         = {Supported by NIH/NIA Cooperative Agreement U24AG041689; synthesized via Ligase v0.6.0}",
       "}",
     ].join("\n");
   }
@@ -1473,6 +1475,346 @@
       cards.push(card);
     }
 
+    // 4. NIAGADS v0.6 Multi-Track 2D-Pannable LocusZoom + FILER PIP + FunGen-xQTL Colocalization
+    if (vis.locuszoom && Array.isArray(vis.locuszoom.variants) && vis.locuszoom.variants.length) {
+      const lz = vis.locuszoom;
+      const locusTitle = lz.gene || lz.locus || "Locus";
+      const csCount = Array.isArray(lz.credible_set_95) ? lz.credible_set_95.length : Number(lz.credible_set_size || 0);
+      const card = document.createElement("div");
+      card.className = "oa-vis-card oa-vis-wide";
+
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      title.textContent = `${locusTitle} (${lz.chrom}) Multi-Track NIAGADS LocusZoom · FILER PIP · FunGen-xQTL Colocalization`;
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+      sub.textContent = `Coloc PP.H4 = ${(Number(lz.coloc?.["PP.H4"] || 0) * 100).toFixed(1)}% · 95% CS = ${csCount} SNP(s) · FILER Tracks = ${Number(lz.filer_tracks || 0).toLocaleString()}`;
+      head.append(title, sub);
+
+      const toolbar = document.createElement("div");
+      toolbar.className = "locuszoom-toolbar";
+      toolbar.innerHTML = `
+        <div class="lz-legend-pills">
+          <span><i class="lz-dot" style="background:#dc2626"></i>r² ≥ 0.8 / Lead</span>
+          <span><i class="lz-dot" style="background:#ea580c"></i>r² 0.6–0.8</span>
+          <span><i class="lz-dot" style="background:#0f766e"></i>FILER Enhancer Peak</span>
+          <span><i class="lz-dot" style="background:#7c3aed"></i>FunGen-xQTL (−log10 p)</span>
+        </div>
+        <div class="lz-zoom-controls" role="group" aria-label="Genomic LocusZoom magnification">
+          <button type="button" class="lz-zoom-btn active" data-lz-zoom="1">1× Fit</button>
+          <button type="button" class="lz-zoom-btn" data-lz-zoom="1.8">1.8× Pan</button>
+          <button type="button" class="lz-zoom-btn" data-lz-zoom="2.6">2.6× Fine</button>
+        </div>
+      `;
+
+      const viewport = document.createElement("div");
+      viewport.className = "locuszoom-pan-viewport";
+      viewport.tabIndex = 0;
+      viewport.setAttribute("role", "region");
+      viewport.setAttribute(
+        "aria-label",
+        `Interactive 2D-pannable NIAGADS LocusZoom and colocalization tracks for ${locusTitle}`
+      );
+
+      const baseW = 780;
+      const baseH = 340;
+      const padL = 88;
+      const padR = 26;
+      const plotW = baseW - padL - padR;
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${baseW} ${baseH}`,
+        class: "locuszoom-pan-surface",
+        role: "img",
+        "aria-label": `${locusTitle} GWAS, FILER PIP, and FunGen-xQTL colocalization plot`,
+      });
+      svg.style.inlineSize = "100%";
+      svg.style.blockSize = "auto";
+
+      const vList = lz.variants;
+      const minPos = Math.min(...vList.map((v) => Number(v.pos) || 0)) - 2500;
+      const maxPos = Math.max(...vList.map((v) => Number(v.pos) || 0)) + 2500;
+      const span = Math.max(1000, maxPos - minPos);
+      const xOf = (pos) => padL + ((Number(pos) - minPos) / span) * plotW;
+      const gwasOf = (v) => Number(v.gwas_nlp ?? v.gwas_neg_log10_p) || 0;
+      const xqtlOf = (v) => Number(v.xqtl_nlp ?? v.xqtl_neg_log10_p) || 0;
+      const filerHitOf = (v) => Boolean(v.filer_hit ?? v.filer_enhancer_overlap);
+
+      // Track bands: [Track 1: GWAS -log10(p) y=16..114], [Track 2: FILER PIP y=134..216], [Track 3: FunGen-xQTL y=236..312]
+      const tracks = [
+        { label: "GWAS −log10(p)", top: 18, bot: 112, maxY: Math.max(10, ...vList.map(gwasOf)) * 1.08 },
+        { label: "FILER PIP", top: 136, bot: 214, maxY: 1.05 },
+        { label: "FunGen xQTL", top: 238, bot: 312, maxY: Math.max(8, ...vList.map(xqtlOf)) * 1.1 },
+      ];
+
+      for (const tr of tracks) {
+        svg.appendChild(
+          svgNode("rect", {
+            x: padL,
+            y: tr.top,
+            width: plotW,
+            height: tr.bot - tr.top,
+            rx: 4,
+            fill: "currentColor",
+            "fill-opacity": "0.035",
+          })
+        );
+        svg.appendChild(
+          svgNode(
+            "text",
+            { x: padL - 8, y: (tr.top + tr.bot) / 2 + 3, "text-anchor": "end", "font-size": "9.5", "font-weight": "600", fill: "currentColor", opacity: "0.78" },
+            tr.label
+          )
+        );
+      }
+
+      // Genome-wide significance threshold in Track 1
+      const gwsY = tracks[0].bot - (7.3 / tracks[0].maxY) * (tracks[0].bot - tracks[0].top);
+      if (gwsY > tracks[0].top) {
+        svg.appendChild(
+          svgNode("line", {
+            x1: padL,
+            y1: gwsY.toFixed(1),
+            x2: baseW - padR,
+            y2: gwsY.toFixed(1),
+            stroke: "#e11d48",
+            "stroke-width": "1.1",
+            "stroke-dasharray": "4 3",
+          })
+        );
+      }
+
+      const ldColor = (r2) => {
+        if (r2 >= 0.8) return "#dc2626";
+        if (r2 >= 0.6) return "#ea580c";
+        if (r2 >= 0.4) return "#16a34a";
+        return "#2563eb";
+      };
+
+      vList.forEach((v) => {
+        const cx = xOf(v.pos);
+        const r2 = Number(v.ld_r2 || 0);
+        const gwasVal = gwasOf(v);
+        const xqtlVal = xqtlOf(v);
+        const isFilerHit = filerHitOf(v);
+        const isLead = lz.lead_rsid ? v.rsid === lz.lead_rsid : r2 >= 0.99;
+        const gY = tracks[0].bot - (Math.min(tracks[0].maxY, gwasVal) / tracks[0].maxY) * (tracks[0].bot - tracks[0].top);
+        const pipVal = Number(v.pip_filer) || 0;
+        const pipH = Math.max(2, (pipVal / tracks[1].maxY) * (tracks[1].bot - tracks[1].top));
+        const xY = tracks[2].bot - (Math.min(tracks[2].maxY, xqtlVal) / tracks[2].maxY) * (tracks[2].bot - tracks[2].top);
+
+        // Vertical guide for credible-set variants
+        if (v.in_credible_set_95) {
+          svg.appendChild(
+            svgNode("line", {
+              x1: cx.toFixed(1),
+              y1: tracks[0].top,
+              x2: cx.toFixed(1),
+              y2: tracks[2].bot,
+              stroke: "#0f766e",
+              "stroke-opacity": "0.22",
+              "stroke-dasharray": "2 2",
+            })
+          );
+        }
+
+        // Track 1: GWAS point (purple lead SNP)
+        const tipText = `${v.rsid} (${lz.chrom}:${Number(v.pos).toLocaleString()}) | GWAS -log10p=${gwasVal} | FILER PIP=${(pipVal * 100).toFixed(1)}% | xQTL -log10p=${xqtlVal} | r²=${r2} | ${v.annot || v.annotation || ""}`;
+        const dot = svgNode("circle", {
+          cx: cx.toFixed(1),
+          cy: gY.toFixed(1),
+          r: isLead ? "6.2" : v.in_credible_set_95 ? "5" : "4",
+          fill: isLead ? "#7c3aed" : ldColor(r2),
+          stroke: "#ffffff",
+          "stroke-width": "1.2",
+        });
+        dot.appendChild(svgNode("title", {}, tipText));
+        svg.appendChild(dot);
+
+        if (isLead || pipVal >= 0.15) {
+          const labelAnchor = cx > baseW - 180 ? "end" : "start";
+          const labelX = labelAnchor === "end" ? cx - 8 : cx + 8;
+          svg.appendChild(
+            svgNode(
+              "text",
+              { x: labelX.toFixed(1), y: (gY + 3).toFixed(1), "text-anchor": labelAnchor, "font-size": "9.5", "font-weight": "700", fill: "currentColor" },
+              `${v.rsid} (PIP ${(pipVal * 100).toFixed(1)}%)`
+            )
+          );
+        }
+
+        // Track 2: FILER-weighted PIP bar
+        const pipBar = svgNode("rect", {
+          x: (cx - 4.5).toFixed(1),
+          y: (tracks[1].bot - pipH).toFixed(1),
+          width: "9",
+          height: pipH.toFixed(1),
+          rx: "2",
+          fill: isFilerHit ? "#0f766e" : "#64748b",
+        });
+        pipBar.appendChild(svgNode("title", {}, tipText));
+        svg.appendChild(pipBar);
+
+        // Track 3: FunGen-xQTL colocalization lollipop
+        svg.appendChild(
+          svgNode("line", {
+            x1: cx.toFixed(1),
+            y1: tracks[2].bot,
+            x2: cx.toFixed(1),
+            y2: xY.toFixed(1),
+            stroke: "#7c3aed",
+            "stroke-opacity": "0.55",
+            "stroke-width": "1.6",
+          })
+        );
+        const xDot = svgNode("circle", {
+          cx: cx.toFixed(1),
+          cy: xY.toFixed(1),
+          r: isFilerHit ? "4.6" : "3.6",
+          fill: "#7c3aed",
+        });
+        xDot.appendChild(svgNode("title", {}, tipText));
+        svg.appendChild(xDot);
+      });
+
+      svg.appendChild(
+        svgNode("text", { x: padL, y: baseH - 8, "font-size": "9.5", fill: "currentColor", opacity: "0.72" }, `${lz.chrom}:${minPos.toLocaleString()} (GRCh38)`)
+      );
+      svg.appendChild(
+        svgNode("text", { x: baseW - padR, y: baseH - 8, "text-anchor": "end", "font-size": "9.5", fill: "currentColor", opacity: "0.72" }, `${lz.chrom}:${maxPos.toLocaleString()} · Drag / Trackpad 2D Pan when zoomed`)
+      );
+
+      viewport.appendChild(svg);
+
+      for (const zBtn of toolbar.querySelectorAll("[data-lz-zoom]")) {
+        zBtn.addEventListener("click", () => {
+          const factor = Number(zBtn.dataset.lzZoom) || 1;
+          for (const b of toolbar.querySelectorAll("[data-lz-zoom]")) b.classList.toggle("active", b === zBtn);
+          if (factor <= 1.01) {
+            svg.style.inlineSize = "100%";
+            svg.style.blockSize = "auto";
+            viewport.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+          } else {
+            const targetW = Math.round(baseW * factor);
+            const targetH = Math.round(baseH * Math.min(1.45, 1 + (factor - 1) * 0.28));
+            svg.style.inlineSize = `${targetW}px`;
+            svg.style.blockSize = `${targetH}px`;
+            const centerPos = Number(lz.lead_pos) || Number(vList[0]?.pos) || minPos;
+            const leadX = (xOf(centerPos) / baseW) * targetW;
+            viewport.scrollLeft = Math.max(0, leadX - viewport.clientWidth / 2);
+          }
+        });
+      }
+
+      card.append(head, toolbar, viewport);
+      cards.push(card);
+    }
+
+    // 5. Two-Sample MR + 4-Ancestry NIAGADS PRS Calibration Chart
+    if (vis.mr_prs && Array.isArray(vis.mr_prs.prs) && vis.mr_prs.prs.length) {
+      const mp = vis.mr_prs;
+      const card = document.createElement("div");
+      card.className = "oa-vis-card oa-vis-wide";
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      title.textContent = "Cross-Ancestry NIAGADS PRS Relative Risk & Transferability (EUR · AFR · AMR · EAS)";
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+      const rawP = mp.mr?.ivw?.pvalue ?? mp.mr?.ivw?.p_value;
+      const fmtP = typeof rawP === "number" ? rawP.toExponential(2) : (rawP ?? "—");
+      sub.textContent = `IVW Causal OR = ${mp.mr?.ivw?.or ?? "—"}× (p = ${fmtP})`;
+      head.append(title, sub);
+
+      const prsRows = mp.prs;
+      const width = 560;
+      const rowH = 28;
+      const leftPad = 175;
+      const rightPad = 95;
+      const height = 16 + prsRows.length * rowH + 10;
+      const plotW = width - leftPad - rightPad;
+      const maxOr = Math.max(2.5, ...prsRows.map((r) => Number(r.relative_or) || 1));
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": title.textContent,
+      });
+
+      prsRows.forEach((r, idx) => {
+        const y = 12 + idx * rowH;
+        const val = Number(r.relative_or) || 1;
+        const barW = Math.max(6, (val / maxOr) * plotW);
+        const cohortName = String(r.cohort || r.label || "").split("(")[0].trim();
+        svg.appendChild(
+          svgNode("text", { x: leftPad - 8, y: y + 15, "text-anchor": "end", "font-size": "10.5", fill: "currentColor" }, `${r.ancestry} · ${cohortName}`)
+        );
+        svg.appendChild(
+          svgNode("rect", { x: leftPad, y: y + 4, width: barW.toFixed(1), height: 15, rx: 4, fill: idx === 1 ? "#0284c7" : "#0f766e", opacity: "0.88" })
+        );
+        svg.appendChild(
+          svgNode("text", { x: (leftPad + barW + 7).toFixed(1), y: y + 15, "font-size": "10", "font-weight": "700", fill: "currentColor" }, `${val.toFixed(2)}× (${r.percentile}th pct)`)
+        );
+      });
+
+      card.append(head, svg);
+      cards.push(card);
+    }
+
+    // 6. ADSP Release 5 + FILER 5-Modality Rare/Non-Coding Regulatory Impact Profile
+    if (vis.regulatory_profile && Array.isArray(vis.regulatory_profile.modalities)) {
+      const rp = vis.regulatory_profile;
+      const card = document.createElement("div");
+      card.className = "oa-vis-card oa-vis-wide";
+      const head = document.createElement("div");
+      head.className = "oa-vis-head";
+      const title = document.createElement("h4");
+      title.className = "oa-vis-title";
+      const rpLabel = rp.gene ? `${rp.target || rp.variant} (${rp.gene})` : (rp.target || rp.variant || "Variant");
+      title.textContent = `ADSP R5 + FILER Deep-Regulatory Perturbation Profile — ${rpLabel}`;
+      const sub = document.createElement("span");
+      sub.className = "oa-vis-sub";
+      sub.textContent = `Composite Impact: ${rp.composite}/100`;
+      head.append(title, sub);
+
+      const mods = rp.modalities;
+      const width = 560;
+      const rowH = 26;
+      const leftPad = 195;
+      const rightPad = 56;
+      const height = 14 + mods.length * rowH + 8;
+      const plotW = width - leftPad - rightPad;
+
+      const svg = svgNode("svg", {
+        viewBox: `0 0 ${width} ${height}`,
+        class: "oa-vis-svg",
+        role: "img",
+        "aria-label": title.textContent,
+      });
+
+      mods.forEach((m, idx) => {
+        const y = 10 + idx * rowH;
+        const sc = Math.max(0, Math.min(100, Number(m.score) || 0));
+        const barW = Math.max(4, (sc / 100) * plotW);
+        svg.appendChild(
+          svgNode("text", { x: leftPad - 8, y: y + 14, "text-anchor": "end", "font-size": "10", fill: "currentColor" }, String(m.modality).slice(0, 30))
+        );
+        svg.appendChild(
+          svgNode("rect", { x: leftPad, y: y + 3, width: barW.toFixed(1), height: 14, rx: 4, fill: sc >= 75 ? "#0f766e" : "#4f46e5", opacity: "0.88" })
+        );
+        svg.appendChild(
+          svgNode("text", { x: (leftPad + barW + 6).toFixed(1), y: y + 14, "font-size": "10", "font-weight": "700", fill: "currentColor" }, `${sc}/100`)
+        );
+      });
+
+      card.append(head, svg);
+      cards.push(card);
+    }
+
     if (cards.length) {
       const grid = document.createElement("div");
       grid.className = "oa-vis-grid";
@@ -1590,6 +1932,9 @@
     if (state.mode === "plan") {
       el.workflowHint.textContent =
         "Plan-then-Approve · review & edit numbered methodology before tools execute";
+    } else if (state.speedMode === "critic") {
+      el.workflowHint.textContent =
+        "🏛️ NIAGADS Critic · quantitative synthesis + LD hitchhiking, sample-overlap & multi-ancestry audit";
     } else if (state.speedMode === "deep") {
       el.workflowHint.textContent =
         "🔬 Deep exploration · multi-round reasoning + full Biomni & NIAGADS tool suite";
@@ -1600,9 +1945,10 @@
   }
 
   function setSpeedMode(speed) {
-    state.speedMode = speed === "deep" ? "deep" : "fast";
+    state.speedMode = speed === "deep" || speed === "critic" ? speed : "fast";
     el.speedFastBtn.classList.toggle("active", state.speedMode === "fast");
     el.speedDeepBtn.classList.toggle("active", state.speedMode === "deep");
+    el.speedCriticBtn?.classList.toggle("active", state.speedMode === "critic");
     syncWorkflowHint();
   }
 
@@ -1939,6 +2285,36 @@
       repLink.download = "";
       repLink.textContent = "⬇ Download report.md";
       bar.appendChild(repLink);
+    }
+
+    const nbHref = meta.notebook_url || (meta.run_id ? `/api/runs/${encodeURIComponent(meta.run_id)}/notebook.ipynb?client_id=${encodeURIComponent(CLIENT_ID)}` : "");
+    if (nbHref) {
+      const nbLink = document.createElement("a");
+      nbLink.className = "artifact-btn";
+      nbLink.href = nbHref;
+      nbLink.download = "";
+      nbLink.title = "Download reproducible Python 3 Jupyter Notebook (.ipynb) querying live NIAGADS Open Access v2.0";
+      nbLink.textContent = "📓 Export .ipynb";
+      bar.appendChild(nbLink);
+    }
+
+    if (meta.run_id || meta.share_url) {
+      const shareBtn = document.createElement("button");
+      shareBtn.type = "button";
+      shareBtn.className = "artifact-btn";
+      shareBtn.textContent = "🔗 Share Study Link";
+      shareBtn.title = "Copy read-only NIAGADS study permalink";
+      shareBtn.addEventListener("click", async () => {
+        const rel = meta.share_url || `/?study=${encodeURIComponent(meta.run_id)}`;
+        const fullUrl = new URL(rel, window.location.origin).toString();
+        try {
+          await navigator.clipboard.writeText(fullUrl);
+          showToast("✓ Copied shareable NIAGADS study permalink");
+        } catch {
+          showToast(fullUrl);
+        }
+      });
+      bar.appendChild(shareBtn);
     }
 
     if (meta.bundle_url) {
@@ -3027,7 +3403,14 @@
       .slice(0, 120)
       .map((r) => {
         const latStr = r.elapsed_ms >= 1000 ? `${(r.elapsed_ms / 1000).toFixed(2)}s` : `${r.elapsed_ms} ms`;
-        const modeBadge = r.event_type === "study_run" ? (r.speed_mode === "deep" ? "🔬 Deep" : "⚡ Fast") : "REST";
+        const modeBadge =
+          r.event_type === "study_run"
+            ? r.speed_mode === "deep"
+              ? "🔬 Deep"
+              : r.speed_mode === "critic"
+                ? "🏛️ Critic"
+                : "⚡ Fast"
+            : "REST";
         const repHtml = r.report_url
           ? `<a href="${escapeHtml(r.report_url)}" class="link-btn" download>⬇ .md</a>`
           : `<span style="color:var(--text-muted)">—</span>`;
@@ -3255,6 +3638,7 @@
   el.profileA1Btn.addEventListener("click", () => setProfile("a1"));
   el.speedFastBtn.addEventListener("click", () => setSpeedMode("fast"));
   el.speedDeepBtn.addEventListener("click", () => setSpeedMode("deep"));
+  el.speedCriticBtn?.addEventListener("click", () => setSpeedMode("critic"));
   el.modeDirectBtn.addEventListener("click", () => setMode("direct"));
   el.modePlanBtn.addEventListener("click", () => setMode("plan"));
   el.newStudyBtn.addEventListener("click", startFreshStudy);
@@ -3850,6 +4234,10 @@
 
   // ── NIAGADS Bond Strip & Global Cmd/Ctrl+K Command Palette ────────────────
   const CMDK_LOCI = [
+    { id: "v06_fm_bin1", group: "NIAGADS v0.6 Quantitative V2F Suite", title: "BIN1 — Wakefield ABF Fine-Mapping + FunGen-xQTL Coloc", sub: "95% FILER enhancer-weighted credible set + MiGA NG00105 microglia colocalization (PP.H4)", badge: "Coloc · BIN1", action: "finemap_coloc", target: "BIN1", flank: 50000 },
+    { id: "v06_mr_prs", group: "NIAGADS v0.6 Quantitative V2F Suite", title: "Microglia Endolysosomal TwoSampleMR + 4-Ancestry NIAGADS PRS", sub: "IVW, MR-Egger pleiotropy intercept & Weighted Median + EUR/AFR/AMR/EAS PRS transferability", badge: "2SMR + PRS", action: "mr_prs", target: "microglia_endolysosomal", flank: 0 },
+    { id: "v06_reg_rs", group: "NIAGADS v0.6 Quantitative V2F Suite", title: "rs6733839 — ADSP R5 + FILER Deep-Regulatory Score (0–100)", sub: "5-modality microglia ATAC, SPI1/MEF2C enhancer, FunGen eQTL & GA4GH VRS impact", badge: "0–100 V2F", action: "rare_regulatory", target: "rs6733839", flank: 0 },
+    { id: "v06_aria_apoe", group: "NIAGADS v0.6 Quantitative V2F Suite", title: "APOE — ARIA-E/ARIA-H Safety & Live ClinicalTrials.gov v2", sub: "Anti-amyloid boxed-warning pharmacogenomics + disease-modifying ADRD trials", badge: "ARIA + NCT", action: "translational_trials", target: "APOE", flank: 0 },
     { id: "loc_bin1", group: "NIAGADS V2F Locus Dossiers", title: "BIN1 — 4-Way Parallel V2F Locus Dossier", sub: "2q14.3 microglia enhancer locus · GVC TopGene + GWAS + GRCh38 exons + FILER", badge: "Dossier · BIN1", action: "locus_dossier", target: "BIN1", flank: 10000 },
     { id: "loc_apoe", group: "NIAGADS V2F Locus Dossiers", title: "APOE — 4-Way Parallel V2F Locus Dossier", sub: "19q13.32 canonical AD locus · TopGenes + multi-ancestry GWAS + exons + FILER", badge: "Dossier · APOE", action: "locus_dossier", target: "APOE", flank: 10000 },
     { id: "loc_trem2", group: "NIAGADS V2F Locus Dossiers", title: "TREM2 — 4-Way Parallel V2F Locus Dossier", sub: "6p21.1 microglial receptor · exon architecture + GWAS + FILER", badge: "Dossier · TREM2", action: "locus_dossier", target: "TREM2", flank: 10000 },
@@ -4376,6 +4764,235 @@
     });
   }
 
+  // ── Batch VCF / Variant List V2F Annotator & AD-V2F-Bench Runner ──────────
+  function initBatchVcfAndBenchmark() {
+    const runBtn = document.getElementById("niagads-vcf-run-btn");
+    const csvBtn = document.getElementById("niagads-vcf-csv-btn");
+    const benchBtn = document.getElementById("niagads-bench-btn");
+    const vcfInput = document.getElementById("niagads-vcf-input");
+    const outBox = document.getElementById("niagads-vcf-output");
+    let lastCsv = "";
+
+    runBtn?.addEventListener("click", async () => {
+      const vcfText = (vcfInput?.value || "").trim();
+      if (!vcfText) return;
+      const orig = runBtn.textContent;
+      runBtn.disabled = true;
+      runBtn.textContent = "Annotating via NIAGADS Open Access v2.0…";
+      if (outBox) {
+        outBox.hidden = false;
+        outBox.innerHTML = `<p style="color:var(--text-muted)">Prioritizing variants across NIAGADS ADSP R5 VRS + FILER hg38…</p>`;
+      }
+      try {
+        const resp = await fetch("/api/niagads/vcf-annotate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Ligase-Client-Id": CLIENT_ID,
+          },
+          body: JSON.stringify({ vcf_text: vcfText }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.summary_markdown || data.detail || `HTTP ${resp.status}`);
+        }
+        lastCsv = data.csv || "";
+        if (csvBtn) csvBtn.hidden = !lastCsv;
+        if (outBox) outBox.innerHTML = renderMarkdown(data.summary_markdown || "");
+      } catch (err) {
+        if (outBox) {
+          outBox.innerHTML = `<p style="color:var(--danger)"><strong>Batch V2F error:</strong> ${escapeHtml(err.message)}</p>`;
+        }
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = orig;
+      }
+    });
+
+    csvBtn?.addEventListener("click", () => {
+      if (!lastCsv) return;
+      const blob = new Blob([lastCsv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "niagads_v2f_prioritized_callset.csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    benchBtn?.addEventListener("click", async () => {
+      const orig = benchBtn.textContent;
+      benchBtn.disabled = true;
+      benchBtn.textContent = "Evaluating 6 Gold Loci…";
+      try {
+        const b = await apiFetch("/api/niagads/benchmark");
+        const rowsMd = (b.results || [])
+          .map(
+            (r) =>
+              `| \`${r.locus}\` | **${r.gold_gene}** | \`${r.gold_variant}\` | \`${r.predicted_lead}\` (${r.top1_match ? "✓" : "✗"}) | **${(r.top_pip_filer * 100).toFixed(1)}%** | **${(r.coloc_pp_h4 * 100).toFixed(1)}%** | ${r.latency_ms} ms |`
+          )
+          .join("\n");
+        const md = [
+          `### 🏆 ${b.benchmark} — Top-1 Causal Recall: **${(b.top1_causal_variant_accuracy * 100).toFixed(1)}%** · Mean Coloc \`PP.H4\`: **${(b.mean_coloc_pp_h4 * 100).toFixed(1)}%**`,
+          "",
+          "| Locus | GVC Gold Gene | Gold Causal Variant | Predicted Top PIP | FILER PIP | FunGen `PP.H4` | Compute |",
+          "|---|---|---|---|---:|---:|---:|",
+          rowsMd,
+        ].join("\n");
+        if (outBox) {
+          outBox.hidden = false;
+          outBox.innerHTML = renderMarkdown(md);
+        }
+      } catch (err) {
+        showToast(`Benchmark error: ${err.message}`);
+      } finally {
+        benchBtn.disabled = false;
+        benchBtn.textContent = orig;
+      }
+    });
+  }
+
+  // ── Shareable Read-Only NIAGADS Study Permalink Loader (?study=run_...) ───
+  async function loadSharedPermalinkIfPresent() {
+    let studyId = "";
+    try {
+      studyId = (new URLSearchParams(window.location.search).get("study") || "").trim();
+    } catch {}
+    if (!studyId) return false;
+    try {
+      const shared = await apiFetch(`/api/shared/${encodeURIComponent(studyId)}`);
+      if (!shared?.ok) return false;
+      await switchPortalTab("studio", { updateHash: false });
+      showWelcomeOrTranscript(true);
+      el.transcript.innerHTML = "";
+
+      const banner = document.createElement("div");
+      banner.className = "shared-permalink-banner";
+      banner.innerHTML = `
+        <span>🔗 <strong>Shared NIAGADS Study Permalink</strong> · <code>${escapeHtml(shared.run_id)}</code> · NIH/NIA U24AG041689 Grounded</span>
+        <a class="artifact-btn" href="${escapeHtml(shared.notebook_url)}" download>📓 Download Reproducible .ipynb</a>
+      `;
+      el.transcript.appendChild(banner);
+      appendUserBubble(shared.prompt || "");
+      appendCompletedAssistantCard(shared.answer || "", shared);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Browser WebMCP Tool Registration (document.modelContext) ──────────────
+  let webMcpController = null;
+  async function registerNiagadsWebMcpTools() {
+    if (typeof document === "undefined" || !("modelContext" in document) || !document.modelContext?.registerTool) {
+      return;
+    }
+    webMcpController?.abort();
+    webMcpController = new AbortController();
+    const { signal: regSignal } = webMcpController;
+
+    const tools = [
+      {
+        name: "run_niagads_finemap_coloc",
+        description:
+          "Runs NIAGADS Wakefield ABF fine-mapping, FILER enhancer-weighted 95% credible sets, and FunGen-xQTL Bayesian colocalization on an Alzheimer's gene or variant and displays the multi-track LocusZoom plot.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            target: {
+              type: "string",
+              description: "Gene symbol or variant identifier to fine-map and colocalize.",
+            },
+          },
+          required: ["target"],
+        },
+        async execute(input, { signal }) {
+          const target = typeof input?.target === "string" ? input.target.trim() : "";
+          if (!target) {
+            return { error: "Provide a non-empty gene symbol or variant identifier." };
+          }
+          try {
+            const qs = new URLSearchParams({ action: "finemap_coloc", target, flank: "50000" });
+            const resp = await fetch(`/api/niagads/live?${qs.toString()}`, {
+              headers: { "X-Ligase-Client-Id": CLIENT_ID },
+              signal,
+            });
+            if (!resp.ok) {
+              return { error: `NIAGADS fine-mapping request failed with status ${resp.status}.` };
+            }
+            const data = await resp.json();
+            await switchPortalTab("niagads-api", { updateHash: false });
+            el.oaResultCard.hidden = false;
+            renderOaEcosystemAndVisuals(data);
+            el.oaResultMarkdown.innerHTML = renderMarkdown(data.summary_markdown || "");
+            return {
+              endpoint: data.endpoint,
+              coloc: data.raw?.coloc || {},
+              credibleSet95: data.visual?.locuszoom?.credible_set_95 || [],
+              summaryMarkdown: data.summary_markdown,
+            };
+          } catch (err) {
+            if (signal?.aborted) {
+              throw err;
+            }
+            return { error: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        annotations: { readOnlyHint: true },
+      },
+      {
+        name: "run_niagads_translational_trials",
+        description:
+          "Retrieves NIAGADS locus pharmacology, APOE ARIA-E/ARIA-H anti-amyloid safety stratification, and live ClinicalTrials.gov Alzheimer's studies.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            target: {
+              type: "string",
+              default: "APOE",
+              description: "Target Alzheimer's risk gene symbol.",
+            },
+          },
+          required: ["target"],
+        },
+        async execute(input, { signal }) {
+          const target = typeof input?.target === "string" && input.target.trim() ? input.target.trim() : "APOE";
+          try {
+            const qs = new URLSearchParams({ action: "translational_trials", target });
+            const resp = await fetch(`/api/niagads/live?${qs.toString()}`, {
+              headers: { "X-Ligase-Client-Id": CLIENT_ID },
+              signal,
+            });
+            if (!resp.ok) {
+              return { error: `Translational trials query failed with status ${resp.status}.` };
+            }
+            const data = await resp.json();
+            return {
+              gene: data.raw?.gene || target,
+              ariaSafety: data.raw?.translational?.aria_safety || "",
+              trials: data.rows || [],
+              summaryMarkdown: data.summary_markdown,
+            };
+          } catch (err) {
+            if (signal?.aborted) {
+              throw err;
+            }
+            return { error: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        annotations: { readOnlyHint: true },
+      },
+    ];
+
+    for (const toolDef of tools) {
+      try {
+        await document.modelContext.registerTool(toolDef, { signal: regSignal });
+      } catch {
+        /* ignore duplicate or unsupported registration errors */
+      }
+    }
+  }
+
   async function boot() {
     syncThemeButtons();
     syncWorkflowHint();
@@ -4384,6 +5001,8 @@
     initBondAndCommandPalette();
     initStudioHomeShelf();
     initShowcaseVideo();
+    initBatchVcfAndBenchmark();
+    registerNiagadsWebMcpTools();
 
     const bootstrap = readServerBootstrap();
     if (bootstrap?.mindmap) {
@@ -4418,7 +5037,8 @@
       switchStudioShelf("niagads");
     }
 
-    // Fetch saved study threads and warm secondary tab payloads at low priority
+    // Fetch saved study threads, check ?study= permalink, and warm secondary tab payloads at low priority
+    loadSharedPermalinkIfPresent();
     refreshThreads();
     scheduleIdlePrefetch();
   }

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ligase"
-version = "0.5.2"
+version = "0.6.0"
 description = "Ligase: local-first biomedical research agent that joins community tools, private models and hosted data"
 readme = "README.md"
 license = { text = "MIT" }
@@ -84,6 +84,7 @@ dev = [
 
 [project.scripts]
 ligase = "ligase.cli:main"
+ligase-mcp = "ligase.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/x1jiang/ligase"

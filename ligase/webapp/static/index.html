@@ -28,7 +28,7 @@
     :not([hidden="until-found"])[hidden] { display: none !important; }
     @media (width < 880px) { .app-shell { grid-template-columns: 1fr; } }
   </style>
-  <link rel="stylesheet" href="/static/styles.css?v=0.5.2">
+  <link rel="stylesheet" href="/static/styles.css?v=0.6.0">
 </head>
 <body>
   <a href="#main-workspace" class="skip-link visually-hidden">Skip to main workspace</a>
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.5.2</span></div>
+            <div class="brand-name">Ligase <span class="version-tag" id="app-version">v0.6.0</span></div>
             <div class="brand-sub">Biomedical &amp; NIAGADS Co-Scientist</div>
           </div>
         </div>
@@ -201,6 +201,9 @@
             <button type="button" class="seg-btn" data-speed="deep" id="speed-deep-btn" title="Multi-round deep reasoning and extended tool exploration">
               🔬 Deep
             </button>
+            <button type="button" class="seg-btn" data-speed="critic" id="speed-critic-btn" title="Quantitative synthesis + NIAGADS Statistical Genetics &amp; Multi-Ancestry Critic Audit">
+              🏛️ Critic
+            </button>
           </div>
           <div class="segmented compact" id="studio-mode-group" role="group" aria-label="Execution workflow">
             <button type="button" class="seg-btn active" data-mode="direct" id="mode-direct-btn">
@@ -239,7 +242,7 @@
                   <span aria-hidden="true">🎬</span> Watch 1-Min Tour
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="mindmap">
-                  <span aria-hidden="true">🧠</span> 36-Node Mindmap
+                  <span aria-hidden="true">🧠</span> 42-Node Mindmap
                 </button>
                 <button type="button" class="hero-pill-btn secondary" data-goto-tab="niagads-api">
                   <span aria-hidden="true">🌐</span> Live NIAGADS API
@@ -340,13 +343,13 @@
                       playsinline
                       width="1280"
                       height="720"
-                      poster="/static/media/ligase-showcase-poster.webp?v=0.5.2"
+                      poster="/static/media/ligase-showcase-poster.webp?v=0.6.0"
                       aria-labelledby="video-showcase-title"
                       aria-details="showcase-video-transcript"
                     >
-                      <source src="/static/media/ligase-showcase.mp4?v=0.5.2" type="video/mp4">
+                      <source src="/static/media/ligase-showcase.mp4?v=0.6.0" type="video/mp4">
                       <track
-                        src="/static/media/ligase-showcase-en.vtt?v=0.5.2"
+                        src="/static/media/ligase-showcase-en.vtt?v=0.6.0"
                         kind="captions"
                         srclang="en"
                         label="English (Grok Voice Verbatim)"
@@ -654,22 +657,30 @@
               <div class="oa-field">
                 <label for="oa-action-select">Endpoint Action</label>
                 <select id="oa-action-select" name="action">
-                  <option value="auto">Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
-                  <option value="locus_dossier">🔬 Full V2F Locus Dossier (4-Way Parallel: Record + GWAS + Exons + FILER)</option>
-                  <option value="gene">Gene Record, TopGenes &amp; Batch Panel (/record/gene/{gene})</option>
-                  <option value="gene_associations">Gene GWAS Associations (/record/gene/{gene}/associations)</option>
-                  <option value="gene_structure">Gene Transcripts &amp; Exons (/record/gene/{gene}/structure)</option>
-                  <option value="variant">Variant Record · ADSP R5, VRS &amp; Batch (/record/variant/{variant})</option>
-                  <option value="variant_associations">Variant GWAS Associations (/record/variant/{variant}/associations)</option>
-                  <option value="region_associations">Region Associations &lt;100 kb (/record/region/{region}/associations)</option>
-                  <option value="region_variants">Region ADSP R5 Variants &lt;100 kb (/record/region/{region}/variants)</option>
-                  <option value="track">Track Metadata (/record/track/{track})</option>
-                  <option value="track_data">Track Locus Slice (/record/track/{track}/data)</option>
-                  <option value="search">Semantic Search (/query)</option>
-                  <option value="search_tracks">Search GWAS/WGS Tracks (/query/tracks)</option>
-                  <option value="search_genes">Search Genes (/query/genes)</option>
-                  <option value="feature">Coordinate Resolver (/service/feature)</option>
-                  <option value="filer_overlap">Live FILER hg38 Overlap Count</option>
+                  <optgroup label="NIAGADS v0.6 Quantitative V2F &amp; Translational Suite">
+                    <option value="finemap_coloc">🎯 Wakefield ABF Fine-Mapping + FILER 95% CS + FunGen-xQTL Coloc</option>
+                    <option value="mr_prs">📐 Two-Sample Mendelian Randomization + 4-Ancestry NIAGADS PRS</option>
+                    <option value="rare_regulatory">🧬 ADSP R5 Rare &amp; Non-Coding Deep-Regulatory Impact (0–100)</option>
+                    <option value="translational_trials">💊 AD Drug Targets, APOE ARIA Safety &amp; ClinicalTrials.gov v2</option>
+                  </optgroup>
+                  <optgroup label="NIAGADS Open Access v2.0 REST &amp; FILER Endpoints">
+                    <option value="auto" selected>Auto Dispatch (Gene / Variant / Region / Track / Search)</option>
+                    <option value="locus_dossier">🔬 Full V2F Locus Dossier (4-Way Parallel: Record + GWAS + Exons + FILER)</option>
+                    <option value="gene">Gene Record, TopGenes &amp; Batch Panel (/record/gene/{gene})</option>
+                    <option value="gene_associations">Gene GWAS Associations (/record/gene/{gene}/associations)</option>
+                    <option value="gene_structure">Gene Transcripts &amp; Exons (/record/gene/{gene}/structure)</option>
+                    <option value="variant">Variant Record · ADSP R5, VRS &amp; Batch (/record/variant/{variant})</option>
+                    <option value="variant_associations">Variant GWAS Associations (/record/variant/{variant}/associations)</option>
+                    <option value="region_associations">Region Associations &lt;100 kb (/record/region/{region}/associations)</option>
+                    <option value="region_variants">Region ADSP R5 Variants &lt;100 kb (/record/region/{region}/variants)</option>
+                    <option value="track">Track Metadata (/record/track/{track})</option>
+                    <option value="track_data">Track Locus Slice (/record/track/{track}/data)</option>
+                    <option value="search">Semantic Search (/query)</option>
+                    <option value="search_tracks">Search GWAS/WGS Tracks (/query/tracks)</option>
+                    <option value="search_genes">Search Genes (/query/genes)</option>
+                    <option value="feature">Coordinate Resolver (/service/feature)</option>
+                    <option value="filer_overlap">Live FILER hg38 Overlap Count</option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -710,12 +721,40 @@
             </div>
 
             <div class="oa-form-actions">
-              <span class="composer-hint">Queries live <code>https://api.niagads.org/api</code> + <code>FILER</code> endpoints via Ligase backend</span>
+              <span class="composer-hint">Queries live <code>https://api.niagads.org/api</code> + <code>FILER</code> + <code>FunGen-xQTL</code> engines via Ligase backend</span>
               <button type="submit" class="send-btn" id="oa-submit-btn">
                 ⚡ Execute Live API Query ↵
               </button>
             </div>
           </form>
+
+          <!-- Collapsible Batch VCF / Variant List -> NIAGADS V2F Callset Annotator -->
+          <details class="vcf-batch-drawer" id="niagads-vcf-drawer">
+            <summary class="vcf-drawer-summary">
+              <span>🧬 <strong>Batch VCF / Variant Callset → NIAGADS V2F Prioritizer</strong> (ADSP R5 VRS + FILER Enhancer Weighting + CSV Export)</span>
+              <span class="shelf-count-pill">Up to 50 Variants</span>
+            </summary>
+            <div class="vcf-drawer-body">
+              <label for="niagads-vcf-input" class="visually-hidden">Paste VCF rows, rsIDs, or GRCh38 chr:pos:ref:alt variants</label>
+              <textarea
+                id="niagads-vcf-input"
+                rows="4"
+                spellcheck="false"
+                placeholder="Paste VCF lines, rsIDs, or chr:pos:ref:alt (one per line)…"
+              >#CHROM	POS	ID	REF	ALT
+chr19	44908684	rs429358	T	C
+chr2	127135234	rs6733839	C	T
+chr6	41161514	rs75932628	C	T
+chr19	1050421	rs115550680	A	G
+chr16	81908423	rs72824905	C	G</textarea>
+              <div class="vcf-drawer-actions">
+                <button type="button" class="send-btn" id="niagads-vcf-run-btn">⚡ Run Batch NIAGADS V2F Prioritization</button>
+                <button type="button" class="artifact-btn" id="niagads-vcf-csv-btn" hidden>⬇ Download Ranked V2F .csv</button>
+                <button type="button" class="artifact-btn" id="niagads-bench-btn">🏆 Run AD-V2F-Bench (6 Gold Loci)</button>
+              </div>
+              <div class="md-body" id="niagads-vcf-output" hidden></div>
+            </div>
+          </details>
 
           <!-- Live Response Output -->
           <div class="oa-result-card" id="oa-result-card" aria-live="polite" hidden>
@@ -1349,6 +1388,6 @@
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 
   <!-- LIGASE_BOOTSTRAP_JSON -->
-  <script src="/static/app.js?v=0.5.2" defer fetchpriority="high"></script>
+  <script src="/static/app.js?v=0.6.0" defer fetchpriority="high"></script>
 </body>
 </html>

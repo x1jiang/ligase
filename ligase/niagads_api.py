@@ -26,7 +26,7 @@ NIAGADS_OPENAPI_URL = "https://api.niagads.org/api/openapi"
 NIAGADS_API_BASE = os.getenv("NIAGADS_API_BASE", "https://api.niagads.org/api").rstrip("/")
 FILER_OVERLAP_URL = "https://tf.lisanwanglab.org/FILER/get_overlapping_tracks_by_coord.php"
 
-_UA = "Ligase/0.5.2 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
+_UA = "Ligase/0.6.0 (+https://github.com/x1jiang/ligase; Biomedical & NIAGADS Co-Scientist)"
 _DEFAULT_TIMEOUT_S = float(os.getenv("NIAGADS_API_TIMEOUT", "10.0"))
 _CACHE_TTL_S = 900.0
 _CACHE_MAX_SIZE = 512
@@ -132,6 +132,38 @@ OPEN_ACCESS_ROLLOUT_CATALOG: Dict[str, Any] = {
             "summary": "Full NIAGADS V2F Locus Dossier (4-Way Parallel Synthesis)",
             "example_target": "BIN1",
             "description": "Executes 4 concurrent NIAGADS Open Access v2.0 & FILER hg38 queries (canonical GVC/VRS record, ranked GWAS -log10(p) associations, GRCh38 exons or regional ADSP R5 density, and regulatory track overlaps) with interactive visual data.",
+        },
+        {
+            "action": "finemap_coloc",
+            "method": "BAYES-V2F",
+            "path": "NIAGADS ABF + FILER Prior + FunGen-xQTL Coloc",
+            "summary": "Wakefield ABF Fine-Mapping + FILER 95% Credible Set + FunGen-xQTL Coloc",
+            "example_target": "BIN1",
+            "description": "Computes Wakefield Approximate Bayes Factors, FILER enhancer-weighted PIPs, 95% credible sets, and Bayesian colocalization (PP.H0-PP.H4) against NIAGADS FunGen-xQTL (NG00105/NG00102) with multi-track LocusZoom data.",
+        },
+        {
+            "action": "mr_prs",
+            "method": "2SMR+PRS",
+            "path": "NIAGADS TwoSampleMR + 4-Ancestry PRS Calibration",
+            "summary": "Two-Sample Mendelian Randomization (IVW/Egger/WM) + Cross-Ancestry PRS",
+            "example_target": "microglia_endolysosomal",
+            "description": "Executes IVW, MR-Egger pleiotropy intercept, and Weighted Median causal inference alongside 4-ancestry NIAGADS PRS calibration (IGAP NG00075 EUR, AA-AD NG00100 AFR, ADSP NG00067 AMR, NG00097 EAS + PGS Catalog).",
+        },
+        {
+            "action": "rare_regulatory",
+            "method": "VRS+FILER",
+            "path": "ADSP R5 VRS + FILER 5-Modality Regulatory Scorer",
+            "summary": "ADSP Release 5 Rare & Non-Coding Deep-Regulatory Impact (0-100)",
+            "example_target": "rs6733839",
+            "description": "Scores rare and non-coding ADRD variants across 5 functional genomics modalities (ATAC chromatin, SPI1/MEF2C enhancer, FunGen eQTL/caQTL, splice/exon 10 delta-PSI, and VRS coding constraint).",
+        },
+        {
+            "action": "translational_trials",
+            "method": "ARIA+NCT",
+            "path": "NIAGADS Pharmacology + APOE ARIA Safety + ClinicalTrials.gov v2",
+            "summary": "AD Drug Targets, APOE ARIA-E/ARIA-H Safety & Live ClinicalTrials.gov",
+            "example_target": "APOE",
+            "description": "Links NIAGADS GVC loci to disease-modifying biologics/small molecules, APOE e4 ARIA-E/ARIA-H boxed-warning stratification, and live ClinicalTrials.gov API v2 studies.",
         },
         {
             "action": "gene",
@@ -1167,6 +1199,26 @@ def execute_niagads_action(
     t0 = time.monotonic()
 
     try:
+        # NIAGADS v0.6 Quantitative V2F, Fine-Mapping/Coloc, 2SMR/PRS, Rare Regulatory, VCF & Translational Suite
+        if act in ("finemap_coloc", "mr_prs", "rare_regulatory", "vcf_batch_v2f", "translational_trials"):
+            from ligase.niagads_v2f_engine import (
+                niagads_finemap_coloc,
+                niagads_mendelian_randomization_prs,
+                niagads_rare_regulatory_score,
+                niagads_translational_trials,
+                niagads_vcf_batch_v2f,
+            )
+
+            if act == "finemap_coloc":
+                return niagads_finemap_coloc(target=tgt, flank=flank_bp if flank_bp > 0 else 50_000)
+            if act == "mr_prs":
+                return niagads_mendelian_randomization_prs(target=tgt, genotypes=loc_clean)
+            if act == "rare_regulatory":
+                return niagads_rare_regulatory_score(target=tgt)
+            if act == "vcf_batch_v2f":
+                return niagads_vcf_batch_v2f(vcf_text=loc_clean or tgt)
+            return niagads_translational_trials(target=tgt)
+
         # 4-way parallel NIAGADS V2F Locus Dossier synthesis
         if act == "locus_dossier":
             norm_v = normalize_variant_id(tgt)

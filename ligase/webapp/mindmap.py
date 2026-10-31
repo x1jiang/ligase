@@ -45,6 +45,47 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                     "live_api_preset": {"action": "locus_dossier", "target": "BIN1", "loc": ""},
                 },
                 {
+                    "id": "mm_oa_finemap_coloc",
+                    "title": "Wakefield ABF Fine-Mapping + FunGen-xQTL Coloc",
+                    "badge": "New v0.6 · PIP + PP.H4",
+                    "status": "live",
+                    "summary": (
+                        "Computes Wakefield Approximate Bayes Factors, FILER enhancer-weighted 95% credible sets, "
+                        "and Bayesian colocalization (`PP.H0`–`PP.H4`) against NIAGADS FunGen-xQTL (`NG00105`/`NG00102`) "
+                        "with an interactive 2D-pannable multi-track LocusZoom viewer."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='finemap_coloc')",
+                        "GET /api/niagads/live?action=finemap_coloc",
+                    ],
+                    "sample_prompt": (
+                        "Run `niagads_v2f_statistical_suite(analysis='finemap_coloc', target='BIN1')` to quantify "
+                        "FILER enhancer-weighted PIPs, the 95% credible set, and Bayesian colocalization (`PP.H4`) "
+                        "with NIAGADS MiGA microglia eQTLs (`NG00105`)."
+                    ),
+                    "live_api_preset": {"action": "finemap_coloc", "target": "BIN1", "loc": ""},
+                },
+                {
+                    "id": "mm_oa_rare_reg",
+                    "title": "ADSP R5 Rare & Non-Coding Regulatory Scorer",
+                    "badge": "New v0.6 · 0–100 V2F",
+                    "status": "live",
+                    "summary": (
+                        "Evaluates ADSP Release 5 rare and non-coding variants (`GA4GH VRS`) across 5 functional "
+                        "genomics modalities: microglia ATAC accessibility, FILER `SPI1/MEF2C` enhancers, FunGen "
+                        "eQTL/caQTL, splicing `ΔΨ`, and coding constraint."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='rare_regulatory')",
+                        "GET /api/niagads/live?action=rare_regulatory",
+                    ],
+                    "sample_prompt": (
+                        "Score `rs6733839` and `rs75932628` with `niagads_v2f_statistical_suite(analysis='rare_regulatory')` "
+                        "and contrast non-coding FILER enhancer perturbation vs. coding ectodomain disruption."
+                    ),
+                    "live_api_preset": {"action": "rare_regulatory", "target": "rs6733839", "loc": ""},
+                },
+                {
                     "id": "mm_oa_genes",
                     "title": "Gene Records & GVC TopGenes",
                     "badge": "Available Now · v2.0",
@@ -284,6 +325,45 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                         "resilience mechanisms of `APOE3 Christchurch` (`R136S`) and `RELN-COLBOS` (`H3447R`)."
                     ),
                 },
+                {
+                    "id": "mm_oa_mr_prs",
+                    "title": "Two-Sample Mendelian Randomization & 4-Ancestry PRS",
+                    "badge": "New v0.6 · IVW + PRS",
+                    "status": "live",
+                    "summary": (
+                        "Executes IVW, MR-Egger pleiotropy intercept, and Weighted Median causal inference paired "
+                        "with cross-ancestry NIAGADS PRS calibration (`NG00075` EUR, `NG00100` AFR, `NG00067` AMR, `NG00097` EAS)."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='mr_prs')",
+                        "GET /api/niagads/live?action=mr_prs",
+                    ],
+                    "sample_prompt": (
+                        "Run `niagads_v2f_statistical_suite(analysis='mr_prs', target='microglia_endolysosomal')` to test "
+                        "causal endolysosomal flux on AD risk (IVW, MR-Egger intercept, Weighted Median) and compare "
+                        "cross-ancestry NIAGADS PRS transferability across EUR, AFR, AMR, and EAS."
+                    ),
+                    "live_api_preset": {"action": "mr_prs", "target": "microglia_endolysosomal", "loc": ""},
+                },
+                {
+                    "id": "mm_oa_trials_aria",
+                    "title": "AD Pharmacology, APOE ARIA Safety & ClinicalTrials.gov",
+                    "badge": "New v0.6 · ARIA + NCT",
+                    "status": "live",
+                    "summary": (
+                        "Bridges NIAGADS GVC loci to disease-modifying biologics/small molecules, `APOE ε4` "
+                        "ARIA-E/ARIA-H boxed-warning stratification, and live `ClinicalTrials.gov` API v2 recruitment."
+                    ),
+                    "backing": [
+                        "niagads_v2f_statistical_suite(analysis='translational_trials')",
+                        "GET /api/niagads/live?action=translational_trials",
+                    ],
+                    "sample_prompt": (
+                        "Use `niagads_v2f_statistical_suite(analysis='translational_trials', target='APOE')` and `'TREM2'` "
+                        "to synthesize `APOE ε4` ARIA-E/ARIA-H anti-amyloid safety stratification and active NCT trials."
+                    ),
+                    "live_api_preset": {"action": "translational_trials", "target": "APOE", "loc": ""},
+                },
             ],
         },
         {
@@ -371,6 +451,21 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                     "sample_prompt": (
                         "Use `run_python` to compute exact 95% confidence intervals and log-odds ratios for a "
                         "2x2 case-control allele table (cases: 142 alt / 1858 ref; controls: 84 alt / 1916 ref)."
+                    ),
+                },
+                {
+                    "id": "mm_eng_critic",
+                    "title": "NIAGADS Statistical Genetics & Multi-Ancestry Critic",
+                    "badge": "New v0.6 · 🏛️ Critic Mode",
+                    "status": "live",
+                    "summary": (
+                        "Dedicated adversarial review mode (`speed_mode='critic'`) auditing LD hitchhiking, `APOE` "
+                        "shadow confounding, `NG*` cohort sample overlap, cross-ancestry transferability, and CRISPRi validation."
+                    ),
+                    "backing": ["ligase/agent.py (CRITIC_EXECUTION_DIRECTIVE)", "POST /api/chat/stream (speed_mode='critic')"],
+                    "sample_prompt": (
+                        "Audit whether the 19q13.32 `TOMM40`/`APOC1` GWAS signals represent independent AD biology "
+                        "or LD hitchhiking with `APOE` (`rs429358`/`rs7412`) across European (`NG00075`) and African (`NG00100`) cohorts."
                     ),
                 },
             ],
@@ -680,6 +775,26 @@ def build_capabilities_mindmap(model_name: str = "gpt-6-luna") -> Dict[str, Any]
                         "using batch NIAGADS Open Access v2.0 gene records."
                     ),
                     "live_api_preset": {"action": "gene", "target": "APOE,BIN1,TREM2,ABCA7,SORL1,PLCG2", "loc": ""},
+                },
+                {
+                    "id": "mm_mcp_notebook",
+                    "title": "NIAGADS MCP Server, Batch VCF, .ipynb & Permalinks",
+                    "badge": "New v0.6 · MCP + WebMCP",
+                    "status": "live",
+                    "summary": (
+                        "First-mover open-source `ligase-mcp` stdio server + browser `document.modelContext` WebMCP, "
+                        "batch `.vcf` V2F CSV annotator, 1-click `.ipynb` Jupyter export, `?study=` permalinks, and `AD-V2F-Bench`."
+                    ),
+                    "backing": [
+                        "ligase-mcp (ligase/mcp_server.py)",
+                        "POST /api/niagads/vcf-annotate",
+                        "GET /api/runs/{run_id}/notebook.ipynb",
+                        "GET /api/niagads/benchmark",
+                    ],
+                    "sample_prompt": (
+                        "Prioritize the callset `rs429358, rs6733839, rs75932628, rs115550680, rs72824905` using "
+                        "`niagads_v2f_statistical_suite(analysis='vcf_batch_v2f')` and summarize causal mechanisms."
+                    ),
                 },
             ],
         },

@@ -3999,6 +3999,152 @@ dialog::backdrop {
   gap: 0.42rem;
 }
 
+/* ── NIAGADS v0.6 Multi-Track 2D-Pannable LocusZoom & Batch VCF Workbench ── */
+.oa-vis-card.oa-vis-wide {
+  grid-column: 1 / -1;
+}
+
+.locuszoom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-block-end: 0.5rem;
+}
+
+.lz-legend-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.lz-dot {
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 999px;
+  margin-inline-end: 0.25rem;
+}
+
+.lz-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.lz-zoom-btn {
+  padding: 0.2rem 0.52rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lz-zoom-btn.active,
+.lz-zoom-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: var(--bg-accent-soft);
+}
+
+/* 2d-panning: applied directly on the 2D scroll container itself (progressive enhancement) */
+.locuszoom-pan-viewport {
+  inline-size: 100%;
+  max-block-size: 460px;
+  overflow: auto;
+  scroll-axis-lock: none;
+  overscroll-behavior: contain;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.locuszoom-pan-viewport:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.locuszoom-pan-surface {
+  display: block;
+  min-inline-size: 100%;
+}
+
+.vcf-batch-drawer {
+  margin-block: 0.9rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.vcf-drawer-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.vcf-drawer-summary::-webkit-details-marker {
+  display: none;
+}
+
+.vcf-drawer-body {
+  padding: 0 1rem 1rem;
+  border-block-start: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.vcf-drawer-body textarea {
+  inline-size: 100%;
+  box-sizing: border-box;
+  margin-block-start: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
+.vcf-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.shared-permalink-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.62rem 0.9rem;
+  margin-block-end: 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--brand-primary);
+  background: var(--bg-accent-soft);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
 @media (pointer: coarse) {
   .video-chapter-btn,
   .studio-shelf-btn,
